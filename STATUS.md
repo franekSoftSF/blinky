@@ -18,12 +18,29 @@ tell the truth about it, without writing a single byte to any card. Everything
 after that depends on the PIV layer being right, and the PIV layer is the part
 that cannot be reasoned into correctness — it has to be run against hardware.
 
+## Validated on hardware
+
+`tools/PivProbe` is a read-only spike that answers the riskiest question before
+any production code exists. Run against a YubiKey 5 on 2026-08-19:
+
+| Question | Answer |
+|---|---|
+| Does PC/SC with hand-rolled PIV APDUs work? | Yes. SELECT, GET VERSION, GET SERIAL, GET DATA, GET METADATA and the empty-VERIFY retry probe all behave as documented |
+| Does the installed HID ActivClient minidriver contend for the card? | No. `SCARD_SHARE_SHARED` plus `SCardBeginTransaction` acquired cleanly with ActivClient present for both YubiKey 5 and YubiKey FIPS |
+| Is the 3DES / AES-192 management-key split real? | Yes. Firmware 5.4.3 reports a **3DES** management key, still at its default. The fallback logic in doc 03 is not theoretical |
+| Can the card be asked about its own state? | Yes on 5.3+. `GET METADATA` returned PIN, PUK and management-key defaults and retry counters without touching anything |
+| Do virtual readers get in the way? | They appear in the reader list — "Windows Hello for Business" answers SELECT PIV with `6A82`. The agent must skip them, not fail on them |
+
+The probe records an APDU transcript, which is the fixture the `Blinky.Piv`
+unit tests replay in patch 0010. Transcripts contain the token serial and any
+certificate on the card and are **not** committed — `out/` is ignored.
+
 ## Decisions locked
 
 | Decision | Choice | Why |
 |---|---|---|
 | Runtime | .NET 10 | Same stack as the rest of these projects |
-| Token access | PC/SC + raw PIV APDUs | No native library to deploy, no CLI output to parse, full access to the administrative commands a CMS needs |
+| Token access | PC/SC + raw PIV APDUs | No native library to deploy, no CLI output to parse, full access to the administrative commands a CMS needs. Validated on hardware before the decision was locked — see above |
 | Token scope | YubiKey 5, PIV applet | Attestation and management-key policy are vendor-specific; other vendors are a later interface, not a v1 branch |
 | CA backends | Built-in **and** ADCS, one interface, both from the start | Neither is optional: Samba4 has no ADCS, and a Windows estate will not accept a new CA |
 | Built-in CA crypto | .NET for signing, BouncyCastle only for CMC/PKCS#7 | Less third-party crypto in the path that matters |
@@ -98,17 +115,21 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 
 Ordered, each item small enough to finish in one sitting.
 
-1. **Create the GitHub repository** and push these documents. Nothing else is
-   blocked by it, but the design stops being a local folder.
-2. **Scaffold the solution** — `Blinky.slnx`, the projects from the README, DI,
+1. ~~Create the GitHub repository~~ — done, `franekSoftSF/blinky`.
+2. ~~Prove the PC/SC path on real hardware~~ — done, `tools/PivProbe`. Results
+   in *Validated on hardware* above.
+3. **Scaffold the solution** — `Blinky.slnx`, the projects from the README, DI,
    configuration, Serilog, CI that builds and runs unit tests. Builds and does
    nothing, on purpose.
-3. **Write `Blinky.Piv` against recorded transcripts** — transport, chaining,
+4. **Write `Blinky.Piv` against recorded transcripts** — transport, chaining,
    error map — with a real YubiKey used only to capture the transcripts.
-4. **Run patch 0011 against three tokens**: factory, `ykman`-provisioned, and one
+5. **Run patch 0011 against three tokens**: factory, `ykman`-provisioned, and one
    with a blocked PIN. This is the go/no-go for the PC/SC-and-APDUs decision.
-5. **Stand up the lab**: a Samba4 AD DC for the built-in CA path, and a Windows
+6. **Stand up the lab**: a Samba4 AD DC for the built-in CA path, and a Windows
    AD + ADCS pair for Phase 3. Both are needed eventually; the Samba4 one is
    needed first, because it is what makes the Phase 2 gate demonstrable.
 
-Item 5 needs infrastructure; items 2 to 4 do not and can start immediately.
+Item 6 needs infrastructure; items 3 to 5 do not and can start immediately. The
+token on the desk is factory-fresh in PIV, so it covers one of the three states
+the Phase 1 gate needs; the `ykman`-provisioned and blocked-PIN tokens still
+have to be prepared.
