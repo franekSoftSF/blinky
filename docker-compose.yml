@@ -1,0 +1,71 @@
+name: blinky
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-blinky}
+      POSTGRES_USER: ${POSTGRES_USER:-blinky}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-blinky}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-blinky}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/dotnet/Dockerfile
+      args:
+        PROJECT: src/Blinky.Api/Blinky.Api.csproj
+        ASSEMBLY: Blinky.Api
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Blinky: Host=postgres;Database=${POSTGRES_DB:-blinky};Username=${POSTGRES_USER:-blinky};Password=${POSTGRES_PASSWORD:-blinky}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8080"
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/dotnet/Dockerfile
+      args:
+        PROJECT: src/Blinky.Worker/Blinky.Worker.csproj
+        ASSEMBLY: Blinky.Worker
+    environment:
+      ConnectionStrings__Blinky: Host=postgres;Database=${POSTGRES_DB:-blinky};Username=${POSTGRES_USER:-blinky};Password=${POSTGRES_PASSWORD:-blinky}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Single replica by design - it owns the work that must happen exactly once.
+    deploy:
+      replicas: 1
+
+  edge:
+    image: owasp/modsecurity-crs:nginx
+    ports:
+      - "${CONSOLE_PORT:-8443}:8443"
+      - "${AGENT_PORT:-9443}:9443"
+    environment:
+      MODSEC_RULE_ENGINE: "On"
+      BLOCKING_PARANOIA: "1"
+      DETECTION_PARANOIA: "1"
+      ANOMALY_INBOUND: "5"
+      ANOMALY_OUTBOUND: "4"
+      MODSEC_AUDIT_ENGINE: "RelevantOnly"
+      MODSEC_AUDIT_LOG: "/dev/stdout"
+      MODSEC_REQ_BODY_LIMIT: "13107200"
+    volumes:
+      - ./docker/edge/default.conf.template:/etc/nginx/templates/conf.d/default.conf.template:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:

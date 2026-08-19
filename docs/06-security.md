@@ -44,7 +44,8 @@ for the user whose Kerberos ticket it can produce.
 | 10 | Certificate that logs in as the wrong person | SID extension emitted by the built-in CA; the ADCS backend refuses templates configured to supply the subject in the request. See [04](04-pki-backends.md#strong-certificate-mapping) |
 | 11 | Silent replacement of a Blinky-issued credential | Inventory compares slot contents against the recorded public-key hash; a mismatch marks the slot `Stale` and raises it rather than overwriting |
 | 12 | PUK disclosure by an insider | Every decryption of an escrowed PUK writes an audit event exempt from retention, and is a designed alerting trigger |
-| 13 | Denial of service by PIN blocking | PIN retry counters are read on every contact and surfaced before they reach zero; the unblock workflow is deliberately cheap |
+| 13 | Browser claiming an agent identity | The edge overwrites `X-Client-Verify` and `X-Client-Cert` with empty values on the console listener; only the mTLS listener sets them from a verified certificate |
+| 14 | Denial of service by PIN blocking | PIN retry counters are read on every contact and surfaced before they reach zero; the unblock workflow is deliberately cheap |
 
 ## Key custody
 
@@ -70,6 +71,11 @@ Stated plainly, because a security section that claims completeness is lying:
 - **An operator with the issuance role can enrol on behalf of anybody in scope.**
   This is required for onboarding and desk-side support. It is constrained by
   role, logged in full, and is the correct thing to alert on — not to remove.
+- **The WAF does not protect the agent channel.** It runs there in detection
+  mode by design, because a rule set that blocks base64-of-DER blocks
+  enrolment. An attacker holding a valid agent client certificate is not
+  stopped by pattern matching; they are stopped by the API's schema validation
+  and by the user-identity requirement. The alerts are still worth having.
 - **A compromised domain controller defeats everything.** Identity comes from
   the directory; if the directory lies, Blinky faithfully certifies the lie.
 - **Physical possession plus a known PIN is authentication.** Touch policy

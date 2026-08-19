@@ -29,3 +29,7 @@ data/
 *.slnx.user
 TestResults/
 *.trx
+
+# Local edge material
+certs/
+.env

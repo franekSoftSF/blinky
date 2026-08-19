@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-08-19
 **Phase:** 0 — Design
-**Overall:** design complete, solution skeleton building, no product code yet
+**Overall:** design complete, stack runs behind a WAF, no product code yet
 
 The machine-readable version of this file is [status.json](status.json). Keep
 both in sync; `status.json` is the one a build or dashboard should read.
@@ -76,6 +76,9 @@ certificate on the card and are **not** committed — `out/` is ignored.
 | Bio Multi-protocol tokens | First-class target, detected by asking slot `96`, never by model name | Verification is a fingerprint, not a PIN, and the absence of a PUK is by design. Treating it as a broken normal token would reject the product line |
 | Non-Bio tokens without a PUK | Refused at personalisation unless policy `AllowUnrecoverableTokens` is set | Somebody removed the recovery path and nobody recorded why. The first blocked PIN then destroys a credential with no warning anyone gave |
 | Transport | HTTPS REST + SignalR doorbell, no broker | One port, one certificate, one auth model; the doorbell carries no state |
+| Edge | nginx + ModSecurity 3 + CRS v4, in the container that will also serve Angular | A WAF that adds no box to the diagram |
+| WAF on the agent channel | `DetectionOnly`, no body inspection on DER-carrying endpoints | Measured: blocking mode treats base64-of-DER as an attack. mTLS and schema validation are the control there; the WAF is a sensor |
+| Client certificate | Verified at the edge, forwarded as a header, stripped on the console listener | The API never terminates TLS, and a browser cannot claim an agent identity |
 | Agent shape | LocalSystem service + per-session UI process | Session 0 cannot draw a PIN prompt, and LocalSystem cannot prove who is at the keyboard |
 | Identity | Agent = mTLS, user = Kerberos from the user's own session | No authorisation decision is made on the workstation |
 | Store | PostgreSQL + NHibernate | Same as FAG, including the SQL schema script and `SchemaValidator` |
@@ -101,6 +104,8 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 |---|---|---|
 | Architecture docs | **done** | Seven documents, all committed |
 | Solution skeleton | **done** | `Blinky.slnx`, 11 projects, central package management, CI on windows-latest |
+| Compose stack | **done** | postgres, api, worker, edge. `docker compose up -d` works |
+| Edge and WAF | **done** | nginx + ModSecurity 3 + CRS v4, two listeners, mTLS forwarded to the API. 9 smoke checks green |
 | `tools/PivProbe` | **done** | Read-only hardware spike; see *Validated on hardware* |
 | `Blinky.Piv` | skeleton | `StatusWord` only, with tests. Transport and APDUs in patch 0010 — the risk lives here |
 | `Blinky.Contracts` | skeleton | Protocol version, `JobType`, `JobState`. Envelope in patch 0015 |
@@ -120,7 +125,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Design | **done** — docs, hardware spike, solution skeleton, CI |
+| 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
 | 1 | See the token (PIV read path, attestation, inventory) | not started |
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |
@@ -151,6 +156,7 @@ Ordered, each item small enough to finish in one sitting.
    in *Validated on hardware* above.
 3. ~~Scaffold the solution~~ — done, patch 0002. Builds, 11 tests green, CI on
    windows-latest.
+   ~~Stand up the stack behind a WAF~~ — done, patch 0003. 9 smoke checks green.
 4. **Write `Blinky.Piv` against recorded transcripts** — transport, chaining,
    error map — with a real YubiKey used only to capture the transcripts.
 5. **Run patch 0011 against three tokens**: factory, `ykman`-provisioned, and one

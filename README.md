@@ -81,6 +81,26 @@ Samba4.
 | `Blinky.Agent.Ui` | WPF, per session | workstation | PIN/touch prompts, Kerberos auth |
 | `Blinky.AdcsConnector` | Worker Service | Windows *(optional)* | DCOM `ICertRequest` bridge for shops without CES |
 
+## Running
+
+```bash
+cp .env.example .env
+./scripts/dev-certs.sh
+docker compose up -d --build
+./smoke-test.sh
+```
+
+| What | Where |
+|---|---|
+| Console (browser traffic, WAF blocking) | https://localhost:8443 |
+| Agent API (mTLS, WAF in detection mode) | https://localhost:9443 |
+| PostgreSQL | localhost:5432, not published by default |
+
+The certificates are self-signed development material and `certs/` is ignored
+by git. `api` is deliberately not published: the edge forwards the verified
+client certificate as a header, which is only trustworthy because nothing else
+can reach the API.
+
 ## Building
 
 ```bash

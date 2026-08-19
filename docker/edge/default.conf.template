@@ -1,0 +1,113 @@
+# Blinky edge.
+#
+# Two listeners on one container, because the two kinds of traffic want
+# opposite things from a WAF:
+#
+#   8443  console  - browsers. Full CRS in blocking mode.
+#   9443  agents   - mTLS. CRS in DetectionOnly, and no body inspection on the
+#                    endpoints that carry DER and PKCS#10, because a rule set
+#                    tuned for web forms will call a certificate request an
+#                    attack.
+#
+# See docs/01-architecture.md.
+
+# ---------------------------------------------------------------- console
+server {
+    listen 8443 ssl;
+    http2 on;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/certs/edge.crt;
+    ssl_certificate_key /etc/nginx/certs/edge.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    # The CRS image already loads the rule set at http level; repeating the
+    # include here duplicates every rule id and nginx refuses to start.
+    modsecurity on;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    client_max_body_size 4m;
+
+    location / {
+        proxy_pass http://api:8080;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # A browser must never be able to claim an agent identity. These are
+        # set to empty rather than left alone: proxy_set_header replaces
+        # whatever the client sent.
+        proxy_set_header X-Client-Verify "";
+        proxy_set_header X-Client-Cert   "";
+    }
+}
+
+# ---------------------------------------------------------------- agents
+server {
+    listen 9443 ssl;
+    http2 on;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/certs/edge.crt;
+    ssl_certificate_key /etc/nginx/certs/edge.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # mTLS. The agent proves the machine here; the user proves themselves with
+    # Kerberos inside the request. See docs/05-agent-protocol.md.
+    ssl_client_certificate /etc/nginx/certs/agent-ca.crt;
+    ssl_verify_client      on;
+    ssl_verify_depth       2;
+
+    modsecurity on;
+    # Detection only: on this listener a false positive is a broken enrolment,
+    # and mTLS plus schema validation is the actual control.
+    modsecurity_rules 'SecRuleEngine DetectionOnly';
+
+    client_max_body_size 12m;
+
+    # A PKCS#10 request is base64 of DER, and a rule set tuned for web forms
+    # reads that as an attack. Body inspection is turned off for the endpoints
+    # that carry binary by design - URI and header rules still apply, and the
+    # body is validated against a schema by the API. The client certificate is
+    # the control here, not the rule set.
+    #
+    # Inline rather than a mounted rules file: the CRS image copies its own
+    # config into /etc/modsecurity.d at startup and a bind mount inside that
+    # tree breaks the copy.
+    modsecurity_rules '
+        SecRule REQUEST_URI "@rx ^/api/(credentials|agents/enroll|agents/[^/]+/renew-certificate)"             "id:9000100,phase:1,pass,nolog,ctl:requestBodyAccess=Off"
+    ';
+
+    # The doorbell. No body to inspect, and buffering would defeat it.
+    location /hubs/ {
+        modsecurity off;
+
+        proxy_pass http://api:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host       $host;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+
+        proxy_set_header X-Client-Verify $ssl_client_verify;
+        proxy_set_header X-Client-Cert   $ssl_client_escaped_cert;
+    }
+
+    location / {
+        proxy_pass http://api:8080;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # nginx sets these; anything the client sent is overwritten.
+        proxy_set_header X-Client-Verify $ssl_client_verify;
+        proxy_set_header X-Client-Cert   $ssl_client_escaped_cert;
+    }
+}

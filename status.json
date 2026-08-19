@@ -22,7 +22,7 @@
     "phase": 0,
     "phaseTitle": "Design",
     "state": "design",
-    "summary": "Design documented end to end and validated on hardware. Solution skeleton builds with CI green. Next milestone is Blinky.Piv against recorded APDU transcripts (patch 0010)."
+    "summary": "Design documented and validated on hardware. Solution skeleton builds with CI green, and the stack runs behind nginx + ModSecurity + CRS with mTLS on a separate listener. Next milestone is Blinky.Piv against recorded APDU transcripts (patch 0010)."
   },
   "phases": [
     {
@@ -78,6 +78,12 @@
     {
       "name": "solution-skeleton",
       "type": "build",
+      "phase": 0,
+      "state": "done"
+    },
+    {
+      "name": "edge",
+      "type": "infrastructure",
       "phase": 0,
       "state": "done"
     },
@@ -261,6 +267,11 @@
       "id": "tokens-without-puk",
       "choice": "Bio tokens accepted with puk_state=NotApplicable; non-Bio tokens with a deleted PUK refused unless AllowUnrecoverableTokens",
       "state": "locked"
+    },
+    {
+      "id": "edge-waf",
+      "choice": "nginx + ModSecurity 3 + CRS v4 in the frontend container; console listener blocking, agent listener DetectionOnly with mTLS",
+      "state": "locked-validated"
     }
   ],
   "openQuestions": [

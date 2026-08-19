@@ -170,6 +170,41 @@ properties, written into the service's environment key in the registry so .NET
 configuration picks them up natively — again the FAG pattern, because it works
 and needs no custom actions.
 
+## The edge, and why it has two listeners
+
+One container terminates TLS and runs a WAF: nginx with ModSecurity 3 and the
+OWASP Core Rule Set. It is the same container that will serve the Angular
+bundle, so the WAF adds no box to the diagram.
+
+It listens twice, because the two kinds of traffic want opposite things from a
+rule set:
+
+| | `8443` console | `9443` agents |
+|---|---|---|
+| Who | browsers | `Agent.Service` |
+| Authentication | session / Kerberos | **mTLS** |
+| Rule engine | `On` — blocking | `DetectionOnly` |
+| Request bodies | inspected | not inspected on the endpoints carrying DER |
+| WebSockets | — | `/hubs/` passes without body inspection |
+
+A CRS tuned for web input reads base64-of-DER as an attack. Measured, not
+assumed: the same SQL injection that returns 403 on the console listener is
+logged with `is_interrupted:false` and passed through on the agent listener.
+Running the agent channel in blocking mode would mean enrolments failing with
+403 for reasons no log on our side would explain.
+
+That is a deliberate trade, and it is only defensible because the agent channel
+has stronger controls than pattern matching: a client certificate the edge
+verifies, a Kerberos ticket inside the request, and a schema the API validates.
+The WAF there is a sensor, not a gate.
+
+**The client certificate is forwarded, not consumed.** The edge verifies it and
+passes it to the API as `X-Client-Verify` and `X-Client-Cert`. On the console
+listener both headers are overwritten with empty values, so a browser cannot
+claim an agent identity by setting them. This only holds because `api:8080` is
+not published outside the compose network — exposing it directly would turn
+those headers into a forgeable identity.
+
 ## Out of scope for v1
 
 Stated here so it does not have to be argued later:
