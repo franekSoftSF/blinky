@@ -14,7 +14,7 @@ than to the database.
 | `Credential` | `id` | One issued certificate bound to one slot. Immutable once issued — renewal creates a new row |
 | `CertificateProfile` | `id` | What to issue: algorithm, EKUs, subject/SAN template, validity, PIN and touch policy, CA backend, ADCS template name |
 | `IssuancePolicy` | `id` | Who gets which profiles, and under what conditions |
-| `CaInstance` | `id` | A configured CA: backend, config, chain, CRL/OCSP URLs |
+| `CaInstance` | `id` | A configured CA: backend, topology, config, chain, CRL/OCSP URLs |
 | `Job` | `id` | One unit of work for one agent |
 | `Agent` | `id` | One installed workstation agent |
 | `SecretEnvelope` | `id` | Encrypted material at rest — PUK escrow, and management keys where not derivable |

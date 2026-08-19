@@ -70,6 +70,7 @@ certificate on the card and are **not** committed — `out/` is ignored.
 | CA backends | Built-in **and** ADCS, one interface, both from the start | Neither is optional: Samba4 has no ADCS, and a Windows estate will not accept a new CA |
 | Built-in CA crypto | .NET for signing, BouncyCastle only for CMC/PKCS#7 | Less third-party crypto in the path that matters |
 | CA key custody | PKCS#11 abstraction, three tiers: file, SoftHSM2, HSM | Compose default is real PKCS#11; production is a config change, not a rewrite |
+| Built-in CA topology | `single` or `two-tier`, per CA instance, default `two-tier` | A single self-signed CA is the right answer for a lab and the wrong one for anything long-lived; both are supported rather than argued about. Topology is immutable per instance — changing it is a new instance, not an edit |
 | Management key | Per-token, HKDF-derived from an HSM-held master | One token's key opens one token; the database holds no key material |
 | PIN | Never stored, anywhere, in any form | If a workflow appears to need a stored PIN, the workflow is wrong |
 | PUK | Random per token, escrowed AES-256-GCM under an HSM KEK | Unblocking has to work over the phone; disclosure is audited and alertable |
@@ -113,7 +114,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | `Blinky.Infrastructure` | not started | Phase 1 |
 | `Blinky.Api` | skeleton | Serilog and `/health`. Agent enrolment in patch 0014 |
 | `Blinky.Worker` | skeleton | Host and Serilog, no scanners. Job engine in patch 0026 |
-| `Blinky.Pki` — built-in CA | not started | Phase 2 |
+| `Blinky.Pki` — built-in CA | not started | Phase 2, patches 0021 and 0028 (topology) |
 | `Blinky.Pki` — ADCS | not started | Phase 3 |
 | `Blinky.AdcsConnector` | skeleton | Windows service host. `ICertRequest3` in patch 0032 |
 | `Blinky.Agent.Service` | skeleton | Windows service host. Reader watcher and jobs in patch 0015 |

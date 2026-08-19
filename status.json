@@ -272,6 +272,11 @@
       "id": "edge-waf",
       "choice": "nginx + ModSecurity 3 + CRS v4 in the frontend container; console listener blocking, agent listener DetectionOnly with mTLS",
       "state": "locked-validated"
+    },
+    {
+      "id": "ca-topology",
+      "choice": "Built-in CA runs as single or two-tier, chosen per CA instance, default two-tier; topology is immutable once set",
+      "state": "locked"
     }
   ],
   "openQuestions": [
