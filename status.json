@@ -22,13 +22,13 @@
     "phase": 0,
     "phaseTitle": "Design",
     "state": "design",
-    "summary": "Architecture documented end to end. The PC/SC + raw APDU decision is validated on real hardware by tools/PivProbe. No production code yet; next milestone is a building solution skeleton, then Blinky.Piv against recorded transcripts."
+    "summary": "Design documented end to end and validated on hardware. Solution skeleton builds with CI green. Next milestone is Blinky.Piv against recorded APDU transcripts (patch 0010)."
   },
   "phases": [
     {
       "id": 0,
       "title": "Design",
-      "state": "in-progress",
+      "state": "done",
       "done": "Solution builds, schema script creates the PostgreSQL schema, SchemaValidator reports clean at service start."
     },
     {
@@ -76,6 +76,12 @@
       "state": "done"
     },
     {
+      "name": "solution-skeleton",
+      "type": "build",
+      "phase": 0,
+      "state": "done"
+    },
+    {
       "name": "tools/PivProbe",
       "type": "spike",
       "phase": 0,
@@ -85,19 +91,19 @@
       "name": "Blinky.Piv",
       "type": "library",
       "phase": 1,
-      "state": "not-started"
+      "state": "skeleton"
     },
     {
       "name": "Blinky.Contracts",
       "type": "library",
       "phase": 1,
-      "state": "not-started"
+      "state": "skeleton"
     },
     {
       "name": "Blinky.Domain",
       "type": "library",
       "phase": 1,
-      "state": "not-started"
+      "state": "skeleton"
     },
     {
       "name": "Blinky.Infrastructure",
@@ -109,13 +115,13 @@
       "name": "Blinky.Api",
       "type": "aspnet-core",
       "phase": 1,
-      "state": "not-started"
+      "state": "skeleton"
     },
     {
       "name": "Blinky.Worker",
       "type": "worker-service",
       "phase": 2,
-      "state": "not-started"
+      "state": "skeleton"
     },
     {
       "name": "Blinky.Pki.BuiltInCa",
@@ -133,19 +139,19 @@
       "name": "Blinky.AdcsConnector",
       "type": "worker-service",
       "phase": 3,
-      "state": "not-started"
+      "state": "skeleton"
     },
     {
       "name": "Blinky.Agent.Service",
       "type": "worker-service",
       "phase": 1,
-      "state": "not-started"
+      "state": "skeleton"
     },
     {
       "name": "Blinky.Agent.Ui",
       "type": "wpf",
       "phase": 1,
-      "state": "not-started"
+      "state": "skeleton"
     },
     {
       "name": "console",

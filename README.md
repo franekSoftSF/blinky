@@ -81,6 +81,34 @@ Samba4.
 | `Blinky.Agent.Ui` | WPF, per session | workstation | PIN/touch prompts, Kerberos auth |
 | `Blinky.AdcsConnector` | Worker Service | Windows *(optional)* | DCOM `ICertRequest` bridge for shops without CES |
 
+## Building
+
+```bash
+dotnet build Blinky.slnx
+dotnet test Blinky.slnx
+```
+
+`Blinky.slnx` is the new XML solution format (Visual Studio 17.13+, Rider
+2024.3+). The solution must be built on Windows: `Blinky.Agent.Ui` is WPF and
+`Blinky.AdcsConnector` targets `net10.0-windows` for DCOM. The containerised
+projects — `Blinky.Api`, `Blinky.Worker` and the libraries below them — target
+plain `net10.0` and build anywhere.
+
+Package versions are managed centrally in `Directory.Packages.props`; no
+`PackageReference` carries its own `Version`.
+
+There is one tool outside the product:
+
+```bash
+dotnet run --project tools/PivProbe -- transcript.json
+```
+
+`tools/PivProbe` reads a YubiKey over PC/SC and prints what is on it. It is
+read-only — no PIN verification with a real PIN, no key generation, no writes
+of any kind — and it records the APDU transcript the `Blinky.Piv` tests replay.
+Transcripts carry the token serial and any certificate on the card, so they are
+not committed.
+
 ## Stack
 
 .NET 10 · ASP.NET Core + SignalR · NHibernate · PostgreSQL · Angular 22 ·

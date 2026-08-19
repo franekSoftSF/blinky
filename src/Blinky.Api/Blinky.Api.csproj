@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Blinky.Contracts\Blinky.Contracts.csproj" />
+    <ProjectReference Include="..\Blinky.Domain\Blinky.Domain.csproj" />
+    <ProjectReference Include="..\Blinky.Infrastructure\Blinky.Infrastructure.csproj" />
+    <ProjectReference Include="..\Blinky.Pki\Blinky.Pki.csproj" />
+  </ItemGroup>
+
+</Project>

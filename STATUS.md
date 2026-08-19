@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-08-19
 **Phase:** 0 — Design
-**Overall:** design complete, no production code
+**Overall:** design complete, solution skeleton building, no product code yet
 
 The machine-readable version of this file is [status.json](status.json). Keep
 both in sync; `status.json` is the one a build or dashboard should read.
@@ -73,17 +73,19 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Component | State | Notes |
 |---|---|---|
 | Architecture docs | **done** | Seven documents, all committed |
-| `Blinky.Piv` | not started | Phase 1 — the risk lives here |
-| `Blinky.Contracts` | not started | Envelope drafted in doc 05 |
-| `Blinky.Domain` | not started | Entities and three state machines drafted in doc 02 |
+| Solution skeleton | **done** | `Blinky.slnx`, 11 projects, central package management, CI on windows-latest |
+| `tools/PivProbe` | **done** | Read-only hardware spike; see *Validated on hardware* |
+| `Blinky.Piv` | skeleton | `StatusWord` only, with tests. Transport and APDUs in patch 0010 — the risk lives here |
+| `Blinky.Contracts` | skeleton | Protocol version, `JobType`, `JobState`. Envelope in patch 0015 |
+| `Blinky.Domain` | skeleton | `TokenState`, `CredentialState`. Entities and mappings in patch 0013 |
 | `Blinky.Infrastructure` | not started | Phase 1 |
-| `Blinky.Api` | not started | Phase 1 (enrolment), Phase 2 (issuance) |
-| `Blinky.Worker` | not started | Phase 2 (jobs), Phase 4 (lifecycle) |
+| `Blinky.Api` | skeleton | Serilog and `/health`. Agent enrolment in patch 0014 |
+| `Blinky.Worker` | skeleton | Host and Serilog, no scanners. Job engine in patch 0026 |
 | `Blinky.Pki` — built-in CA | not started | Phase 2 |
 | `Blinky.Pki` — ADCS | not started | Phase 3 |
-| `Blinky.AdcsConnector` | not started | Phase 3, only for estates without CES |
-| `Blinky.Agent.Service` | not started | Phase 1 (inventory), Phase 2 (issuance) |
-| `Blinky.Agent.Ui` | not started | Phase 1 |
+| `Blinky.AdcsConnector` | skeleton | Windows service host. `ICertRequest3` in patch 0032 |
+| `Blinky.Agent.Service` | skeleton | Windows service host. Reader watcher and jobs in patch 0015 |
+| `Blinky.Agent.Ui` | skeleton | Empty WPF shell. Prompts in patch 0015 |
 | Angular console | not started | Phase 5 |
 | Samba4 setup command | not started | Phase 6 |
 
@@ -91,7 +93,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Design | in progress — docs done, solution skeleton pending |
+| 0 | Design | **done** — docs, hardware spike, solution skeleton, CI |
 | 1 | See the token (PIV read path, attestation, inventory) | not started |
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |
@@ -118,9 +120,8 @@ Ordered, each item small enough to finish in one sitting.
 1. ~~Create the GitHub repository~~ — done, `franekSoftSF/blinky`.
 2. ~~Prove the PC/SC path on real hardware~~ — done, `tools/PivProbe`. Results
    in *Validated on hardware* above.
-3. **Scaffold the solution** — `Blinky.slnx`, the projects from the README, DI,
-   configuration, Serilog, CI that builds and runs unit tests. Builds and does
-   nothing, on purpose.
+3. ~~Scaffold the solution~~ — done, patch 0002. Builds, 11 tests green, CI on
+   windows-latest.
 4. **Write `Blinky.Piv` against recorded transcripts** — transport, chaining,
    error map — with a real YubiKey used only to capture the transcripts.
 5. **Run patch 0011 against three tokens**: factory, `ykman`-provisioned, and one

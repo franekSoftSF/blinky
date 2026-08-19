@@ -24,3 +24,8 @@ softhsm/
 # Runtime data
 data/
 *.log
+
+# Solution
+*.slnx.user
+TestResults/
+*.trx

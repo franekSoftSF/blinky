@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Blinky.AdcsConnector/Blinky.AdcsConnector.csproj" />
+    <Project Path="src/Blinky.Agent.Service/Blinky.Agent.Service.csproj" />
+    <Project Path="src/Blinky.Agent.Ui/Blinky.Agent.Ui.csproj" />
+    <Project Path="src/Blinky.Api/Blinky.Api.csproj" />
+    <Project Path="src/Blinky.Contracts/Blinky.Contracts.csproj" />
+    <Project Path="src/Blinky.Domain/Blinky.Domain.csproj" />
+    <Project Path="src/Blinky.Infrastructure/Blinky.Infrastructure.csproj" />
+    <Project Path="src/Blinky.Piv/Blinky.Piv.csproj" />
+    <Project Path="src/Blinky.Pki/Blinky.Pki.csproj" />
+    <Project Path="src/Blinky.Worker/Blinky.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Blinky.UnitTests/Blinky.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/PivProbe/PivProbe.csproj" />
+  </Folder>
+</Solution>
