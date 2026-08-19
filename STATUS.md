@@ -31,6 +31,31 @@ any production code exists. Run against a YubiKey 5 on 2026-08-19:
 | Can the card be asked about its own state? | Yes on 5.3+. `GET METADATA` returned PIN, PUK and management-key defaults and retry counters without touching anything |
 | Do virtual readers get in the way? | They appear in the reader list — "Windows Hello for Business" answers SELECT PIV with `6A82`. The agent must skip them, not fail on them |
 
+Re-run on 2026-08-19 against three tokens at once, which is when the split the
+design assumes stopped being a claim from a datasheet:
+
+| Serial | Firmware | Management key | PIN | PUK |
+|---|---|---|---|---|
+| 23673995 | 5.4.3 | **3DES**, default | default, 3/3 | default, 3/3 |
+| 29177301 | 5.7.1 | **AES-192**, default | default, 3/3 | default, 3/3 |
+| 32140892 | 5.7.2 | **AES-192**, default | set, 8/8 | **not configured** |
+
+Two findings worth more than the table:
+
+- The 3DES / AES-192 boundary is exactly where the documentation puts it, on
+  two independent 5.7 devices and one 5.4. An agent that assumes either
+  algorithm fails on a third of this desk.
+- **A YubiKey can have no PUK at all.** Firmware 5.7 can delete it. Token
+  32140892 reports zero total PUK retries, which means the escrow-and-unblock
+  workflow in patch 0042 is not merely unavailable on it — if that PIN ever
+  blocks, the only recovery is a full PIV reset, destroying every key on the
+  token. Blinky refuses to personalise such a token by default; see the
+  decision below.
+
+None of the three has anything in a slot, so certificate parsing and
+attestation are still unexercised. That needs a token somebody is willing to
+have written to.
+
 The probe records an APDU transcript, which is the fixture the `Blinky.Piv`
 unit tests replay in patch 0010. Transcripts contain the token serial and any
 certificate on the card and are **not** committed — `out/` is ignored.
@@ -48,6 +73,7 @@ certificate on the card and are **not** committed — `out/` is ignored.
 | Management key | Per-token, HKDF-derived from an HSM-held master | One token's key opens one token; the database holds no key material |
 | PIN | Never stored, anywhere, in any form | If a workflow appears to need a stored PIN, the workflow is wrong |
 | PUK | Random per token, escrowed AES-256-GCM under an HSM KEK | Unblocking has to work over the phone; disclosure is audited and alertable |
+| Tokens without a PUK | Refused at personalisation unless policy `AllowUnrecoverableTokens` is set | Firmware 5.7 can delete the PUK. Accepting such a token silently means the first blocked PIN destroys a credential with no warning anyone gave |
 | Transport | HTTPS REST + SignalR doorbell, no broker | One port, one certificate, one auth model; the doorbell carries no state |
 | Agent shape | LocalSystem service + per-session UI process | Session 0 cannot draw a PIN prompt, and LocalSystem cannot prove who is at the keyboard |
 | Identity | Agent = mTLS, user = Kerberos from the user's own session | No authorisation decision is made on the workstation |
@@ -111,6 +137,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | CDP or AIA unreachable from domain controllers | Smart-card logon fails with an error that names nothing useful | Called out in doc 04; verified as part of the Phase 2 gate |
 | Retrying key generation destroys the previous key | Silent orphaning of an issued certificate | Guard inside the agent step, not only in the server's retry policy |
 | Windows minidriver contends for the card | Intermittent, unreproducible APDU failures | Shared connections inside PC/SC transactions; never exclusive |
+| Token arrives with the PUK deleted, so it can never be unblocked | A blocked PIN costs every key on the token | Detected at inventory, `puk_state=Disabled`, refused at personalisation by default (patch 0025) |
 | Touch-policy jobs reaped by the watchdog while waiting for a finger | Every enrolment on a touch profile fails | `AwaitingUser` is a distinct state with its own, longer deadline |
 
 ## What to do next

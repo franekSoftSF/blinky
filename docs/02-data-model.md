@@ -247,6 +247,14 @@ SecretEnvelope
   aad = 'puk|' || serial     -- binds the ciphertext to one token
 ```
 
+A token may have **no PUK at all**: firmware 5.7 can delete it, and such a token
+reports zero total PUK retries. That is `puk_state = Disabled`, and it means the
+unblock workflow does not exist for that token — a blocked PIN can only be
+resolved by a full PIV reset, which destroys every key. Personalisation refuses
+these tokens unless policy explicitly allows unrecoverable ones. Observed in the
+wild on the first three tokens this project was tested against, so it is not a
+corner case.
+
 The PUK cannot be derived, because unblocking has to work when an operator is
 reading it off a screen to a user on the phone. So it is random per token,
 encrypted under a KEK that lives in the same HSM as the master key, and every

@@ -179,8 +179,19 @@ internal static class Program
 
             var tlv = ParseSimpleTlv(meta);
             var isDefault = tlv.TryGetValue(0x05, out var d) && d.Length > 0 && d[0] == 1;
-            var retries = tlv.TryGetValue(0x06, out var r) && r.Length == 2
-                ? $"{r[1]}/{r[0]}" : "?";
+            var hasRetries = tlv.TryGetValue(0x06, out var r) && r.Length == 2;
+
+            // Firmware 5.7 can delete the PUK outright. Total retries of zero
+            // means there is no PUK to unblock the PIN with, and the only
+            // recovery left is a full PIV reset - which destroys every key.
+            if (name == "PUK" && hasRetries && r![0] == 0)
+            {
+                Console.WriteLine($"  {name,-13} NOT CONFIGURED - deleted or blocked; "
+                                  + "PIN unblock is impossible on this token");
+                continue;
+            }
+
+            var retries = hasRetries ? $"{r![1]}/{r[0]}" : "?";
             Console.WriteLine($"  {name,-13} default={isDefault,-5} retries={retries}");
         }
     }
