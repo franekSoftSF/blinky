@@ -55,7 +55,9 @@ mgmt_key_algorithm    text            -- 'TDES' | 'AES192' | 'AES256'
 mgmt_key_version      int             -- which derivation generation is on the card
 mgmt_key_state        text            -- Default | Diversified | Unknown | Lost
 pin_state             text            -- Default | UserSet | Blocked
-puk_state             text            -- Default | Escrowed | Blocked | Disabled
+puk_state             text            -- Default | Escrowed | Blocked | Disabled | NotApplicable
+bio_state             text            -- NotSupported | Enrolled | NotEnrolled | Blocked
+bio_attempts_left     smallint NULL
 pin_retries_left      smallint
 puk_retries_left      smallint
 last_seen_at          timestamptz
@@ -247,13 +249,22 @@ SecretEnvelope
   aad = 'puk|' || serial     -- binds the ciphertext to one token
 ```
 
-A token may have **no PUK at all**: firmware 5.7 can delete it, and such a token
-reports zero total PUK retries. That is `puk_state = Disabled`, and it means the
-unblock workflow does not exist for that token — a blocked PIN can only be
-resolved by a full PIV reset, which destroys every key. Personalisation refuses
-these tokens unless policy explicitly allows unrecoverable ones. Observed in the
-wild on the first three tokens this project was tested against, so it is not a
-corner case.
+A token may have **no PUK at all**, and there are two different reasons for it
+that must not be treated the same way:
+
+| Situation | State | What Blinky does |
+|---|---|---|
+| **Bio Multi-protocol Edition.** Ships with no PUK; the user verifies with a fingerprint | `NotApplicable` | Accept. This is the product working as designed |
+| **Any other token** whose PUK has been deleted or blocked | `Disabled` | Refuse personalisation unless policy sets `AllowUnrecoverableTokens`. Somebody removed the recovery path and nobody recorded why |
+
+Both mean the same thing operationally — a blocked PIN can only be resolved by a
+full PIV reset, destroying every key on the token — so in both cases the console
+shows the token as unrecoverable and does not offer an unblock action. The
+difference is whether that is a finding or a fact.
+
+Distinguishing them requires asking the card whether it does biometrics
+(`GET METADATA 96`), not guessing from the model. See
+[03 — PIV layer](03-piv-layer.md#biometric-verification--bio-multi-protocol-edition).
 
 The PUK cannot be derived, because unblocking has to work when an operator is
 reading it off a screen to a user on the phone. So it is random per token,

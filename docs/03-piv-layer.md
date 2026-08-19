@@ -167,6 +167,66 @@ CA`, and the checks are:
 If any of that fails, no request reaches the CA. A CMS that signs first and
 verifies later is a CMS that will eventually certify a software key.
 
+## Biometric verification — Bio Multi-protocol Edition
+
+The YubiKey Bio Multi-protocol Edition verifies the user with an on-card
+fingerprint match instead of a PIN. In PIV terms that is on-card comparison,
+addressed as slot `96`, and it is a first-class target for Blinky rather than a
+variant to be handled later.
+
+Observed on firmware 5.7.2, serial 32140892:
+
+```
+GET METADATA 96   →  07 01 01   06 01 03   08 01 00
+                     │          │          └─ temporary PIN not set
+                     │          └─ 3 match attempts remaining
+                     └─ fingerprints enrolled
+
+VERIFY 96 (empty) →  63C3        3 attempts left, none consumed
+```
+
+Every non-Bio token answers the same command with `6A88`. That is the detection:
+**ask the card**, never infer biometrics from the model name printed on the
+plastic or from the USB interface set.
+
+Three consequences, in descending order of how much they change the design.
+
+### It has no PUK, and that is correct
+
+A Bio MPE ships with the PUK deleted. It is not a misconfiguration and it is not
+a token somebody has tampered with — it is the factory state of the product
+line. See [02 — Data model](02-data-model.md#secrets-at-rest) for what that does
+to the escrow model.
+
+### User verification is not a synonym for "collect a PIN"
+
+The agent has to ask the card how the user proves themselves, and the answer is
+one of three:
+
+| Card state | Prompt | Fallback |
+|---|---|---|
+| No biometrics (`6A88`) | PIN | none |
+| Biometrics enrolled, attempts left | fingerprint — the sensor lights up | PIN |
+| Biometrics blocked (`6983` on slot 96) | PIN | none |
+
+So `Agent.Ui` raises one of two different prompts, and `AwaitingUser` in the job
+state machine now covers two distinct waits — "touch the contact" and "present a
+finger". They look the same to a watchdog and completely different to a user, so
+the job step names which one it is.
+
+### Temporary PIN
+
+After a successful match the card can issue a short-lived temporary PIN that
+satisfies subsequent PIV operations in the same session. This is what keeps a
+profile with PIN policy `Always` usable on a Bio without demanding a fingerprint
+for every single operation. Metadata tag `08` reports whether one is currently
+set.
+
+**Unverified.** The probe reads the flag but has not requested a temporary PIN,
+because doing so consumes a match attempt. The exact request encoding is
+confirmed on hardware in patch 0011, and nothing in the design depends on it
+until then.
+
 ## Management key
 
 Two facts that have to be handled together:

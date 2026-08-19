@@ -110,6 +110,7 @@ Polling floor is 60 seconds when the hub is connected, 30 when it is not.
   },
   "steps": [
     { "op": "RequireToken",       "serial": 12345678 },
+    { "op": "VerifyUser",         "method": "auto" },
     { "op": "AuthenticateMgmtKey" },
     { "op": "GenerateKey",        "slot": "9A", "algorithm": "ECCP256",
                                   "pinPolicy": "Once", "touchPolicy": "Cached" },
@@ -131,6 +132,13 @@ executes it, and each step reports independently. Two reasons this beats a fat
 2. Changing the sequence — adding a management-key rotation before generation,
    splitting touch-requiring operations — is a server-side change that reaches
    the whole fleet without shipping a new agent.
+
+`VerifyUser` with `method: "auto"` is resolved by the agent against the card,
+not by the server against a database row: a Bio Multi-protocol token asks for a
+fingerprint, everything else asks for a PIN, and a Bio whose match attempts are
+exhausted falls back to a PIN. The server records which method was actually
+used; it does not decide it. See
+[03 — PIV layer](03-piv-layer.md#biometric-verification--bio-multi-protocol-edition).
 
 The agent refuses any `op` it does not know rather than skipping it, and reports
 `UnsupportedOperation` with its own version so the mismatch is visible in the

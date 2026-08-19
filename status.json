@@ -251,6 +251,16 @@
       "id": "offline-unblock",
       "choice": "Whether desk-side PIN unblock works without the backend",
       "state": "open"
+    },
+    {
+      "id": "bio-mpe",
+      "choice": "YubiKey Bio Multi-protocol is a first-class target; biometrics detected by asking slot 96, never inferred from the model",
+      "state": "locked"
+    },
+    {
+      "id": "tokens-without-puk",
+      "choice": "Bio tokens accepted with puk_state=NotApplicable; non-Bio tokens with a deleted PUK refused unless AllowUnrecoverableTokens",
+      "state": "locked"
     }
   ],
   "openQuestions": [
@@ -330,6 +340,11 @@
       "id": "touch-jobs-reaped",
       "impact": "medium",
       "handling": "AwaitingUser is a distinct state with its own longer deadline"
+    },
+    {
+      "id": "bio-path-single-device",
+      "impact": "medium",
+      "handling": "Patch 0016 reads it, 0027 uses it; the temporary-PIN encoding is marked unverified in doc 03"
     }
   ]
 }

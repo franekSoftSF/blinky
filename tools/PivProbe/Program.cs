@@ -119,6 +119,7 @@ internal static class Program
                 ReadIdentity(card, protocol);
                 ReadPinState(card, protocol);
                 ReadManagementKeyState(card, protocol);
+                ReadBiometricState(card, protocol);
                 ReadSlots(card, protocol);
                 ReadAttestation(card, protocol);
                 Console.WriteLine();
@@ -220,6 +221,49 @@ internal static class Program
         var touch = tlv.TryGetValue(0x02, out var p) && p.Length == 2 && p[1] == 0x03;
 
         Console.WriteLine($"  mgmt key      {alg}   default={isDefault}   touch={touch}");
+    }
+
+    private static void ReadBiometricState(IntPtr card, uint protocol)
+    {
+        // Slot 96 is on-card biometric comparison (SP 800-73-4 OCC). Present
+        // only on the Bio Multi-protocol Edition; everything else answers with
+        // an error, which is the detection.
+        var (meta, sw) = Send(card, protocol, "GET METADATA 96 (biometric)",
+            [0x00, 0xF7, 0x00, 0x96, 0x00]);
+
+        if (sw != 0x9000)
+        {
+            Console.WriteLine($"  biometrics    not supported (SW {sw:X4})");
+            return;
+        }
+
+        // Print the raw TLV as well as the decode: this is a less-travelled
+        // corner of the applet and the bytes are the evidence.
+        Console.WriteLine($"  biometrics    SUPPORTED   raw={Hex(meta)}");
+
+        var tlv = ParseSimpleTlv(meta);
+        foreach (var (tag, value) in tlv.OrderBy(kv => kv.Key))
+        {
+            var label = tag switch
+            {
+                0x06 => "attempts remaining",
+                0x07 => "fingerprints enrolled",
+                0x08 => "temporary PIN set",
+                _ => $"tag {tag:X2}"
+            };
+            var decoded = value.Length == 1 && tag is 0x07 or 0x08
+                ? value[0] == 1 ? "yes" : "no"
+                : value.Length == 1 ? value[0].ToString(CultureInfo.InvariantCulture)
+                : Hex(value);
+            Console.WriteLine($"    {label,-22} {decoded}");
+        }
+
+        var (_, vsw) = Send(card, protocol, "VERIFY 96 (empty, bio attempt probe)",
+            [0x00, 0x20, 0x00, 0x96]);
+        var attempts = (vsw & 0xFFF0) == 0x63C0 ? $"{vsw & 0x0F} match attempts left"
+            : vsw == 0x6983 ? "BLOCKED - falls back to PIN"
+            : $"SW {vsw:X4}";
+        Console.WriteLine($"    attempts   {attempts}");
     }
 
     private static void ReadSlots(IntPtr card, uint protocol)

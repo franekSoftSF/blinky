@@ -38,19 +38,19 @@ design assumes stopped being a claim from a datasheet:
 |---|---|---|---|---|
 | 23673995 | 5.4.3 | **3DES**, default | default, 3/3 | default, 3/3 |
 | 29177301 | 5.7.1 | **AES-192**, default | default, 3/3 | default, 3/3 |
-| 32140892 | 5.7.2 | **AES-192**, default | set, 8/8 | **not configured** |
+| 32140892 | 5.7.2 | **AES-192**, default | set, 8/8 | **none — Bio MPE** |
 
 Two findings worth more than the table:
 
 - The 3DES / AES-192 boundary is exactly where the documentation puts it, on
   two independent 5.7 devices and one 5.4. An agent that assumes either
   algorithm fails on a third of this desk.
-- **A YubiKey can have no PUK at all.** Firmware 5.7 can delete it. Token
-  32140892 reports zero total PUK retries, which means the escrow-and-unblock
-  workflow in patch 0042 is not merely unavailable on it — if that PIN ever
-  blocks, the only recovery is a full PIV reset, destroying every key on the
-  token. Blinky refuses to personalise such a token by default; see the
-  decision below.
+- **One of them is a Bio Multi-protocol Edition, and it has no PUK by design.**
+  Token 32140892 answers `GET METADATA 96` with fingerprints enrolled and three
+  match attempts remaining; the other two answer `6A88`. Its missing PUK is the
+  factory state of that product line, not a misconfiguration — so "refuse
+  tokens without a PUK" as a blanket default would refuse an entire product
+  line. The rule distinguishes the two cases; see the decisions below.
 
 None of the three has anything in a slot, so certificate parsing and
 attestation are still unexercised. That needs a token somebody is willing to
@@ -73,7 +73,8 @@ certificate on the card and are **not** committed — `out/` is ignored.
 | Management key | Per-token, HKDF-derived from an HSM-held master | One token's key opens one token; the database holds no key material |
 | PIN | Never stored, anywhere, in any form | If a workflow appears to need a stored PIN, the workflow is wrong |
 | PUK | Random per token, escrowed AES-256-GCM under an HSM KEK | Unblocking has to work over the phone; disclosure is audited and alertable |
-| Tokens without a PUK | Refused at personalisation unless policy `AllowUnrecoverableTokens` is set | Firmware 5.7 can delete the PUK. Accepting such a token silently means the first blocked PIN destroys a credential with no warning anyone gave |
+| Bio Multi-protocol tokens | First-class target, detected by asking slot `96`, never by model name | Verification is a fingerprint, not a PIN, and the absence of a PUK is by design. Treating it as a broken normal token would reject the product line |
+| Non-Bio tokens without a PUK | Refused at personalisation unless policy `AllowUnrecoverableTokens` is set | Somebody removed the recovery path and nobody recorded why. The first blocked PIN then destroys a credential with no warning anyone gave |
 | Transport | HTTPS REST + SignalR doorbell, no broker | One port, one certificate, one auth model; the doorbell carries no state |
 | Agent shape | LocalSystem service + per-session UI process | Session 0 cannot draw a PIN prompt, and LocalSystem cannot prove who is at the keyboard |
 | Identity | Agent = mTLS, user = Kerberos from the user's own session | No authorisation decision is made on the workstation |
@@ -137,7 +138,8 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | CDP or AIA unreachable from domain controllers | Smart-card logon fails with an error that names nothing useful | Called out in doc 04; verified as part of the Phase 2 gate |
 | Retrying key generation destroys the previous key | Silent orphaning of an issued certificate | Guard inside the agent step, not only in the server's retry policy |
 | Windows minidriver contends for the card | Intermittent, unreproducible APDU failures | Shared connections inside PC/SC transactions; never exclusive |
-| Token arrives with the PUK deleted, so it can never be unblocked | A blocked PIN costs every key on the token | Detected at inventory, `puk_state=Disabled`, refused at personalisation by default (patch 0025) |
+| Token can never be unblocked — no PUK | A blocked PIN costs every key on the token | Detected at inventory. `NotApplicable` on a Bio (accepted, console shows it as unrecoverable); `Disabled` elsewhere (refused by default, patch 0025) |
+| Biometric verification path is exercised only on one device | The Bio flow is the least-travelled corner of the applet | Patch 0016 reads it, 0027 uses it; the temporary-PIN encoding is explicitly marked unverified in doc 03 |
 | Touch-policy jobs reaped by the watchdog while waiting for a finger | Every enrolment on a touch profile fails | `AwaitingUser` is a distinct state with its own, longer deadline |
 
 ## What to do next
