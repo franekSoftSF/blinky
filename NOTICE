@@ -1,0 +1,50 @@
+Blinky
+Copyright 2026 Szymon Frankiewicz
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+---
+
+Blinky is an independent open-source project. It is not affiliated with,
+endorsed by, or supported by Yubico AB. "YubiKey" and related marks are the
+property of their respective owners and are used here descriptively, to
+identify the hardware this software manages.
+
+"PIV" refers to NIST FIPS 201 / SP 800-73. Microsoft, Active Directory, and
+Active Directory Certificate Services are trademarks of Microsoft Corporation
+and are likewise used descriptively.
+
+---
+
+Third-party dependency notes:
+
+NHibernate is licensed under the GNU Lesser General Public License v2.1
+(LGPL-2.1). It is consumed as an ordinary, dynamically linked NuGet package
+and is not modified or statically embedded. Do not publish any Blinky binary
+that references NHibernate with PublishSingleFile, ILMerge, or equivalent
+static bundling, as that would change the linking model this arrangement
+relies on.
+
+This constrains only Blinky.Api and Blinky.Worker, which run in containers and
+are published as ordinary framework-dependent applications. The workstation
+agent (Blinky.Agent.Service, Blinky.Agent.Ui) does not reference NHibernate —
+it speaks to the API over HTTPS — and may therefore be published single-file
+for MSI packaging.
+
+Bouncy Castle (BouncyCastle.Cryptography) is licensed under the MIT licence.
+PCSC-sharp is licensed under the BSD 3-Clause licence. Both are consumed as
+unmodified NuGet packages.
+
+The Yubico PIV attestation root certificate is redistributed for the purpose of
+verifying attestation chains. It is Yubico's certificate, not part of this
+project's licensed work.

@@ -1,0 +1,26 @@
+# Build
+bin/
+obj/
+out/
+*.user
+*.suo
+.vs/
+.idea/
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+
+# Local config and secrets
+.env
+*.pfx
+*.p12
+*.key
+!docs/**/*.key
+certs/
+softhsm/
+
+# Runtime data
+data/
+*.log

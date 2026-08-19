@@ -1,0 +1,147 @@
+{
+  "$comment": "Machine-readable project status. Keep in sync with STATUS.md.",
+  "schema": 1,
+  "project": {
+    "name": "Blinky",
+    "tagline": "Your key blinks. Blinky is why.",
+    "repository": "blinky",
+    "kind": "open-source",
+    "license": "Apache-2.0",
+    "docsLanguage": "en",
+    "runtime": ".NET 10",
+    "platforms": [
+      "linux",
+      "windows"
+    ],
+    "hardware": [
+      "yubikey-5-piv"
+    ]
+  },
+  "status": {
+    "updated": "2026-08-19",
+    "phase": 0,
+    "phaseTitle": "Design",
+    "state": "design",
+    "summary": "Architecture documented end to end. No production code yet. Next milestone is a building solution skeleton, then the PIV read path validated against real hardware."
+  },
+  "phases": [
+    {
+      "id": 0,
+      "title": "Design",
+      "state": "in-progress",
+      "done": "Solution builds, schema script creates the PostgreSQL schema, SchemaValidator reports clean at service start."
+    },
+    {
+      "id": 1,
+      "title": "See the token",
+      "state": "not-started",
+      "done": "Three different YubiKeys - factory, ykman-provisioned, blocked PIN - each report correct state in the database, with no write to any card."
+    },
+    {
+      "id": 2,
+      "title": "Issue something",
+      "state": "not-started",
+      "done": "docker compose up, enrol a factory YubiKey from the console, and log into a Samba4 domain with it. No ADCS involved."
+    },
+    {
+      "id": 3,
+      "title": "ADCS",
+      "state": "not-started",
+      "done": "The same workflow, console and audit trail against Windows AD plus ADCS, differing only in the profile's CA instance."
+    },
+    {
+      "id": 4,
+      "title": "The boring lifecycle",
+      "state": "not-started",
+      "done": "Expiry produces exactly one renewal job; revocation regenerates and publishes the CRL; a blocked PIN is unblocked from an escrowed PUK with an audited disclosure."
+    },
+    {
+      "id": 5,
+      "title": "Console",
+      "state": "not-started",
+      "done": "Every token and credential state is visible and explained; a credential's whole life is reconstructable from the audit view alone."
+    },
+    {
+      "id": 6,
+      "title": "Ship it",
+      "state": "not-started",
+      "done": "A stranger can go from clone to smart-card logon using only the repository."
+    }
+  ],
+  "components": [
+    { "name": "docs", "type": "documentation", "phase": 0, "state": "done" },
+    { "name": "Blinky.Piv", "type": "library", "phase": 1, "state": "not-started" },
+    { "name": "Blinky.Contracts", "type": "library", "phase": 1, "state": "not-started" },
+    { "name": "Blinky.Domain", "type": "library", "phase": 1, "state": "not-started" },
+    { "name": "Blinky.Infrastructure", "type": "library", "phase": 1, "state": "not-started" },
+    { "name": "Blinky.Api", "type": "aspnet-core", "phase": 1, "state": "not-started" },
+    { "name": "Blinky.Worker", "type": "worker-service", "phase": 2, "state": "not-started" },
+    { "name": "Blinky.Pki.BuiltInCa", "type": "feature", "phase": 2, "state": "not-started" },
+    { "name": "Blinky.Pki.Adcs", "type": "feature", "phase": 3, "state": "not-started" },
+    { "name": "Blinky.AdcsConnector", "type": "worker-service", "phase": 3, "state": "not-started" },
+    { "name": "Blinky.Agent.Service", "type": "worker-service", "phase": 1, "state": "not-started" },
+    { "name": "Blinky.Agent.Ui", "type": "wpf", "phase": 1, "state": "not-started" },
+    { "name": "console", "type": "angular", "phase": 5, "state": "not-started" },
+    { "name": "blinky-samba-setup", "type": "cli", "phase": 6, "state": "not-started" }
+  ],
+  "decisions": [
+    { "id": "runtime", "choice": ".NET 10", "state": "locked" },
+    { "id": "token-access", "choice": "PC/SC with raw PIV APDUs; no PKCS#11 module, no CLI wrapper", "state": "locked" },
+    { "id": "token-scope", "choice": "YubiKey 5 PIV only in v1", "state": "locked" },
+    { "id": "ca-backends", "choice": "Built-in CA and ADCS behind one interface, both from the start", "state": "locked" },
+    { "id": "ca-crypto", "choice": ".NET for signing, BouncyCastle only for CMC and PKCS#7", "state": "locked" },
+    { "id": "ca-key-custody", "choice": "PKCS#11 abstraction with file, SoftHSM2 and HSM tiers", "state": "locked" },
+    { "id": "mgmt-key", "choice": "Per-token HKDF derivation from an HSM-held master; no key material in the database", "state": "locked" },
+    { "id": "pin-storage", "choice": "PINs are never stored in any form", "state": "locked" },
+    { "id": "puk-escrow", "choice": "Random per token, AES-256-GCM under an HSM KEK, disclosure audited", "state": "locked" },
+    { "id": "transport", "choice": "HTTPS REST plus a stateless SignalR doorbell; no broker", "state": "locked" },
+    { "id": "agent-shape", "choice": "LocalSystem service plus per-session UI process", "state": "locked" },
+    { "id": "identity", "choice": "Agent proves the machine with mTLS; the user proves themselves with Kerberos from their own session", "state": "locked" },
+    { "id": "store", "choice": "PostgreSQL with NHibernate, SQL schema script, SchemaValidator at startup", "state": "locked" },
+    { "id": "console", "choice": "Angular 22 behind nginx with /api proxied", "state": "locked" },
+    { "id": "license", "choice": "Apache-2.0", "state": "locked" },
+    { "id": "ca-as-container", "choice": "Built-in CA as a library inside api and worker, or its own service", "state": "open" },
+    { "id": "offline-unblock", "choice": "Whether desk-side PIN unblock works without the backend", "state": "open" }
+  ],
+  "openQuestions": [
+    {
+      "id": "ces-enroll-on-behalf-of",
+      "question": "What exact CES authentication and delegation configuration is required for RA-signed enrol-on-behalf-of?",
+      "blocks": [3],
+      "needs": "lab test"
+    },
+    {
+      "id": "ca-container-split",
+      "question": "Should the built-in CA run as its own process so the key material sits behind a process boundary?",
+      "blocks": [2],
+      "needs": "decision at the PKCS#11 tier"
+    },
+    {
+      "id": "offline-unblock",
+      "question": "Should desk-side PIN unblock work offline with a pre-fetched, time-boxed PUK?",
+      "blocks": [4],
+      "needs": "security decision"
+    },
+    {
+      "id": "cli-first",
+      "question": "Ship a CLI-first v1 and defer the Angular console?",
+      "blocks": [5],
+      "needs": "decision if phase 2 runs long"
+    },
+    {
+      "id": "production-hsm",
+      "question": "Which HSM in production, and does it need to hold the master key and the CA key in the same partition?",
+      "blocks": [6],
+      "needs": "site input"
+    }
+  ],
+  "risks": [
+    { "id": "piv-firmware-reality", "impact": "high", "handling": "Hardware test suite from patch 0011; yubico-piv-tool as an independent oracle" },
+    { "id": "mgmt-key-algorithm-split", "impact": "high", "handling": "Read GET METADATA, fall back once, record Unknown rather than guessing" },
+    { "id": "adcs-template-no-sid", "impact": "high", "handling": "Backend registration refuses the combination up front" },
+    { "id": "cdp-unreachable-from-dc", "impact": "medium", "handling": "Verified as part of the phase 2 gate" },
+    { "id": "keygen-retry-destroys-key", "impact": "high", "handling": "Guard inside the agent step, not only in the server retry policy" },
+    { "id": "minidriver-contention", "impact": "medium", "handling": "Shared PC/SC connections inside transactions, never exclusive" },
+    { "id": "touch-jobs-reaped", "impact": "medium", "handling": "AwaitingUser is a distinct state with its own longer deadline" }
+  ]
+}
