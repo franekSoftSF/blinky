@@ -158,7 +158,7 @@
       "name": "Blinky.Agent.Ui",
       "type": "wpf",
       "phase": 1,
-      "state": "not-started"
+      "state": "done-unverified"
     },
     {
       "name": "console",
@@ -528,8 +528,9 @@
       "id": "0018",
       "phase": 1,
       "title": "Agent.Ui, the session 0 split and the named pipe",
-      "state": "deferred",
-      "waitsFor": "0023"
+      "state": "done-unverified",
+      "proof": "The pipe is driven from both ends in tests: a PIN reaches the service, cancelling yields no PIN, nobody listening times out",
+      "gap": "The window itself has only been shown by hand"
     },
     {
       "id": "0019",

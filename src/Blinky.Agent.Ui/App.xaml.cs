@@ -1,13 +1,65 @@
-﻿using System.Configuration;
-using System.Data;
+using System;
+using System.Threading;
 using System.Windows;
+using Blinky.Contracts;
 
 namespace Blinky.Agent.Ui;
 
 /// <summary>
-/// Interaction logic for App.xaml
+/// Runs in the user's session, waiting for the service to ask for something.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Starts with no window on screen. The service in session 0 cannot draw one,
+/// and this process cannot hold the reader — that split is the reason both
+/// exist, and this end of it is deliberately almost empty.
+/// </para>
+/// <para>
+/// <c>--prompt-once</c> shows one prompt and exits, which is how the pipe gets
+/// tested without a service running.
+/// </para>
+/// </remarks>
 public partial class App : Application
 {
-}
+    private readonly CancellationTokenSource stopping = new();
 
+    private MainWindow? window;
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+
+        window = new MainWindow();
+
+        if (Array.Exists(e.Args, a => a == "--prompt-once"))
+        {
+            RunOnce();
+            return;
+        }
+
+        var client = new PromptClient(request => window.ShowPromptAsync(request));
+
+        _ = client.RunAsync(stopping.Token);
+    }
+
+    /// <summary>Shows one PIN prompt locally, prints the outcome, and exits.</summary>
+    private async void RunOnce()
+    {
+        var response = await window!.ShowPromptAsync(
+            PromptRequest.ForPin(29177301, 3, "Self test - nothing is sent anywhere."));
+
+        MessageBox.Show(
+            response.Cancelled
+                ? "Cancelled."
+                : $"A PIN of {response.Pin!.Length} characters was entered and discarded.",
+            "Blinky self test");
+
+        Shutdown();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        stopping.Cancel();
+        base.OnExit(e);
+    }
+}

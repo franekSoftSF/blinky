@@ -1,12 +1,37 @@
-﻿<Window x:Class="Blinky.Agent.Ui.MainWindow"
+<Window x:Class="Blinky.Agent.Ui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:Blinky.Agent.Ui"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="Blinky" Height="260" Width="420"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize" Topmost="True" ShowInTaskbar="True"
+        Visibility="Hidden">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
+        <TextBlock x:Name="TitleText" FontSize="18" FontWeight="SemiBold"
+                   Text="Blinky" Margin="0,0,0,8" />
+
+        <TextBlock x:Name="MessageText" Grid.Row="1" TextWrapping="Wrap"
+                   Text="" Margin="0,0,0,16" />
+
+        <PasswordBox x:Name="PinBox" Grid.Row="2" FontSize="16" Padding="6"
+                     MaxLength="8" KeyDown="PinBox_KeyDown" />
+
+        <TextBlock x:Name="AttemptsText" Grid.Row="3" Margin="0,8,0,0"
+                   Foreground="#B00020" Text="" />
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom">
+            <Button x:Name="CancelButton" Content="Cancel" Width="90" Margin="0,0,8,0"
+                    Click="Cancel_Click" IsCancel="True" />
+            <Button x:Name="OkButton" Content="Unlock" Width="90"
+                    Click="Ok_Click" IsDefault="True" />
+        </StackPanel>
     </Grid>
 </Window>
