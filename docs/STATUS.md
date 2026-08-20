@@ -341,6 +341,19 @@ phase gate and is worth starting in parallel.
 Not on this list, deliberately: 0017 is blocked for want of a Linux reader, and
 the temporary-PIN half of 0016 waits for 0027.
 
+### Specified, not built
+
+The agent UI's second half is written down in [10](10-agent-ui.md) and numbered
+0046–0049: a tray that lists what is on the token beside what the backend
+holds, PIN set and change with a complexity policy, unblock with a
+just-in-time PUK, and user-requested renewal.
+
+The reason it is a document before it is code: 0018's pipe carries *answers* —
+the service asks, the person replies. All of this carries *requests*, and the
+`INTERACTIVE` ACL stops guarding "who may answer a prompt" and starts guarding
+"who may begin an operation on this token". Same ACL, more weight. Worth
+deciding on purpose.
+
 ### Left in an odd state, on purpose
 
 Token 29177301 still holds the certificate from the run of 20 August 2026,
