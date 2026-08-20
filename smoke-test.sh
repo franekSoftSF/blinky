@@ -80,7 +80,11 @@ echo
 echo "agent enrolment"
 
 enrol() {
-    dotnet run --project tools/AgentEnrol --no-build -- \
+    # No --no-build. On a machine where the repository has just been cloned
+    # nothing is built yet, and --no-build fails silently into an empty result -
+    # which this check then reports as an enrolment that did not work, on a
+    # backend that is perfectly healthy. Found on the lab's own CMS host.
+    dotnet run --project tools/AgentEnrol -- \
         --backend "https://${BLINKY_HOST:-localhost}:${AGENT_PORT:-9443}" \
         --hostname smoke-test --domain blinky.invalid \
         --token "${BOOTSTRAP_TOKEN:-change-me-before-anyone-else-can-reach-this}" \

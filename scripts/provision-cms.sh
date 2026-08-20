@@ -104,10 +104,19 @@ EOF
     echo "written, root only"
 fi
 
+# Reset, and this line is load-bearing. Left at 077 it follows into the
+# certificate generation below, and nginx in the edge container does not run as
+# root: it fails to start with "cannot load certificate ... Permission denied",
+# every port stays closed, and twelve of thirteen smoke checks return 000.
+# The same leak made /etc/krb5.conf root-only on the domain controller.
+umask 022
+
 say "4/6  certificates for $FQDN and $ADDRESS"
 
 # The IP is in there because until the DC is serving the realm, the name does
 # not resolve and the address is the only way in.
+# Development certificates: the edge container reads these, so they are
+# readable. The CA's own key is a different matter and new-ca.sh keeps it so.
 bash scripts/dev-certs.sh --force \
     --host "$FQDN" \
     --host "$ADDRESS" \

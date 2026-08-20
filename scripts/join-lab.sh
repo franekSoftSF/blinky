@@ -86,6 +86,19 @@ say "4/5  join $REALM"
 
 if realm list 2>/dev/null | grep -q "$realm_lower"; then
     echo "already joined"
+elif [[ ! -t 0 ]]; then
+    # Piped in, so this can run unattended:
+    #
+    #     ssh dc 'sudo sed -n "s/^password *//p" /root/blinky-lab-dc.txt' |
+    #         ssh member 'sudo bash join-lab.sh 172.16.1.10'
+    #
+    # The value goes from one root-only file into one command and is never
+    # echoed, never stored here, and never reaches a scrollback.
+    if ! realm join --user=Administrator --unattended "$realm_lower"; then
+        echo "The unattended join was refused. Run it by hand:" >&2
+        echo "    sudo realm join --user=Administrator $realm_lower" >&2
+        exit 5
+    fi
 else
     echo "Administrator's password for $REALM (from /root/blinky-lab-dc.txt on the DC):"
     realm join --user=Administrator "$realm_lower"
