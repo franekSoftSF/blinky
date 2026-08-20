@@ -268,6 +268,22 @@ public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> 
 
         session.Delete(newest);
 
+        // With nothing escrowed, this server holds no PUK for the token - and
+        // saying "Set" would then be a claim about a value nobody has. Unknown
+        // is the truth until a sweep asks the card, which happens on the next
+        // poll and settles it either way.
+        //
+        // Found by using it: a rollback left the state saying Set, and the next
+        // unblock was refused with "a PUK that Blinky did not set", on a token
+        // sitting at the factory value the whole time.
+        if (!session.Query<SecretEnvelope>()
+                .Any(e => e.Token.Id == token.Id && e.Kind == SecretKind.Puk))
+        {
+            token.PukState = CredentialSecretState.Unknown;
+            token.UpdatedAt = DateTime.UtcNow;
+            session.Update(token);
+        }
+
         session.Save(new AuditEvent
         {
             OccurredAt = DateTime.UtcNow,
