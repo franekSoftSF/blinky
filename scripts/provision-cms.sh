@@ -15,8 +15,18 @@
 set -euo pipefail
 
 REPO="${REPO:-https://github.com/franekSoftSF/blinky.git}"
-TARGET="${TARGET:-/opt/blinky}"
 REALM="${REALM:-blinky.lab}"
+
+# A checkout the person who runs this already has wins over a fresh one in
+# /opt. They can pull it afterwards without sudo, which is the difference
+# between updating the lab and asking somebody to update the lab.
+if [[ -z "${TARGET:-}" ]]; then
+    if [[ -n "${SUDO_USER:-}" && -d "/home/$SUDO_USER/blinky/.git" ]]; then
+        TARGET="/home/$SUDO_USER/blinky"
+    else
+        TARGET="/opt/blinky"
+    fi
+fi
 
 # Every name and address anything will use to reach this machine has to be in
 # the certificate. A name missing here surfaces much later as an agent that

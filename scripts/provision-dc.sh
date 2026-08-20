@@ -17,11 +17,28 @@ set -euo pipefail
 REALM="${REALM:-BLINKY.LAB}"
 DOMAIN="${DOMAIN:-BLINKY}"
 
-# Where the DC forwards anything that is not the realm. Whatever the machine is
-# using now, before this script points it at itself.
-FORWARDER="${FORWARDER:-$(resolvectl status 2>/dev/null |
-    awk '/Current DNS Server:/ {print $4; exit}')}"
-FORWARDER="${FORWARDER:-1.1.1.1}"
+# Where the DC forwards anything that is not the realm.
+#
+# A loopback address is refused, and that is not caution. On a second run this
+# reads the configuration the first run left behind: /etc/resolv.conf by then
+# points at systemd-resolved's stub on 127.0.0.53, which this same script
+# switched off to give Samba port 53. Samba then forwards to an address where
+# nothing is listening, the DC resolves its own realm perfectly and nothing
+# else, and apt stops working on the machine that is meant to be rebuilt.
+#
+# Seen doing exactly that on the second provision of BY-DC01.
+detect_forwarder() {
+    local candidate
+    candidate="$(resolvectl status 2>/dev/null |
+        awk '/Current DNS Server:/ {print $4; exit}')"
+
+    case "$candidate" in
+        127.*|::1|"") return 1 ;;
+        *) echo "$candidate" ;;
+    esac
+}
+
+FORWARDER="${FORWARDER:-$(detect_forwarder || echo 1.1.1.1)}"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
