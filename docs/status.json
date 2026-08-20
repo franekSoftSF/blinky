@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable project status. Keep in sync with STATUS.md. States: done | done-unverified | open | blocked | deferred.",
+  "$comment": "Machine-readable project status. Keep in sync with STATUS.md. States: done | done-unverified | partly-done | open | blocked | deferred. Owners: codex writes the console, cloud-ai writes the backend, the agent and the lab, both means it needs one of each.",
   "schema": 1,
   "project": {
     "name": "Blinky",
@@ -426,7 +426,8 @@
     "done-unverified": "Written and unit-tested; one specific claim has no evidence yet, listed in notVerified",
     "open": "Not started",
     "blocked": "Cannot be done in this environment, with a reason",
-    "deferred": "Deliberately postponed until the patch it waits for"
+    "deferred": "Deliberately postponed until the patch it waits for",
+    "partly-done": "Some of the definition of done is met and the rest is named"
   },
   "patches": [
     {
@@ -434,6 +435,7 @@
       "phase": 0,
       "title": "Read-only hardware spike, tools/PivProbe",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Ran against five cards; findings in docs/08-hardware-notes.md"
     },
     {
@@ -441,6 +443,7 @@
       "phase": 0,
       "title": "Architecture and design documents",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Nine documents"
     },
     {
@@ -448,6 +451,7 @@
       "phase": 0,
       "title": "Solution skeleton, central packages, CI",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "CI green on windows-latest"
     },
     {
@@ -455,14 +459,16 @@
       "phase": 0,
       "title": "Compose stack and the edge (nginx + ModSecurity + CRS)",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "13 smoke checks"
     },
     {
       "id": "0004",
       "phase": 0,
       "title": "The stack runs on a machine that is not localhost",
-      "state": "done-unverified",
-      "proof": "Certificates carry lab hostnames, the agent pins a CA, BLINKY_HOST points the checks elsewhere; 13 smoke checks",
+      "state": "done",
+      "owner": "cloud-ai",
+      "proof": "smoke-test.sh runs green against the CMS host at 172.16.1.11, not localhost: 13 of 13.",
       "gap": "Verified against a one-machine stack; the lab it is for does not exist yet"
     },
     {
@@ -470,6 +476,7 @@
       "phase": 1,
       "title": "Blinky.Piv transport, chaining, error map",
       "state": "done-unverified",
+      "owner": "cloud-ai",
       "proof": "Replay of a real capture plus hardware via the probe",
       "gap": "6Cxx and outbound chaining have never run on a card"
     },
@@ -478,6 +485,7 @@
       "phase": 1,
       "title": "PIV read path",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Four tokens read correctly; 61xx chaining exercised by a real certificate"
     },
     {
@@ -485,6 +493,7 @@
       "phase": 1,
       "title": "Attestation verified to a pinned Yubico root",
       "state": "done-unverified",
+      "owner": "cloud-ai",
       "proof": "A genuine token verifies on hardware",
       "gap": "Every rejection path is synthetic"
     },
@@ -493,6 +502,7 @@
       "phase": 1,
       "title": "Domain, mappings, generated schema, SchemaValidator",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Clean validation in both containers; jsonb round trip"
     },
     {
@@ -500,6 +510,7 @@
       "phase": 1,
       "title": "Agent enrolment over mTLS, agent CA, heartbeat",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Enrolled twice, one row, certificate used"
     },
     {
@@ -507,6 +518,7 @@
       "phase": 1,
       "title": "Agent service and the inventory job",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Four tokens in the database within one poll"
     },
     {
@@ -514,6 +526,7 @@
       "phase": 1,
       "title": "Bio Multi-protocol",
       "state": "done-unverified",
+      "owner": "cloud-ai",
       "proof": "State reads correctly on a real Bio",
       "gap": "The temporary-PIN encoding is unconfirmed; asking consumes a match attempt, and nothing needs it until 0027"
     },
@@ -522,6 +535,7 @@
       "phase": 1,
       "title": "pcsc-lite interop so the agent runs on Linux",
       "state": "blocked",
+      "owner": "cloud-ai",
       "gap": "No Linux machine with a reader here; untested marshalling would sit under everything else"
     },
     {
@@ -529,6 +543,7 @@
       "phase": 1,
       "title": "Agent.Ui, the session 0 split and the named pipe",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Pipe driven from both ends in tests; the window run and typed into - a PIN accepted, range-checked and discarded"
     },
     {
@@ -536,6 +551,7 @@
       "phase": 1,
       "title": "Cards that are not YubiKeys are recognised, not ignored",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "An HID Crescendo and a C4000 named and skipped, not dropped"
     },
     {
@@ -543,6 +559,7 @@
       "phase": 2,
       "title": "ICertificateAuthority, CaCapabilities, profiles",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Both topologies issue through one interface; capabilities describe the difference"
     },
     {
@@ -550,6 +567,7 @@
       "phase": 2,
       "title": "Built-in CA: generation script, key tiers",
       "state": "done-unverified",
+      "owner": "cloud-ai",
       "proof": "scripts/new-ca.sh builds both shapes and the chains verify",
       "gap": "The SoftHSM key tier is not written - only file, which refuses without an explicit opt-in"
     },
@@ -558,6 +576,7 @@
       "phase": 2,
       "title": "Certificate profiles, logon extensions, SID extension",
       "state": "done-unverified",
+      "owner": "cloud-ai",
       "proof": "EKUs, UPN SAN and the SID extension are issued and asserted",
       "gap": "The profile model lives in code rather than in the database"
     },
@@ -566,6 +585,7 @@
       "phase": 2,
       "title": "Key generation, on-card CSR signing, attestation-gated submission",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Proved on two tokens: mutual management-key authentication with AES-192 and 3DES, key generated on card, attestation verified, card signed its own request"
     },
     {
@@ -573,6 +593,7 @@
       "phase": 2,
       "title": "Certificate write-back, Issued to Installed",
       "state": "done-unverified",
+      "owner": "cloud-ai",
       "proof": "1019 bytes written and read back identical, which also exercised outbound chaining",
       "gap": "The certificate does not reach the Windows certificate store on this machine: HID ActivClient owns the minidriver binding"
     },
@@ -580,13 +601,15 @@
       "id": "0025",
       "phase": 2,
       "title": "Personalisation: management key, PUK escrow, PIN policy",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0026",
       "phase": 2,
       "title": "Job engine: leases, watchdog, AwaitingUser",
       "state": "done-unverified",
+      "owner": "cloud-ai",
       "proof": "Operator creates a job, agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog",
       "gap": "AwaitingUser has its own longer lease but nothing raises it until 0018"
     },
@@ -594,134 +617,162 @@
       "id": "0027",
       "phase": 2,
       "title": "Biometric user verification during enrolment",
-      "state": "open"
+      "state": "done",
+      "owner": "cloud-ai",
+      "proof": "A fingerprint replaced the PIN on a Bio 5.7.2, claim to certificate in five seconds. MatchOnce is chosen at key generation - a match will not satisfy a key generated with Once."
     },
     {
       "id": "0028",
       "phase": 2,
       "title": "Built-in CA topology: single or two-tier",
       "state": "done",
+      "owner": "cloud-ai",
       "proof": "Chain validates in both topologies; pathlen asserted so the reversal cannot return"
     },
     {
       "id": "0030",
       "phase": 3,
       "title": "AdcsCertificateAuthority and CMC with an EA signature",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0031",
       "phase": 3,
       "title": "CES/CEP transport",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0032",
       "phase": 3,
       "title": "Blinky.AdcsConnector over DCOM",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0033",
       "phase": 3,
       "title": "Backend registration checks",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0034",
       "phase": 3,
       "title": "Revocation through ADCS",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0040",
       "phase": 4,
       "title": "Expiry scanner and scheduled renewal",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0041",
       "phase": 4,
       "title": "Revocation, CRL regeneration and publication",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0042",
       "phase": 4,
       "title": "PIN unblock via escrowed PUK, with audit",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0043",
       "phase": 4,
       "title": "Lost, stolen, terminate, retire",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0044",
       "phase": 4,
       "title": "Stale-slot detection and reconciliation",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0045",
       "phase": 4,
       "title": "Retired-slot rotation for 9D",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0050",
       "phase": 5,
       "title": "Angular shell, nginx proxy, auth",
-      "state": "open"
+      "state": "done",
+      "owner": "codex",
+      "proof": "The console is built into an image and served by the edge under the same origin as the API: / to the console, /api to the API, deep links answered with index.html. Running in compose and on the CMS host."
     },
     {
       "id": "0051",
       "phase": 5,
       "title": "Token and cardholder inventory",
-      "state": "open"
+      "state": "partly-done",
+      "owner": "codex",
+      "proof": "The console lists tokens and their state. The MODEL column shows the form factor because that is all the API sends, and cardholders have no endpoint at all."
     },
     {
       "id": "0052",
       "phase": 5,
       "title": "Lifecycle actions from the console",
-      "state": "open"
+      "state": "partly-done",
+      "owner": "both",
+      "proof": "Recycle creates a job from the console. Enrolment cannot: profiles and cardholders are invisible to the API, and a failed job cannot say why. Endpoint shapes in doc 11."
     },
     {
       "id": "0053",
       "phase": 5,
       "title": "RBAC",
-      "state": "open"
+      "state": "open",
+      "owner": "codex"
     },
     {
       "id": "0054",
       "phase": 5,
       "title": "Audit browser",
-      "state": "open"
+      "state": "open",
+      "owner": "codex"
     },
     {
       "id": "0060",
       "phase": 6,
       "title": "Agent MSI and upgrade path",
-      "state": "open"
+      "state": "done",
+      "owner": "cloud-ai",
+      "proof": "blinky-agent MSI installs a service, a tray and its configuration, and upgraded itself in place seven times in one evening. x64, because an x86 package puts the configuration in WOW6432Node where the 64-bit agent does not look."
     },
     {
       "id": "0061",
       "phase": 6,
       "title": "blinky-samba-setup",
-      "state": "open"
+      "state": "done",
+      "owner": "cloud-ai",
+      "proof": "The chain is published into the Samba4 directory - root in Certification Authorities, issuing CA in NTAuthCertificates - and the KDC holds a PKINIT certificate. Both verified on BY-DC01."
     },
     {
       "id": "0062",
       "phase": 6,
       "title": "Production compose profile",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     },
     {
       "id": "0063",
       "phase": 6,
       "title": "Documentation pass and screenshots",
-      "state": "open"
+      "state": "open",
+      "owner": "cloud-ai"
     }
   ],
   "notVerified": [

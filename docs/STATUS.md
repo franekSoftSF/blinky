@@ -214,12 +214,29 @@ Three things in that table are the design working rather than data:
 
 Full context in [07-roadmap.md § Open questions](07-roadmap.md#open-questions).
 
+## Who owns what
+
+Two agents work on this repository and the statuses are written so it is
+obvious which of them a row is waiting on.
+
+| Owner | Writes | Where |
+|---|---|---|
+| **Codex** | The console — the Angular application and everything a browser renders | `frontend/` |
+| **Cloud.AI** | The backend, the agent, the PIV layer, the CA, the installer and the lab | `src/`, `scripts/`, `installer/` |
+| **both** | A patch that needs one of each, and cannot be finished by either alone | |
+
+A **both** row is the one worth watching: it is where work stalls without
+anybody being blocked in their own half. 0052 is the live example — the page
+cannot list profiles the API does not expose, and the API half will not be
+written by whoever is writing the page.
+
 ## What each state means
 
 | State | Meaning |
 |---|---|
 | **done** | Written, tested, and proved against hardware or a running stack |
 | **done, unverified** | Written and unit-tested, but one specific claim has no evidence yet. The gap is named in *Implemented but not verified* below |
+| **partly done** | Some of the definition of done is met and the rest is named in the row |
 | **open** | Not started |
 | **blocked** | Cannot be done here, with the reason |
 | **deferred** | Deliberately postponed, with the patch it waits for |
@@ -232,50 +249,72 @@ write it.
 
 ### Phase 0 — Design — **complete**
 
-| # | Patch | State | Proof |
-|---|---|---|---|
-| 0000 | Read-only hardware spike, `tools/PivProbe` | **done** | Ran against five cards; findings in [08](08-hardware-notes.md) |
-| 0001 | Architecture and design documents | **done** | Nine documents |
-| 0002 | Solution skeleton, central packages, CI | **done** | CI green on windows-latest |
-| 0003 | Compose stack and the edge (nginx + ModSecurity + CRS) | **done** | 13 smoke checks |
-| 0004 | The stack runs on a machine that is not localhost | **done, unverified** | Certificates carry lab hostnames, the agent pins a CA, `BLINKY_HOST` points the checks elsewhere. Verified against a one-machine stack; the lab it is for does not exist yet |
+| # | Owner | Patch | State | Proof |
+|---|---|---|---|---|
+| 0000 | Cloud.AI | Read-only hardware spike, `tools/PivProbe` | **done** | Ran against five cards; findings in [08](08-hardware-notes.md) |
+| 0001 | Cloud.AI | Architecture and design documents | **done** | Nine documents |
+| 0002 | Cloud.AI | Solution skeleton, central packages, CI | **done** | CI green on windows-latest |
+| 0003 | Cloud.AI | Compose stack and the edge (nginx + ModSecurity + CRS) | **done** | 13 smoke checks |
+| 0004 | Cloud.AI | The stack runs on a machine that is not localhost | **done, unverified** | Certificates carry lab hostnames, the agent pins a CA, `BLINKY_HOST` points the checks elsewhere. Verified against a one-machine stack; the lab it is for does not exist yet |
 
 ### Phase 1 — See the token — **gate met**
 
-| # | Patch | State | Proof |
-|---|---|---|---|
-| 0010 | `Blinky.Piv`: transport, transactions, chaining, error map | **done, unverified** | Replay of a real capture plus hardware through the probe. `6Cxx` and outbound chaining have never run on a card |
-| 0011 | PIV read path | **done** | Four tokens read correctly; `61xx` chaining exercised by a real certificate |
-| 0012 | Attestation, verified to a pinned Yubico root | **done, unverified** | A genuine token verifies on hardware. Every rejection path is synthetic |
-| 0013 | Domain, NHibernate mappings, generated schema, `SchemaValidator` | **done** | Clean validation in both containers; `jsonb` round trip against PostgreSQL |
-| 0014 | Agent enrolment over mTLS, agent CA, heartbeat | **done** | Enrolled twice, one row, certificate used |
-| 0015 | Agent service and the inventory job | **done** | Four tokens in the database within one poll |
-| 0016 | Bio Multi-protocol | **done, unverified** | State reads correctly on a real Bio. The temporary-PIN encoding is unconfirmed — asking for one consumes a match attempt, and nothing needs it until 0027 |
-| 0017 | pcsc-lite interop, so the agent runs on Linux | **blocked** | No Linux machine with a reader here. Writing marshalling nothing can test would put untested code under everything else |
-| 0018 | `Agent.Ui`, the session 0 split and the named pipe | **done** | The pipe is driven from both ends in tests, and the window was run and typed into: a seven-character PIN accepted, range-checked and discarded. Two bugs found by running it that no test could have caught |
-| 0019 | Cards that are not YubiKeys are recognised, not ignored | **done** | An HID Crescendo and a C4000 named and skipped, not dropped |
+| # | Owner | Patch | State | Proof |
+|---|---|---|---|---|
+| 0010 | Cloud.AI | `Blinky.Piv`: transport, transactions, chaining, error map | **done, unverified** | Replay of a real capture plus hardware through the probe. `6Cxx` and outbound chaining have never run on a card |
+| 0011 | Cloud.AI | PIV read path | **done** | Four tokens read correctly; `61xx` chaining exercised by a real certificate |
+| 0012 | Cloud.AI | Attestation, verified to a pinned Yubico root | **done, unverified** | A genuine token verifies on hardware. Every rejection path is synthetic |
+| 0013 | Cloud.AI | Domain, NHibernate mappings, generated schema, `SchemaValidator` | **done** | Clean validation in both containers; `jsonb` round trip against PostgreSQL |
+| 0014 | Cloud.AI | Agent enrolment over mTLS, agent CA, heartbeat | **done** | Enrolled twice, one row, certificate used |
+| 0015 | Cloud.AI | Agent service and the inventory job | **done** | Four tokens in the database within one poll |
+| 0016 | Cloud.AI | Bio Multi-protocol | **done, unverified** | State reads correctly on a real Bio. The temporary-PIN encoding is unconfirmed — asking for one consumes a match attempt, and nothing needs it until 0027 |
+| 0017 | Cloud.AI | pcsc-lite interop, so the agent runs on Linux | **blocked** | No Linux machine with a reader here. Writing marshalling nothing can test would put untested code under everything else |
+| 0018 | Cloud.AI | `Agent.Ui`, the session 0 split and the named pipe | **done** | The pipe is driven from both ends in tests, and the window was run and typed into: a seven-character PIN accepted, range-checked and discarded. Two bugs found by running it that no test could have caught |
+| 0019 | Cloud.AI | Cards that are not YubiKeys are recognised, not ignored | **done** | An HID Crescendo and a C4000 named and skipped, not dropped |
 
 ### Phase 2 — Issue something — **in progress**
 
-| # | Patch | State | Proof |
-|---|---|---|---|
-| 0020 | `ICertificateAuthority`, `CaCapabilities`, profiles | **done** | Both topologies issue through one interface; capabilities describe the difference |
-| 0021 | Built-in CA: generation script, key tiers | **done, unverified** | `scripts/new-ca.sh` builds both shapes and the chains verify. The SoftHSM key tier is not written — only `file`, and it refuses without an explicit opt-in |
-| 0028 | Built-in CA topology: single or two-tier | **done** | Chain validates in both; `pathlen` asserted so the reversal cannot return |
-| 0022 | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | EKUs, UPN SAN and the SID extension are issued and asserted, and `smartcard-logon` refuses to issue without a resolved SID — proved by a 422 on the first live enrolment. On 2026-08-21 the profile issued for real against a directory: `CN=Admin`, UPN `Admin@blinky.lab`, SID read from `BLINKY.LAB`, certificate on the card and visible in Yubico Authenticator. A `client-auth` profile remains for use before a directory does. The profile model still lives in code rather than in the database, and is invisible to the console — see [11](11-console-enrolment.md) |
-| 0023 | Key generation, on-card CSR signing, attestation-gated submission | **done** | Proved on two tokens: management key authenticated mutually (AES-192 and 3DES), key generated, attestation verified, card signed its own request |
-| 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **done** | Written, read back, thumbprint compared, `Credential` in `Installed` and the slot in `Provisioned` — end to end through the job engine, twice. The certificate still does **not** reach the Windows store on this machine: ActivClient owns the minidriver binding |
-| 0025 | Personalisation: management key, PUK escrow, PIN policy | **open** |
-| 0026 | Job engine: leases, watchdog, `AwaitingUser` | **done** | An operator creates a job, the agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog. `AwaitingUser` was watched live on 2026-08-21 — `Pending` → `Running` → `AwaitingUser` while a person typed a PIN, then `Succeeded` — which is what the row above was waiting for. The idempotency key is what stops a repeat, and a job that failed is only retried by naming a new `reason`: correct, and undiscoverable from the outside, since re-posting silently returns the dead job |
-| 0027 | Biometric user verification during enrolment | **done** | A fingerprint replaces the PIN when the card can do it, with the PIN as fallback. Proved on a Bio 5.7.2: claim to certificate in five seconds, no PIN typed. The finding that made it work — `MatchOnce` is chosen at key generation, and a match will not satisfy a key generated with `Once` — is in [03](03-piv-layer.md) |
-| 0018 | Agent UI: PIN and touch prompts across the session boundary | **done** | A PIN typed in the user's session reached the service over the named pipe and unlocked the card. The pipe is granted to `INTERACTIVE` and `LocalSystem` and to nothing else |
-| 0029 | Reconcile credentials with what the sweep actually finds | **open** | A token reset outside Blinky leaves `Credential` rows reading `Installed` for certificates that no longer exist. The sweep corrects the *slot* and says nothing about the credential — found by resetting a token after two successful issuances |
+| # | Owner | Patch | State | Proof |
+|---|---|---|---|---|
+| 0020 | Cloud.AI | `ICertificateAuthority`, `CaCapabilities`, profiles | **done** | Both topologies issue through one interface; capabilities describe the difference |
+| 0021 | Cloud.AI | Built-in CA: generation script, key tiers | **done, unverified** | `scripts/new-ca.sh` builds both shapes and the chains verify. The SoftHSM key tier is not written — only `file`, and it refuses without an explicit opt-in |
+| 0028 | Cloud.AI | Built-in CA topology: single or two-tier | **done** | Chain validates in both; `pathlen` asserted so the reversal cannot return |
+| 0022 | Cloud.AI | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | EKUs, UPN SAN and the SID extension are issued and asserted, and `smartcard-logon` refuses to issue without a resolved SID — proved by a 422 on the first live enrolment. On 2026-08-21 the profile issued for real against a directory: `CN=Admin`, UPN `Admin@blinky.lab`, SID read from `BLINKY.LAB`, certificate on the card and visible in Yubico Authenticator. A `client-auth` profile remains for use before a directory does. The profile model still lives in code rather than in the database, and is invisible to the console — see [11](11-console-enrolment.md) |
+| 0023 | Cloud.AI | Key generation, on-card CSR signing, attestation-gated submission | **done** | Proved on two tokens: management key authenticated mutually (AES-192 and 3DES), key generated, attestation verified, card signed its own request |
+| 0024 | Cloud.AI | Certificate write-back, `Issued`→`Installed`, store refresh | **done** | Written, read back, thumbprint compared, `Credential` in `Installed` and the slot in `Provisioned` — end to end through the job engine, twice. The certificate still does **not** reach the Windows store on this machine: ActivClient owns the minidriver binding |
+| 0025 | Cloud.AI | Personalisation: management key, PUK escrow, PIN policy | **open** | Waiting on a decision about the management-key master, not on work. Every enrolment so far has authenticated with the factory key |
+| 0026 | Cloud.AI | Job engine: leases, watchdog, `AwaitingUser` | **done** | An operator creates a job, the agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog. `AwaitingUser` was watched live on 2026-08-21 — `Pending` → `Running` → `AwaitingUser` while a person typed a PIN, then `Succeeded` — which is what the row above was waiting for. The idempotency key is what stops a repeat, and a job that failed is only retried by naming a new `reason`: correct, and undiscoverable from the outside, since re-posting silently returns the dead job |
+| 0027 | Cloud.AI | Biometric user verification during enrolment | **done** | A fingerprint replaces the PIN when the card can do it, with the PIN as fallback. Proved on a Bio 5.7.2: claim to certificate in five seconds, no PIN typed. The finding that made it work — `MatchOnce` is chosen at key generation, and a match will not satisfy a key generated with `Once` — is in [03](03-piv-layer.md) |
+| 0018 | Cloud.AI | Agent UI: PIN and touch prompts across the session boundary | **done** | A PIN typed in the user's session reached the service over the named pipe and unlocked the card. The pipe is granted to `INTERACTIVE` and `LocalSystem` and to nothing else |
+| 0029 | Cloud.AI | Reconcile credentials with what the sweep actually finds | **open** | A token reset outside Blinky leaves `Credential` rows reading `Installed` for certificates that no longer exist. The sweep corrects the *slot* and says nothing about the credential — found by resetting a token after two successful issuances |
 
-### Phases 3 to 6 — **open**
+### Phase 5 — Console — **in progress**
 
-ADCS (0030–0034), the lifecycle (0040–0045), the console (0050–0054) and
-shipping (0060–0063). None started; definitions of done in
-[07 — Roadmap](07-roadmap.md).
+| # | Owner | Patch | State | Proof |
+|---|---|---|---|---|
+| 0050 | Codex | Angular shell, nginx proxy, auth | **done** | Built into an image and served by the edge on the same origin as the API — `/` to the console, `/api` to the API, deep links answered with `index.html`. Running in compose and on the CMS host |
+| 0051 | Codex | Token and cardholder inventory | **partly done** | Tokens and their state are listed. The `MODEL` column shows the form factor because that is all the API sends, and cardholders have no endpoint at all |
+| 0052 | both | Lifecycle actions from the console | **partly done** | Recycle creates a job. Enrolment cannot: profiles and cardholders are invisible to the API and a failed job cannot say why. The API half is Cloud.AI's and is specified with endpoint shapes in [11](11-console-enrolment.md); the page is Codex's and cannot be finished before it |
+| 0053 | Codex | RBAC | **open** | |
+| 0054 | Codex | Audit browser | **open** | |
+
+### Phase 6 — Ship it — **in progress**
+
+| # | Owner | Patch | State | Proof |
+|---|---|---|---|---|
+| 0060 | Cloud.AI | Agent MSI and upgrade path | **done** | Installs a service, a tray and its configuration, and upgraded itself in place seven times in one evening. Built `x64`: an `x86` package puts the configuration in `WOW6432Node`, where the 64-bit agent does not look, and the install reports success while the service says it has no bootstrap token |
+| 0061 | Cloud.AI | `blinky-samba-setup` | **done** | The chain is published into the Samba4 directory — root in Certification Authorities, issuing CA in `NTAuthCertificates` — and the KDC holds a PKINIT certificate. Both verified on BY-DC01 |
+| 0062 | Cloud.AI | Production compose profile | **open** | |
+| 0063 | Cloud.AI | Documentation pass and screenshots | **open** | |
+
+### Phases 3 and 4 — **open**
+
+ADCS (0030–0034) and the lifecycle (0040–0045), all Cloud.AI. None started;
+definitions of done in [07 — Roadmap](07-roadmap.md). Two of them have already
+been asked for by reality rather than by the plan: 0044, because an interrupted
+enrolment left a key in a slot that nothing below firmware 5.7 can clear, and
+0041, because a credential issued to a card that never received it is waiting
+to be revoked.
 
 ## Implemented but not verified
 
@@ -341,30 +380,34 @@ exercised against the thing it is really for.
 
 Ordered, each item small enough to finish in one sitting.
 
-1. **Log in with the card.** The certificate is on a token, the domain exists,
+1. **Log in with the card.** *(Cloud.AI, and mostly a person with a keyboard.)* The certificate is on a token, the domain exists,
    and nobody has tried it. This is the Phase 2 gate and everything else here
    is smaller. If Windows says no certificate was found, the two things to look
    at are `certutil -viewstore -enterprise Root` and the same for `NTAuth` on
    the client — the chain is published in the directory and a domain member
    still has to pull it.
-2. **Revoke the orphaned credential.** The attempt that failed at the last step
+2. **Revoke the orphaned credential.** *(Cloud.AI.)* The attempt that failed at the last step
    left a `Credential` row reading `Issued` for a certificate that reached no
    card. One slot now has two credentials and one of them exists nowhere. This
    is 0029's problem arriving early, by a route 0029 does not cover: not a card
    reset behind Blinky's back, but Blinky's own job dying between issuing and
    writing.
-3. **The API gaps that block enrolment from the console** — profiles and
+3. **The API gaps that block enrolment from the console** *(Cloud.AI, and it unblocks Codex.)* — profiles and
    cardholders are invisible to it, and a failed job cannot say why. Written up
    with endpoint shapes in [11](11-console-enrolment.md). Until these exist,
    issuing means a JSON body typed by hand, and the console cannot be finished
    against them.
-4. **0029 — reconcile credentials with what a sweep finds.** A token reset
+4. **0029 — reconcile credentials with what a sweep finds.** *(Cloud.AI.)* A token reset
    outside Blinky leaves `Credential` rows reading `Installed` for certificates
    that no longer exist. The sweep corrects the slot and says nothing about the
    credential.
-5. **0022's remaining half** — profiles in the database rather than in code,
+5. **0022's remaining half** *(Cloud.AI.)* — profiles in the database rather than in code,
    and **0025** — personalisation, which is waiting on a decision about the
    management-key master rather than on work.
+
+Item 3 is the one to start first if two people are working: everything Codex
+can do on the console now is finished, and the rest of it waits on those
+endpoints.
 
 Smaller, and each an hour: an interrupted enrolment leaves a key in a slot that
 nothing below firmware 5.7 can clear, so recovery means `ykman piv reset` from
