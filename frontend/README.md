@@ -1,4 +1,4 @@
-# Frontend
+# Blinky CMS
 
 ## Slot ownership is not a boolean
 
