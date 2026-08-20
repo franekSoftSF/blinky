@@ -19,6 +19,9 @@ public sealed class AgentWorker(
 {
     private readonly HashSet<string> reportedUnsupported = new(StringComparer.OrdinalIgnoreCase);
 
+    // Said once, not once a minute. See the catch in PollAsync.
+    private bool saidThereIsNoReaderStack;
+
     private static readonly string Version =
         FileVersionInfo.GetVersionInfo(typeof(AgentWorker).Assembly.Location).ProductVersion
         ?? "0.0.0";
@@ -257,6 +260,9 @@ public sealed class AgentWorker(
                 sweep = collector.ReadAll();
             }
 
+            // The stack answered, so a later disappearance is news again.
+            saidThereIsNoReaderStack = false;
+
             await RenewIfDueAsync(backend, agentId, ct);
 
             await backend.HeartbeatAsync(agentId, Version,
@@ -300,6 +306,21 @@ public sealed class AgentWorker(
                     report.Serial, accepted.TokenState, accepted.PukState,
                     accepted.IsUnrecoverable ? ", unrecoverable" : string.Empty,
                     accepted.IsNewToken ? " - first time seen" : string.Empty);
+            }
+        }
+        catch (PcscException ex) when (ex.IsNoReaderStack)
+        {
+            // A machine with nothing plugged in. Windows starts the Smart Card
+            // service from a reader arrival trigger, so this is the answer to
+            // every call until somebody plugs a token in - and repeating it
+            // every minute buries whatever else the log has to say. Said once,
+            // and again only after a reader has come and gone.
+            if (!saidThereIsNoReaderStack)
+            {
+                saidThereIsNoReaderStack = true;
+                logger.LogInformation("No reader on this machine yet: {Message}. "
+                                      + "The agent will pick one up when it appears.",
+                    ex.Message);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
