@@ -33,7 +33,9 @@
             "styles": [
               "src/styles.scss",
               "src/actions.scss",
-              "src/theme.scss"
+              "src/theme.scss",
+              "src/pages.scss",
+              "src/refresh-action.scss"
             ]
           },
           "configurations": {

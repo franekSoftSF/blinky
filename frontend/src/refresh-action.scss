@@ -1,0 +1,29 @@
+.secondary-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  height: 42px;
+  min-width: 112px;
+  border: 1px solid #2b405a;
+  border-radius: 10px;
+  padding: 0 .9rem;
+  background: #0d1b2d;
+  color: #b9c8da;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.secondary-action:hover { border-color: #3f637b; background: #12243a; color: #edf5ff; }
+.secondary-action span { font-size: 1.05rem; line-height: 1; }
+
+html[data-theme='light'] .secondary-action {
+  border-color: #cbd7e2;
+  background: #fff;
+  color: #263950;
+}
+
+html[data-theme='light'] .secondary-action:hover { background: #eef5f8; border-color: #8fb8c3; }

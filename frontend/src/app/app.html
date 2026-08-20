@@ -2,7 +2,7 @@
   <aside class="sidebar" [class.open]="menuOpen()">
     <a class="brand" routerLink="/" (click)="menuOpen.set(false)">
       <img src="/blinky-server.png" alt="" />
-      <span><strong>Blinky</strong><small>{{ i18n.t('credentialConsole') }}</small></span>
+      <span><strong>Blinky CMS</strong><small>{{ i18n.t('credentialConsole') }}</small></span>
     </a>
     <nav aria-label="Nawigacja główna">
       @for (item of navigation(); track item.path) {
