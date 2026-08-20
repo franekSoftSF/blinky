@@ -275,8 +275,8 @@ exercised against the thing it is really for.
 | `Blinky.Infrastructure` | **done** | Mappings, generated schema, `SchemaValidator` |
 | `Blinky.Api` | **partial** | Enrolment, heartbeat, inventory. Issuance from 0023 |
 | `Blinky.Worker` | skeleton | Hosts and logs; the job engine is 0026 |
-| `Blinky.Agent.Service` | **partial** | Enrols, watches readers, reports. Executes jobs from 0026 |
-| `Blinky.Agent.Ui` | **done** | Prompts for a PIN across the session boundary; used in a real issuance |
+| `Blinky.Agent.Service` | **done** | Enrols into the machine certificate store, renews itself, watches readers, executes jobs, changes and unblocks PINs, and answers the tray. Installable as a service with `scripts/install-agent.ps1` |
+| `Blinky.Agent.Ui` | **done** | Tray, certificate list, PIN change, unblock online and by telephone. Polish and English, light and dark |
 | `Blinky.Pki` — built-in CA | **partial** | Issues, revokes, publishes a CRL, both topologies. SoftHSM tier outstanding |
 | `Blinky.Pki` — ADCS | open | 0030–0033 |
 | `Blinky.AdcsConnector` | skeleton | 0032 |
@@ -340,6 +340,26 @@ phase gate and is worth starting in parallel.
 
 Not on this list, deliberately: 0017 is blocked for want of a Linux reader, and
 the temporary-PIN half of 0016 waits for 0027.
+
+### The agent, as it now stands
+
+Everything below is on the workstation side and finished, so that the console
+can be built against it rather than alongside it.
+
+| | |
+|---|---|
+| Identity | The Windows certificate store — `certlm` as a service, `certmgr` when run by a person. Key non-exportable; verified by a refused export |
+| Renewal | Every poll, replaced with a month to go, proving itself with the current certificate. No bootstrap token after the first start |
+| Logging | `%ProgramData%\Blinky\logsgent-*.log`, daily, fourteen kept. Directory: SYSTEM, Administrators, and the account running |
+| Deployment | `scripts/install-agent.ps1` — service as LocalSystem, tray from `HKLM\...\Run` for every user |
+| Reader | One operation at a time per process; a reader held by something else is reported with a reason rather than dropping the token from the list |
+| Tray | Certificates with managed / not managed / unknown, PIN change, unblock online and by telephone |
+
+Not done, and named rather than implied: **renewal of a cardholder's
+certificate from the tray** (0049), **the touch prompt** — written, but no
+profile sets a touch policy, so it has never been drawn — and the **service
+having actually run in session 0**, which needs the installer to be run on a
+machine.
 
 ### Specified, not built
 

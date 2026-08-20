@@ -44,11 +44,38 @@ public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
             catch (Exception ex) when (ex is PcscException or PivException or PivProtocolException)
             {
                 logger.LogWarning("Reader {Reader}: {Message}", reader, ex.Message);
+
+                // Reported, not dropped. A reader that throws used to leave a
+                // token simply absent from the list, which is the same picture
+                // as a token nobody plugged in - and the commonest cause is
+                // something else holding the card, which is temporary and
+                // fixable by whoever is looking at the screen. An empty list is
+                // an answer; a token that vanishes is a puzzle.
+                unsupported.Add(new UnsupportedCardReport(reader, Explain(ex), null));
             }
         }
 
         return new InventorySweep(tokens, unsupported);
     }
+
+    /// <summary>
+    /// Turns a reader failure into something a person can act on.
+    /// </summary>
+    /// <remarks>
+    /// <c>0x8010000B</c> is worth its own sentence: it means another process
+    /// has the card exclusively, and on a Windows workstation that is usually a
+    /// minidriver or another management tool rather than anything wrong. Told
+    /// plainly, somebody closes the other program; told as a hex code, they
+    /// file a bug about a token that disappears.
+    /// </remarks>
+    private static string Explain(Exception ex) => ex switch
+    {
+        PcscException { Message: var message } when message.Contains("0x8010000B",
+            StringComparison.OrdinalIgnoreCase) =>
+            "another program on this machine is holding the card and will not share it",
+
+        _ => ex.Message,
+    };
 
     private void Read(PcscContext context, string reader,
         List<TokenInventoryReport> tokens, List<UnsupportedCardReport> unsupported)

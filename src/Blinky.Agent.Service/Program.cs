@@ -13,6 +13,16 @@ if (OperatingSystem.IsWindows())
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// Deployment settings live beside the agent's other state rather than in the
+// installation directory, for one reason: this file carries the bootstrap
+// token, and %ProgramFiles% grants BUILTIN\\Users read. AgentPaths already
+// creates this directory with that inheritance switched off.
+if (OperatingSystem.IsWindows())
+{
+    builder.Configuration.AddJsonFile(
+        Path.Combine(AgentPaths.Root, "agent.json"), optional: true, reloadOnChange: false);
+}
+
 builder.Services.AddSerilog((services, configuration) =>
 {
     configuration
