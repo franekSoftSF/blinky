@@ -368,6 +368,34 @@ app.MapPost("/api/credentials/{id:guid}/installed",
             ? Results.NoContent()
             : Results.NotFound(new { error = "no such credential" }));
 
+// An agent replacing its own certificate before it expires, proving itself
+// with the one it still holds. The bootstrap token joins a machine to the
+// fleet once; needing it again every ninety days is what would make it hard to
+// keep short-lived and rate-limited.
+app.MapPost("/api/agents/{id:guid}/renew-certificate",
+    (Guid id, RenewalRequest request, HttpContext context,
+        AgentEnrolmentService enrolment) =>
+    {
+        var caller = (Agent)context.Items["agent"]!;
+
+        if (caller.Id != id)
+        {
+            // An agent speaks only for itself, whatever id it puts in the URL.
+            return Results.Json(new { error = "the certificate belongs to a different agent" },
+                statusCode: 403);
+        }
+
+        var result = enrolment.Renew(id, request);
+
+        return result.Outcome switch
+        {
+            EnrolmentOutcome.Issued => Results.Ok(result.Response),
+            EnrolmentOutcome.InvalidRequest =>
+                Results.Json(new { error = result.Message }, statusCode: 400),
+            _ => Results.Json(new { error = result.Message }, statusCode: 403),
+        };
+    });
+
 app.MapPost("/api/agents/{id:guid}/heartbeat",
     (Guid id, HeartbeatRequest request, HttpContext context, Database database) =>
     {

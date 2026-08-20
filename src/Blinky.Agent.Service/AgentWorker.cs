@@ -157,6 +157,96 @@ public sealed class AgentWorker(
         return agentId;
     }
 
+    /// <summary>
+    /// Replaces the certificate before it expires.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Checked on every poll rather than only at startup: a workstation that
+    /// stays up for months would otherwise sail past its expiry, and the ones
+    /// that stay up longest are the ones nobody visits.
+    /// </para>
+    /// <para>
+    /// <b>Before expiry, never after.</b> An expired certificate does not get a
+    /// second chance here, and that is deliberate rather than an omission: the
+    /// edge verifies client certificates during the TLS handshake, so an
+    /// expired one cannot reach this endpoint at all. Accepting one would mean
+    /// loosening verification at the edge for every request in order to rescue
+    /// the few agents that slept through a month of warnings. Those re-enrol
+    /// with a bootstrap token, which is the cost of having been switched off
+    /// for ninety days.
+    /// </para>
+    /// <para>
+    /// A failure is logged and shrugged off. There is a month of runway, the
+    /// next poll tries again, and an agent that stops working because a renewal
+    /// failed once would be worse than the problem.
+    /// </para>
+    /// </remarks>
+    private async Task RenewIfDueAsync(BackendClient backend, Guid agentId, CancellationToken ct)
+    {
+        DateTime expires;
+        DateTime issued;
+
+        using (var current = identity.Load())
+        {
+            expires = current.NotAfter;
+            issued = current.NotBefore;
+        }
+
+        var remaining = expires - DateTime.Now;
+
+        if (remaining > TimeSpan.FromDays(options.RenewCertificateWithinDays))
+        {
+            return;
+        }
+
+        // A window wider than the certificate's own life means every
+        // certificate is always due, and the agent renews on every poll -
+        // observed doing exactly that, twice in thirty-one seconds, with the
+        // window set to a year against a ninety-day certificate. The window is
+        // a deployment setting and somebody will get it wrong; a certificate
+        // issued today is not renewed again today whatever it says.
+        if (DateTime.Now - issued < MinimumCertificateAge)
+        {
+            logger.LogWarning("The certificate expires in {Days} days, which is inside the "
+                              + "renewal window, but it was issued {Age} ago - not renewing. "
+                              + "Agent:RenewCertificateWithinDays looks wider than the "
+                              + "certificates this backend issues.",
+                (int)remaining.TotalDays, DateTime.Now - issued);
+
+            return;
+        }
+
+        logger.LogInformation("The agent certificate expires in {Days} days; renewing",
+            (int)remaining.TotalDays);
+
+        try
+        {
+            var (certificatePem, key) = await backend.RenewAsync(agentId, ct);
+
+            using (key)
+            {
+                identity.Store(agentId, certificatePem, key);
+            }
+
+            // Re-authenticated immediately: the backend moved the recorded
+            // thumbprint when it issued, so the old certificate stops being
+            // accepted from this moment and the next call must use the new one.
+            backend.Authenticate(identity.Load());
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError("The agent certificate could not be renewed, {Days} days before "
+                            + "it expires: {Message}", (int)remaining.TotalDays, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// How new is too new to replace. Guards against a renewal window wider
+    /// than the certificate lifetime, which otherwise renews on every poll.
+    /// </summary>
+    private static readonly TimeSpan MinimumCertificateAge = TimeSpan.FromHours(12);
+
     private async Task PollAsync(BackendClient backend, Guid agentId, CancellationToken ct)
     {
         try
@@ -166,6 +256,8 @@ public sealed class AgentWorker(
             {
                 sweep = collector.ReadAll();
             }
+
+            await RenewIfDueAsync(backend, agentId, ct);
 
             await backend.HeartbeatAsync(agentId, Version,
                 [.. sweep.Tokens.Select(r => r.ReaderName)], sweep.Unsupported, ct);
@@ -263,4 +355,17 @@ public sealed class AgentOptions
     /// its own copy of is several rules.
     /// </summary>
     public PinComplexityPolicy PinPolicy { get; set; } = PinComplexityPolicy.Default;
+
+    /// <summary>
+    /// How close to expiry the agent replaces its own certificate.
+    /// </summary>
+    /// <remarks>
+    /// A month by default: long enough that a laptop switched off for a
+    /// fortnight still renews itself, short enough that a certificate is not
+    /// replaced for a third of its life. Configurable because a deployment
+    /// issuing shorter certificates needs a shorter window — and because a
+    /// renewal that only happens once a quarter is otherwise untestable
+    /// without waiting a quarter.
+    /// </remarks>
+    public int RenewCertificateWithinDays { get; set; } = 30;
 }

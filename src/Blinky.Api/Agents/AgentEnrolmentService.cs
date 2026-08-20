@@ -16,6 +16,92 @@ public sealed class AgentEnrolmentService(
     string bootstrapToken,
     ILogger<AgentEnrolmentService> logger)
 {
+    /// <summary>
+    /// Issues a replacement for an agent that already has one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The subject comes from the registration, exactly as at enrolment: an
+    /// agent renewing does not get to say who it is any more than an agent
+    /// joining does.
+    /// </para>
+    /// <para>
+    /// The recorded thumbprint moves as soon as the new certificate is issued,
+    /// so the next request must use the new one. There is no overlap here and
+    /// none is needed: the agent installs it before its next call, and if that
+    /// fails it still holds a certificate valid for another month.
+    /// </para>
+    /// </remarks>
+    public EnrolmentResult Renew(Guid agentId, RenewalRequest request)
+    {
+        CertificateRequest signingRequest;
+
+        try
+        {
+            signingRequest = CertificateRequest.LoadSigningRequestPem(
+                request.CertificateSigningRequest, HashAlgorithmName.SHA256);
+        }
+        catch (Exception ex)
+        {
+            return new EnrolmentResult(EnrolmentOutcome.InvalidRequest,
+                $"the certificate request could not be read: {ex.Message}");
+        }
+
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var agent = session.Get<Agent>(agentId);
+
+        if (agent is null || agent.State is not AgentState.Enrolled)
+        {
+            return new EnrolmentResult(EnrolmentOutcome.Rejected, "this agent is not enrolled");
+        }
+
+        X509Certificate2 issued;
+
+        try
+        {
+            issued = authority.Issue(signingRequest, agent.Hostname, agent.Domain);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Renewing the certificate for {Hostname}.{Domain} failed",
+                agent.Hostname, agent.Domain);
+
+            return new EnrolmentResult(EnrolmentOutcome.Rejected,
+                $"the agent certificate could not be issued: {ex.Message}");
+        }
+
+        using var _ = issued;
+
+        var previous = agent.ClientCertificateThumbprint;
+        var now = DateTime.UtcNow;
+
+        agent.ClientCertificateThumbprint = issued.Thumbprint;
+        agent.UpdatedAt = now;
+        session.Update(agent);
+
+        session.Save(new AuditEvent
+        {
+            OccurredAt = now,
+            EventType = "agent.certificate-renewed",
+            Actor = $"{agent.Hostname}.{agent.Domain}",
+            SubjectType = nameof(Agent),
+            SubjectId = agent.Id,
+            Detail = $$"""{"from":"{{previous}}","to":"{{issued.Thumbprint}}"}""",
+        });
+
+        transaction.Commit();
+
+        logger.LogInformation("Renewed the certificate for {Hostname}.{Domain}, valid until "
+                              + "{NotAfter:yyyy-MM-dd}", agent.Hostname, agent.Domain,
+            issued.NotAfter);
+
+        return new EnrolmentResult(EnrolmentOutcome.Issued, "renewed",
+            new EnrolmentResponse(agent.Id, issued.ExportCertificatePem(),
+                authority.IssuerSubject, issued.NotAfter, AlreadyRegistered: true));
+    }
+
     public EnrolmentResult Enrol(EnrolmentRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Hostname) || string.IsNullOrWhiteSpace(request.Domain))

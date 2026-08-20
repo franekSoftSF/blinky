@@ -15,6 +15,16 @@ public sealed record EnrolmentResponse(
     DateTimeOffset NotAfter,
     bool AlreadyRegistered);
 
+/// <summary>
+/// An agent asking for a fresh certificate before its current one expires.
+/// </summary>
+/// <remarks>
+/// No bootstrap token: the agent proves itself with the certificate it already
+/// holds, over mTLS. That is the point — a token good for joining the fleet
+/// should be needed once per machine, not every ninety days.
+/// </remarks>
+public sealed record RenewalRequest(string CertificateSigningRequest);
+
 public enum EnrolmentOutcome
 {
     Issued,

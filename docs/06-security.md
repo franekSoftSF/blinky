@@ -82,25 +82,29 @@ Stated plainly, because a security section that claims completeness is lying:
   raises the bar to physical presence per operation; it does not change the
   model.
 
-## Claimed and not built
+## How the agent's certificate rotates
 
-One entry, kept here rather than quietly fixed in the table above, because a
-security document that describes a mitigation nobody wrote is worse than one
-that admits the gap.
+Every poll, the agent asks how long its own certificate has left and replaces
+it with a month to go. It proves itself with the certificate it already holds —
+no bootstrap token, which is what lets that token stay rare, short-lived and
+rate-limited.
 
-**The agent's certificate does not rotate itself.** The threat table said
-"automatic rotation", [05](05-agent-protocol.md) lists
-`POST /api/agents/{id}/renew-certificate`, and the edge already exempts that
-path from request-body inspection. Neither end exists: not the endpoint, not
-the agent-side check.
+**Before expiry, never after**, and that is a decision rather than an omission.
+The edge verifies client certificates during the TLS handshake, so an expired
+one cannot reach the renewal endpoint at all; accepting one would mean
+loosening verification for every request in order to rescue the few agents that
+slept through a month of warnings. Those re-enrol with a bootstrap token, which
+is the price of having been switched off for ninety days.
 
-What happens without it: the certificate expires ninety days after enrolment
-and the agent stops authenticating. Recovery is re-enrolment with the bootstrap
-token, by hand, on every workstation — and the bootstrap token is the thing the
-short certificate lifetime exists to stop people from needing.
+A fresh key each time, not a new certificate over the old one. Renewal is the
+only routine moment a workstation key is replaced, and reusing it would mean
+one key living for the life of the machine.
 
-Found on 20 August 2026 by looking at an expiry date in `certmgr.msc` and
-asking what renews it.
+The window is configurable, so somebody will eventually set it wider than the
+certificates their backend issues — at which point every certificate is always
+due and the agent renews on every poll. Observed doing exactly that, twice in
+thirty-one seconds. A certificate less than twelve hours old is therefore not
+renewed again, and the log names the setting that is wrong.
 
 ## Where the agent's own key lives
 

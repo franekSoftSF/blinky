@@ -252,6 +252,53 @@ public sealed class BackendClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Replaces this agent's certificate, proving itself with the current one.
+    /// </summary>
+    /// <remarks>
+    /// A fresh key each time rather than a new certificate over the old key.
+    /// Renewal is the only routine moment a workstation key is replaced, and
+    /// skipping it would mean one key living for the life of the machine.
+    /// </remarks>
+    public async Task<(string CertificatePem, RSA Key)> RenewAsync(Guid agentId,
+        CancellationToken ct)
+    {
+        var key = RSA.Create(3072);
+
+        // The subject is ignored by the backend, which builds one from the
+        // registration - but a request still needs one, and matching what the
+        // certificate will say keeps a packet capture readable.
+        var request = new CertificateRequest($"CN={agentId}", key,
+            HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+
+        try
+        {
+            var response = await Authenticated().PostAsJsonAsync(
+                $"/api/agents/{agentId}/renew-certificate",
+                new { certificateSigningRequest = request.CreateSigningRequestPem() }, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                key.Dispose();
+
+                throw new InvalidOperationException(
+                    $"Renewal refused: {(int)response.StatusCode} "
+                    + await response.Content.ReadAsStringAsync(ct));
+            }
+
+            var issued = await response.Content.ReadFromJsonAsync<RenewedCertificate>(ct)
+                         ?? throw new InvalidOperationException(
+                             "The backend renewed nothing.");
+
+            return (issued.CertificatePem, key);
+        }
+        catch
+        {
+            key.Dispose();
+            throw;
+        }
+    }
+
     private HttpClient Authenticated() => authenticated
         ?? throw new InvalidOperationException("The agent has no identity yet.");
 
@@ -326,3 +373,11 @@ public sealed record KnownCredential(
     string State,
     string? SubjectDn,
     DateTimeOffset? NotAfter);
+
+/// <summary>A replacement certificate, as the backend returns it.</summary>
+public sealed record RenewedCertificate(
+    Guid AgentId,
+    string CertificatePem,
+    string IssuerSubject,
+    DateTimeOffset NotAfter,
+    bool AlreadyRegistered);
