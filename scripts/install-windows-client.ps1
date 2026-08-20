@@ -13,7 +13,9 @@
 
       2. The MSI, with the backend, the realm and the bootstrap token as
          properties. The token is passed as an MSI property that is already
-         listed in MSIHIDDENPROPERTIES, so it does not reach the installer log.
+         listed in MSIHIDDENPROPERTIES. That covers the property dumps but
+         not the command line msiexec echoes at the top of the log, so the
+         log is scrubbed afterwards.
 
       3. The tray, started for this session. It normally appears at the next
          logon, from HKLM\...\Run.
@@ -32,7 +34,7 @@ param(
     [Parameter(Mandatory = $true)] [string] $BootstrapToken,
     [string] $Backend = 'https://by-ca-cms.blinky.lab:9443',
     [string] $Domain = 'blinky.lab',
-    [string] $Msi = "$PSScriptRoot\blinky-agent-0.2.1.msi",
+    [string] $Msi = "$PSScriptRoot\blinky-agent-0.2.2.msi",
     [string] $CaCertificate = "$PSScriptRoot\dev-ca.crt"
 )
 
@@ -77,11 +79,17 @@ if ($result.ExitCode -ne 0) {
     throw "msiexec returned $($result.ExitCode). The log is at $log"
 }
 
-# The token is a property, and properties reach the log unless hidden. It is in
-# MSIHIDDENPROPERTIES, and this checks that rather than trusting it - a
-# bootstrap token sitting in %TEMP% is one anybody on the machine can read.
+# MSIHIDDENPROPERTIES keeps the token out of the property dumps, and cannot
+# keep it out of the command line msiexec echoes into the first lines of the
+# log. So the log is scrubbed rather than trusted or deleted: a bootstrap token
+# sitting in %TEMP% is one anybody on the machine can read, and the rest of the
+# log is what anyone diagnosing a failed install needs.
 if (Select-String -Path $log -Pattern ([regex]::Escape($BootstrapToken)) -Quiet) {
-    Write-Warning "The bootstrap token appears in $log - delete it."
+    # UTF-16, which is what msiexec writes and what Get-Content has to be told.
+    (Get-Content $log -Raw -Encoding Unicode).Replace($BootstrapToken, '<redacted>') |
+        Set-Content $log -Encoding Unicode -NoNewline
+
+    Write-Host "     installed; the token was in the log and has been redacted"
 } else {
     Write-Host "     installed; the token is not in the installer log"
 }

@@ -52,7 +52,13 @@ echo "packaging ..."
 # fails with "could not find expected package root folder wixext5".
 wix extension add -g WixToolset.Util.wixext/5.0.2 >/dev/null 2>&1 || true
 
+# -arch x64, and it is not cosmetic. A package built for the default x86 has
+# its registry writes redirected into WOW6432Node, while the agent - a 64-bit
+# process - reads HKLM\SOFTWARE\Blinky\Agent. The install then reports success
+# and the service starts saying it has no bootstrap token, which sends everyone
+# looking at the token rather than at the two views of one key.
 wix build "$root/installer/agent.wxs" \
+    -arch x64 \
     -ext WixToolset.Util.wixext \
     -d "Version=$version" \
     -d "AgentPublish=$(cygpath -w "$out/publish/agent")" \
