@@ -82,6 +82,33 @@ Stated plainly, because a security section that claims completeness is lying:
   raises the bar to physical presence per operation; it does not change the
   model.
 
+## Where the agent's own key lives
+
+In the Windows certificate store, and not in a file. `LocalMachine\\My` —
+`certlm.msc` — for a service running as `LocalSystem`, which is right because
+the identity belongs to the workstation rather than to whoever is logged into
+it. A process running as a person cannot write there without elevation and
+falls back to `CurrentUser\\My`, `certmgr.msc`; the agent logs which one it
+used, because the same machine run both ways enrols twice and that is
+otherwise a mystery.
+
+This replaced a PEM key pair under `%ProgramData%`, and the reason is worth
+keeping. A directory created there inherits `BUILTIN\\Users:(RX)` — measured,
+not assumed — so every local user on the workstation could read the agent's
+client-certificate private key and then speak to the backend as that machine.
+An agent identity is what the API checks before it will discuss a token at all.
+
+The key is imported without `Exportable`, so it cannot be read back out — not
+by the agent, not by anything running as the same account. Verified: an export
+attempt is refused by CNG. What an attacker on the machine can still do is
+*use* it while they are on the machine, which is a materially smaller thing
+than walking away with it. Recovery from a lost key is re-enrolment.
+
+The directories that remain under `%ProgramData%` — the log, and the
+file-based identity that non-Windows builds still use — are created with
+inheritance off and an explicit list: `SYSTEM`, `Administrators`, and the
+account running.
+
 ## What the WAF costs, measured
 
 The console listener runs CRS in blocking mode, and that is worth what it costs

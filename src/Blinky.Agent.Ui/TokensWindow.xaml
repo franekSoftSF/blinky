@@ -60,6 +60,17 @@
                                Foreground="{DynamicResource Text}" TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="{Binding Line2}" FontSize="11" Margin="0,2,0,0"
                                Foreground="{DynamicResource TextMuted}" />
+
+                    <!-- Only that Blinky manages it. The device name says what
+                         the card is; this says whose it is. -->
+                    <Border Visibility="{Binding ManagedVisibility}" Margin="0,6,0,0"
+                            HorizontalAlignment="Left" CornerRadius="9" Padding="8,2"
+                            Background="{DynamicResource ManagedSoft}">
+                        <TextBlock FontSize="10" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Managed}"
+                                   Text="{Binding Path=[Badge.Managed],
+                                          Source={x:Static local:Strings.Current}}" />
+                    </Border>
                 </StackPanel>
             </Border>
         </DataTemplate>

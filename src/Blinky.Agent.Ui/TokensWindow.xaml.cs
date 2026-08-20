@@ -212,11 +212,21 @@ public partial class TokensWindow : Window
 }
 
 /// <summary>One device in the left column.</summary>
-public sealed record DeviceRow(string Name, string Line2)
+public sealed record DeviceRow(string Name, string Line2, Visibility ManagedVisibility)
 {
     public static DeviceRow From(TokenView token) =>
-        new(Label(token), $"S/N: {token.Serial}"
-                         + (token.FirmwareVersion is { } firmware ? $"  F/W: {firmware}" : string.Empty));
+        new(Label(token),
+            $"S/N: {token.Serial}"
+            + (token.FirmwareVersion is { } firmware ? $"  F/W: {firmware}" : string.Empty),
+
+            // Shown when Blinky put something on this token, and absent
+            // otherwise - including when the backend could not be asked. An
+            // "unknown" badge belongs on a slot, where the question is about
+            // one credential; on a device it would be a badge on every token
+            // in the list every time the network hiccuped.
+            token.Slots.Any(slot => slot.Management == SlotManagement.Managed)
+                ? Visibility.Visible
+                : Visibility.Collapsed);
 
     /// <summary>
     /// What the card actually said, never a model name worked out from it.
