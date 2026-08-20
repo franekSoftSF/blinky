@@ -64,6 +64,14 @@ public sealed record AgentRequest(
     /// <summary>Unblock with the code an operator read back.</summary>
     public const string UnblockOffline = "UnblockOffline";
 
+    /// <summary>Read one slot's certificate off the card.</summary>
+    public const string ReadCertificate = "ReadCertificate";
+
+    /// <summary>
+    /// Remove a slot's certificate. The key stays where it is.
+    /// </summary>
+    public const string DeleteCertificate = "DeleteCertificate";
+
     /// <summary>The rules a new PIN has to satisfy on this deployment.</summary>
     public const string GetPinPolicy = "GetPinPolicy";
 }
@@ -99,10 +107,37 @@ public sealed record AgentResponse(
     int? AttemptsRemaining = null,
 
     /// <summary>The code to read down a telephone.</summary>
-    string? Challenge = null)
+    string? Challenge = null,
+
+    /// <summary>One slot's certificate, PEM encoded.</summary>
+    string? CertificatePem = null)
 {
     public static AgentResponse Failed(string error, int? attemptsRemaining = null) =>
         new(false, error, AttemptsRemaining: attemptsRemaining);
+}
+
+/// <summary>
+/// What the card can do about fingerprints, said out loud.
+/// </summary>
+/// <remarks>
+/// Four values rather than a flag, because the difference between "this token
+/// has no sensor" and "this token has a sensor and nobody has enrolled a
+/// finger" is the difference between a fact and a thing the user can fix.
+/// Showing nothing in the second case — which is what a boolean does — leaves
+/// somebody looking at a Bio wondering why it is behaving like an ordinary key.
+/// </remarks>
+public enum BiometricAvailability
+{
+    /// <summary>No on-card comparison. The card said so, not the model name.</summary>
+    NotSupported,
+
+    /// <summary>A sensor, and no fingerprint enrolled on it yet.</summary>
+    NotEnrolled,
+
+    Enrolled,
+
+    /// <summary>Match attempts exhausted. The PIN is the way in until it is reset.</summary>
+    Blocked,
 }
 
 /// <summary>
@@ -156,7 +191,9 @@ public sealed record TokenView(
     /// </remarks>
     string? FormFactor = null,
     bool IsFipsDevice = false,
-    bool FingerprintsEnrolled = false);
+    bool FingerprintsEnrolled = false,
+    BiometricAvailability Biometrics = BiometricAvailability.NotSupported,
+    int? BiometricAttemptsRemaining = null);
 
 /// <summary>
 /// One slot, read from the card.
@@ -174,7 +211,22 @@ public sealed record SlotView(
     DateTimeOffset? NotAfter,
     string? KeyAlgorithm,
     bool HasKeyWithoutCertificate,
-    SlotManagement Management = SlotManagement.Unknown)
+    SlotManagement Management = SlotManagement.Unknown,
+
+    /// <remarks>
+    /// What the card demands before it will use the private key: a PIN, a
+    /// fingerprint, or - and this is the one worth seeing - nothing at all.
+    /// </remarks>
+    string? PinPolicy = null,
+    string? TouchPolicy = null,
+
+    /// <remarks>
+    /// The public half, as a hash. Never the key itself: it is not secret, but
+    /// a screen full of base64 is not information either. This is what a person
+    /// compares against a certificate when they are asking whether the two
+    /// belong together.
+    /// </remarks>
+    string? PublicKeySha256 = null)
 {
     /// <summary>Days left, negative once it has expired. Null with no certificate.</summary>
     public int? DaysRemaining => NotAfter is { } expiry

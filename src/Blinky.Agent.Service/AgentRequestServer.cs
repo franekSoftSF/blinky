@@ -105,6 +105,12 @@ public sealed class AgentRequestServer(
                 AgentRequest.ListTokens =>
                     new AgentResponse(true, Tokens: await cards.ListTokensAsync(ct)),
 
+                AgentRequest.ReadCertificate when request.TokenSerial is { } token =>
+                    cards.ReadCertificate(token, request.SlotId),
+
+                AgentRequest.DeleteCertificate when request.TokenSerial is { } token =>
+                    cards.DeleteCertificate(token, request.SlotId),
+
                 AgentRequest.GetPinPolicy =>
                     new AgentResponse(true, PinComplexityPolicy: options.PinPolicy),
 

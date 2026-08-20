@@ -119,6 +119,7 @@ public partial class TokensWindow : Window
 
         ShowDefaults(token);
         ShowManagement(token);
+        ShowBiometrics(token);
     }
 
     /// <summary>
@@ -178,11 +179,89 @@ public partial class TokensWindow : Window
 
     }
 
+    /// <summary>
+    /// The fingerprint situation, in words, on every token.
+    /// </summary>
+    /// <remarks>
+    /// Including "this one has no sensor", which is the line that stops a
+    /// person wondering why their other key behaves differently. A Bio with no
+    /// finger enrolled previously showed nothing here at all, and nothing reads
+    /// as an ordinary key rather than as a step somebody has not taken yet.
+    /// </remarks>
+    private void ShowBiometrics(TokenView token)
+    {
+        var strings = Strings.Current;
+
+        BiometricText.Text = strings["Bio." + token.Biometrics];
+
+        BiometricDetailText.Text = token.Biometrics switch
+        {
+            BiometricAvailability.Enrolled when token.BiometricAttemptsRemaining is { } left =>
+                string.Format(CultureInfo.CurrentCulture, strings["Bio.Attempts"], left)
+                + "  " + strings["Bio.AddMore"],
+
+            BiometricAvailability.NotEnrolled or BiometricAvailability.Blocked =>
+                strings["Bio.AddMore"],
+
+            _ => string.Empty,
+        };
+    }
+
     private static string Attempts(int? remaining) => remaining is { } left
         ? string.Format(CultureInfo.CurrentCulture, Strings.Current["Pin.AttemptsLeft"], left)
         : Strings.Current["Manage.Unknown"];
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadAsync();
+
+    private async void Export_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is { } token && sender is FrameworkElement { Tag: string slot })
+        {
+            await CertificateActions.ExportAsync(client, token.Serial, slot);
+        }
+    }
+
+    private async void Install_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is { } token && sender is FrameworkElement { Tag: string slot })
+        {
+            await CertificateActions.InstallAsync(client, token.Serial, slot);
+        }
+    }
+
+    /// <remarks>
+    /// Asked before done, and the question names the slot and the token. This
+    /// takes a working credential off somebody's key and there is no undo on
+    /// the card: the private key survives, the certificate does not.
+    /// </remarks>
+    private async void Delete_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is not { } token || sender is not FrameworkElement { Tag: string slot })
+        {
+            return;
+        }
+
+        var confirm = MessageBox.Show(
+            string.Format(CultureInfo.CurrentCulture, Strings.Current["Cert.DeleteConfirm"],
+                slot.ToUpperInvariant(), token.Serial),
+            Strings.Current["Cert.Delete"], MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+        if (confirm != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        var response = await client.SendAsync(
+            new AgentRequest(AgentRequest.DeleteCertificate, token.Serial, slot));
+
+        if (!response.Succeeded)
+        {
+            MessageBox.Show(response.Error ?? Strings.Current["Error.NoService"],
+                Strings.Current["App.Name"], MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        await LoadAsync();
+    }
 
     private async void ChangePin_Click(object sender, RoutedEventArgs e) =>
         await OpenAsync(PinDialogKind.ChangePin);
@@ -293,6 +372,9 @@ public sealed record SlotRow(
     string SlotName,
     string Subject,
     string Detail,
+    string Protection,
+    Brush ProtectionColour,
+    Visibility ActionsVisibility,
     string BadgeText,
     Visibility BadgeVisibility,
     Brush BadgeBackground,
@@ -320,11 +402,49 @@ public sealed record SlotRow(
                 .Where(part => !string.IsNullOrEmpty(part)));
 
         var (text, background, foreground) = Badge(slot.Management);
+        var (protection, protectionColour) = Protects(slot);
 
         return new SlotRow(slot.SlotId.ToLowerInvariant(), name, subject, detail,
+
+            // The protection line is worth showing wherever there is a key,
+            // certificate or not: a bare key with no verification behind it is
+            // the same hazard as a certified one.
+            slot.PinPolicy is null ? string.Empty : protection,
+            protectionColour,
+
+            // Nothing to export, install or delete without a certificate.
+            slot.Subject is null ? Visibility.Collapsed : Visibility.Visible,
             text,
             slot.Management == SlotManagement.Empty ? Visibility.Collapsed : Visibility.Visible,
             background, foreground);
+    }
+
+    /// <summary>
+    /// What has to be proved before the private key will be used.
+    /// </summary>
+    /// <remarks>
+    /// Shown because "nothing" is a possible answer and the worst one: a key
+    /// with PIN policy Never signs for whoever is holding the token. Blinky
+    /// refuses to generate one, but it does not put every key on every card —
+    /// a slot filled by something else can be anything at all, and this is
+    /// where that becomes visible instead of implied.
+    /// </remarks>
+    private static (string Text, Brush Colour) Protects(SlotView slot)
+    {
+        var strings = Strings.Current;
+
+        return slot.PinPolicy switch
+        {
+            null => (string.Empty, Look("TextFaint")),
+
+            "Never" => (strings["Slot.ProtectedByNothing"], Look("Danger")),
+
+            "MatchOnce" or "MatchAlways" =>
+                (strings["Slot.ProtectedByFingerprint"], Look("Managed")),
+
+            var other => (string.Format(CultureInfo.CurrentCulture,
+                strings["Slot.ProtectedByPin"], other), Look("TextFaint")),
+        };
     }
 
     /// <summary>

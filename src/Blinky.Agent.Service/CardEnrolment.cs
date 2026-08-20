@@ -148,8 +148,21 @@ public sealed class CardEnrolment(
         // had been verified and the key still would not have it.
         var biometric = session.GetBiometricMetadata() is { FingerprintsEnrolled: true };
 
+        var policy = biometric ? PinPolicy.MatchOnce : PinPolicy.Once;
+
+        // Never is a legal PIV value and it is never what Blinky wants: a key
+        // that signs without asking anybody anything is a key that signs for
+        // whoever has the token in their hand, which is the property the whole
+        // system exists to avoid. Asserted here rather than trusted from
+        // above, because this is the last place that can still refuse.
+        if (policy is PinPolicy.Never or PinPolicy.Unknown)
+        {
+            throw new InvalidOperationException(
+                $"Refusing to generate a key in {slot} that needs no verification.");
+        }
+
         var generated = session.GenerateKeyPair(slot, PivAlgorithm.EccP256,
-            biometric ? PinPolicy.MatchOnce : PinPolicy.Once, TouchPolicy.Never);
+            policy, TouchPolicy.Never);
 
         await Report(backend, job, attempt, "Attest", ct);
 
@@ -196,6 +209,18 @@ public sealed class CardEnrolment(
         var readBack = session.GetCertificateAsX509(slot)
                        ?? throw new InvalidOperationException(
                            $"Slot {slot} reads back empty after the write.");
+
+        // What the card ended up with, not what was asked for. A slot that came
+        // back needing no verification is worth failing over even though the
+        // certificate is already on it - the alternative is a credential nobody
+        // has to prove anything to use, recorded as a success.
+        if (session.GetSlotMetadata(slot) is { } written
+            && written.PinPolicy is PinPolicy.Never)
+        {
+            throw new InvalidOperationException(
+                $"Slot {slot} reports PIN policy {written.PinPolicy} after generation. "
+                + "The key would sign for anybody holding the token.");
+        }
 
         if (readBack.Thumbprint != certificate.Thumbprint)
         {

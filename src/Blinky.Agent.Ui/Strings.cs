@@ -164,6 +164,31 @@ public sealed class Strings : INotifyPropertyChanged
                                    + "token only, and stops working the moment it is used.",
         ["Pin.ChallengeLabel"] = "Read this out",
         ["Pin.OfflineCode"] = "Code from the helpdesk",
+        ["Cert.Export"] = "Export",
+        ["Cert.Install"] = "Install for me",
+        ["Cert.Delete"] = "Delete",
+        ["Cert.ExportTitle"] = "Save the certificate",
+        ["Cert.Exported"] = "Saved to {0}",
+        ["Cert.Installed"] = "{0} is now in your personal certificate store. "
+                             + "The private key stays on the token. Windows can only use the "
+                             + "pair once a minidriver links them - normally that happens on "
+                             + "its own when the token is inserted.",
+        ["Cert.DeleteConfirm"] = "Delete the certificate in slot {0} of token {1}? "
+                                 + "The private key stays where it is. The certificate cannot "
+                                 + "be recovered from the card.",
+
+        ["Slot.ProtectedByNothing"] = "Signs without asking for anything",
+        ["Slot.ProtectedByFingerprint"] = "Needs a fingerprint",
+        ["Slot.ProtectedByPin"] = "Needs the PIN ({0})",
+
+        ["Bio.NotSupported"] = "No fingerprint sensor",
+        ["Bio.NotEnrolled"] = "Sensor present, no fingerprint enrolled",
+        ["Bio.Enrolled"] = "Fingerprint enrolled",
+        ["Bio.Blocked"] = "Fingerprint blocked - the PIN is the way in",
+        ["Bio.Attempts"] = "{0} match attempts left",
+        ["Bio.AddMore"] = "More fingerprints are added in Yubico Authenticator or Windows "
+                          + "sign-in options - not here: enrolling one is a FIDO operation, "
+                          + "not a PIV one.",
         ["Prompt.FingerprintTitle"] = "Blinky needs your fingerprint",
         ["Prompt.FingerprintAttempts"] = "{0} attempts before the sensor stops accepting; "
                                          + "after that it asks for your PIN.",
@@ -268,6 +293,31 @@ public sealed class Strings : INotifyPropertyChanged
                                    + "i przestaje działać w chwili użycia.",
         ["Pin.ChallengeLabel"] = "Przeczytaj to",
         ["Pin.OfflineCode"] = "Kod od helpdesku",
+        ["Cert.Export"] = "Eksportuj",
+        ["Cert.Install"] = "Zainstaluj u mnie",
+        ["Cert.Delete"] = "Usuń",
+        ["Cert.ExportTitle"] = "Zapisz certyfikat",
+        ["Cert.Exported"] = "Zapisano do {0}",
+        ["Cert.Installed"] = "{0} jest teraz w Twoim osobistym magazynie certyfikatów. "
+                             + "Klucz prywatny zostaje na tokenie. Windows użyje tej pary "
+                             + "dopiero, gdy minidriver je powiąże - zwykle dzieje się to samo "
+                             + "po włożeniu tokenu.",
+        ["Cert.DeleteConfirm"] = "Usunąć certyfikat ze slotu {0} tokenu {1}? "
+                                 + "Klucz prywatny zostaje na miejscu. Certyfikatu nie da się "
+                                 + "odzyskać z karty.",
+
+        ["Slot.ProtectedByNothing"] = "Podpisuje bez pytania o cokolwiek",
+        ["Slot.ProtectedByFingerprint"] = "Wymaga odcisku palca",
+        ["Slot.ProtectedByPin"] = "Wymaga PIN-u ({0})",
+
+        ["Bio.NotSupported"] = "Brak czytnika odcisku",
+        ["Bio.NotEnrolled"] = "Czytnik jest, żaden odcisk nie zapisany",
+        ["Bio.Enrolled"] = "Odcisk zapisany",
+        ["Bio.Blocked"] = "Odcisk zablokowany - wejście przez PIN",
+        ["Bio.Attempts"] = "Pozostałe próby dopasowania: {0}",
+        ["Bio.AddMore"] = "Kolejne odciski dodaje się w Yubico Authenticator albo w opcjach "
+                          + "logowania Windows - nie tutaj: zapis odcisku to operacja FIDO, "
+                          + "nie PIV.",
         ["Prompt.FingerprintTitle"] = "Blinky prosi o odcisk palca",
         ["Prompt.FingerprintAttempts"] = "Pozostałe próby: {0}. Potem klucz poprosi o PIN.",
         ["Prompt.PinAttempts"] = "Pozostałe próby przed zablokowaniem PIN-u: {0}",

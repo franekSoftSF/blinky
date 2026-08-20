@@ -89,7 +89,18 @@ public sealed class CardOperations(
         token.ManagementKey?.Algorithm,
         token.FormFactor,
         token.IsFipsDevice,
-        token.Biometrics?.FingerprintsEnrolled ?? false);
+        token.Biometrics?.FingerprintsEnrolled ?? false,
+
+        // Null metadata means the card refused slot 96, which is how a
+        // non-biometric token answers - never inferred from the model name.
+        token.Biometrics switch
+        {
+            null => BiometricAvailability.NotSupported,
+            { AttemptsRemaining: 0 } => BiometricAvailability.Blocked,
+            { FingerprintsEnrolled: false } => BiometricAvailability.NotEnrolled,
+            _ => BiometricAvailability.Enrolled,
+        },
+        token.Biometrics?.AttemptsRemaining);
 
     private static SlotView View(SlotReport slot, IReadOnlyList<KnownCredential>? known) => new(
         slot.SlotId,
@@ -103,7 +114,10 @@ public sealed class CardOperations(
         // into this slot will be refused.
         slot.HasKey && !slot.HasCertificate,
 
-        Manages(slot, known));
+        Manages(slot, known),
+        slot.PinPolicy,
+        slot.TouchPolicy,
+        slot.PublicKeySha256);
 
     /// <summary>
     /// Compares the key on the card with the key the backend recorded issuing.
@@ -132,6 +146,73 @@ public sealed class CardOperations(
             && string.Equals(credential.PublicKeySha256, onCard, StringComparison.OrdinalIgnoreCase));
 
         return matches ? SlotManagement.Managed : SlotManagement.Unmanaged;
+    }
+
+    /// <summary>
+    /// Reads one slot's certificate.
+    /// </summary>
+    /// <remarks>
+    /// No verification asked for, and none needed: a certificate is the public
+    /// half, readable by anything that can talk to the card. The private key it
+    /// belongs to is what needs a PIN or a fingerprint, and nothing here goes
+    /// near that.
+    /// </remarks>
+    public AgentResponse ReadCertificate(long serial, string? slotId)
+    {
+        if (Slot(slotId) is not { } slot)
+        {
+            return AgentResponse.Failed($"{slotId} is not a credential slot.");
+        }
+
+        return OnToken(serial, session =>
+        {
+            var certificate = session.GetCertificateAsX509(slot);
+
+            return certificate is null
+                ? AgentResponse.Failed($"Slot {slot} holds no certificate.")
+                : new AgentResponse(true, CertificatePem: certificate.ExportCertificatePem());
+        });
+    }
+
+    /// <summary>
+    /// Removes a certificate from a slot.
+    /// </summary>
+    /// <remarks>
+    /// The key stays. That is what the card does and it is worth saying out
+    /// loud: the slot afterwards reads as holding a key with no certificate,
+    /// which is the same shape as an enrolment that died halfway - and it is
+    /// why a fresh enrolment into that slot is refused rather than quietly
+    /// destroying what is there.
+    /// </remarks>
+    public AgentResponse DeleteCertificate(long serial, string? slotId)
+    {
+        if (Slot(slotId) is not { } slot)
+        {
+            return AgentResponse.Failed($"{slotId} is not a credential slot.");
+        }
+
+        return OnToken(serial, session =>
+        {
+            var management = session.GetManagementKeyMetadata()
+                ?? throw new InvalidOperationException(
+                    "This firmware will not say which management key algorithm it holds.");
+
+            session.AuthenticateManagementKey(ManagementKey.Default(management.Algorithm));
+            session.DeleteCertificate(slot);
+
+            logger.LogWarning("The certificate in slot {Slot} of token {Serial} was deleted",
+                slot, serial);
+
+            return new AgentResponse(true);
+        });
+    }
+
+    private static PivSlot? Slot(string? slotId)
+    {
+        var slot = PivSlot.Credentials.FirstOrDefault(s =>
+            s.Name.Equals(slotId, StringComparison.OrdinalIgnoreCase));
+
+        return slot.Id == 0 ? null : slot;
     }
 
     /// <summary>

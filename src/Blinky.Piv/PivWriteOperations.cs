@@ -183,6 +183,37 @@ public partial class PivSession
     /// so the outbound chaining in <see cref="PivConnection"/> runs here for
     /// real. Requires the management key to have been authenticated.
     /// </remarks>
+    /// <summary>
+    /// Removes the certificate from a slot, leaving the key where it is.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An empty data object, which is how PIV says "there is nothing here".
+    /// The private key is untouched and unreachable afterwards for anything
+    /// that needed the certificate to find it — which is usually the point: a
+    /// credential is being withdrawn, not a token being wiped.
+    /// </para>
+    /// <para>
+    /// Needs the management key. Deleting somebody's certificate is a write.
+    /// </para>
+    /// </remarks>
+    public void DeleteCertificate(PivSlot slot)
+    {
+        var tag = slot.CertificateObject
+            ?? throw new ArgumentException($"Slot {slot} holds no certificate object.",
+                nameof(slot));
+
+        // 5C <tag> 53 00 - the object, and nothing in it.
+        var data = new List<byte> { 0x5C, (byte)tag.Length };
+        data.AddRange(tag);
+        data.AddRange([0x53, 0x00]);
+
+        var response = Connection.Send(new ApduCommand(InsPutData,
+            p1: 0x3F, p2: 0xFF, data: data.ToArray()));
+
+        PivStatus.ThrowIfFailed(response.Status, $"PUT DATA (delete {slot})");
+    }
+
     public void PutCertificate(PivSlot slot, byte[] der)
     {
         var tag = slot.CertificateObject
