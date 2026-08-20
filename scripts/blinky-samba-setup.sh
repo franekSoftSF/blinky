@@ -189,8 +189,12 @@ say "installing the KDC certificate"
 
 # Checked before it is installed. A certificate without id-pkinit-KPKdc looks
 # perfectly good in a viewer and PKINIT refuses it, complaining about trust.
+# Either spelling. openssl prints the friendly name when it recognises the OID
+# and the OID when it does not, and which one you get depends on the version -
+# so a check for the number alone rejects a perfectly good certificate, which
+# is exactly what this did the first time it ran.
 if ! openssl x509 -in "$KDC_CERT" -noout -ext extendedKeyUsage 2>/dev/null |
-        grep -q "1.3.6.1.5.2.3.5"; then
+        grep -qE "1\.3\.6\.1\.5\.2\.3\.5|Signing KDC Response"; then
     echo "This certificate has no KDC Authentication EKU (1.3.6.1.5.2.3.5)." >&2
     echo "PKINIT will refuse it, and the message will be about trust." >&2
     exit 4
