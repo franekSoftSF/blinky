@@ -309,22 +309,44 @@ exercised against the thing it is really for.
 
 Ordered, each item small enough to finish in one sitting.
 
-1. **0020 — `ICertificateAuthority`, `CaCapabilities`, the profile model.** Both
-   backends registerable behind one interface, with the capability differences
-   visible rather than discovered at issuance.
-2. **0021 and 0028 — the built-in CA**, single and two-tier, with the `file` and
-   SoftHSM key tiers. This is what makes an end-to-end demo possible with no
-   directory at all.
+1. **Issue onto the Bio, on the ordinary PIN path.** Nothing has ever been
+   written to the biometric token, and it differs from the others in exactly
+   the places that have already caused trouble: AES-192 management key, eight
+   PIN attempts rather than three, and no PUK at all. No new code — an
+   enrolment job and one PIN — and it closes the question of whether the Bio
+   behaves like any other token when a certificate is issued onto it.
+2. **0027 — verification by fingerprint instead of PIN.** Not a test, a patch:
+   the biometric `VERIFY` and the temporary-PIN encoding that doc 03 describes
+   and nothing has ever exercised, because checking costs a match attempt and
+   needs a finger. Worth doing before the lab for one reason only — it is the
+   single thing here that cannot be verified without a person at the keyboard,
+   and the lab can be built at any time.
 3. **Stand up the lab** — four machines, described in [09](09-lab.md). The
    Phase 2 gate needs a domain to log into, and it is the only item here that
    needs infrastructure rather than time. Reach the cheaper rung first: PKINIT
    from Linux proves the certificate before a Windows client exists to blame.
-4. **0022 and 0023 — profiles and on-card CSR signing**, the first point at
-   which a key is generated on a token rather than read from one.
+   This is also what makes `smartcard-logon` issuable at all, since it refuses
+   without a resolved `objectSid`.
+4. **0029 — reconcile credentials with what a sweep finds.** A token reset
+   outside Blinky leaves `Credential` rows reading `Installed` for certificates
+   that no longer exist. The sweep corrects the slot and says nothing about the
+   credential.
+5. **0022's remaining half** — profiles in the database rather than in code,
+   and **0025** — personalisation, which is waiting on a decision about the
+   management-key master rather than on work.
 
-Items 1, 2 and 4 can start immediately. Item 3 is the long pole for the phase
-gate and is worth starting in parallel.
+Items 1, 2, 4 and 5 can start immediately. Item 3 is the long pole for the
+phase gate and is worth starting in parallel.
 
-Not on this list, deliberately: 0017 is blocked for want of a Linux reader,
-0018 waits for 0023, and the temporary-PIN half of 0016 waits for 0027. All
-three are recorded in *Patch progress* with their reasons.
+Not on this list, deliberately: 0017 is blocked for want of a Linux reader, and
+the temporary-PIN half of 0016 waits for 0027.
+
+### Left in an odd state, on purpose
+
+Token 29177301 still holds the certificate from the run of 20 August 2026,
+because it could not be cleaned: `SCardConnect` on its reader returns
+`0x8010000B`, the card held exclusively by something else. HID ActivClient is
+the suspect — it runs on this machine, and the card became interesting to it at
+exactly the moment a certificate landed in slot 9A. If that is confirmed it
+sharpens what doc 08 records: ActivClient does not contend for an empty PIV
+card, and does contend for one holding a credential.

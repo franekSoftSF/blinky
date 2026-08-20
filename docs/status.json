@@ -774,6 +774,16 @@
       "what": "That a written certificate reaches the Windows certificate store",
       "why": "HID ActivClient owns the minidriver binding on this machine",
       "when": "A clean Windows client, docs/09-lab.md"
+    },
+    {
+      "what": "Issuance onto the biometric token",
+      "why": "Nothing has ever been written to it, and it differs where trouble has already come from: AES-192 management key, eight PIN attempts, no PUK",
+      "when": "Next session - an enrolment job on the ordinary PIN path, no new code"
+    },
+    {
+      "what": "Verification by fingerprint instead of PIN",
+      "why": "The biometric VERIFY and the temporary-PIN encoding in doc 03 have never been exercised: checking costs a match attempt and needs a finger",
+      "when": "0027, worth doing while a person is at the keyboard"
     }
   ],
   "lab": {
