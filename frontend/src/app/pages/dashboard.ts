@@ -11,7 +11,7 @@ import { I18n } from '../core/i18n';
     <section class="page-hero">
       <div><p class="eyebrow">{{ i18n.t('environmentState') }}</p><h1>{{ i18n.t('hello') }}</h1><p>{{ i18n.t('helloText') }}</p></div>
       <button class="action-button" type="button" (click)="store.load(true)">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
+        <span aria-hidden="true">↻</span>
         {{ i18n.t('refreshData') }}
       </button>
     </section>
