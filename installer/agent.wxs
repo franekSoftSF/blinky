@@ -75,23 +75,29 @@
     </Feature>
 
     <ComponentGroup Id="AgentBinaries" Directory="AgentFolder">
-      <Files Include="$(var.AgentPublish)\**" />
+      <!--
+        Everything except the service executable, which is authored by hand
+        below. Exclude is a child element here rather than an attribute - the
+        attribute spelling is rejected by WiX 5, which is what sent an earlier
+        version of this file down the registry key path described below.
+      -->
+      <Files Include="$(var.AgentPublish)\**">
+        <Exclude Files="$(var.AgentPublish)\Blinky.Agent.Service.exe" />
+      </Files>
 
       <!--
-        The service is authored in a component of its own, keyed on a registry
-        value rather than on the executable. WiX 5's <Files> has no exclusion,
-        so naming the executable here as well would harvest it twice - two
-        components pointing at one file, which builds with nothing worse than a
-        short-name collision warning and then behaves like a repair loop on the
-        machine.
-
-        A registry key path is the standard way out and costs nothing: the
-        binaries are in the same feature, so the service can never be installed
-        without them.
+        The service lives in its own component, keyed on its own executable.
+        The key path is not a formality: InstallServices takes the service's
+        image path from the component's key file, so a component keyed on
+        anything else - a registry value, say - installs no service at all.
+        The install then runs on to util:ServiceConfig, which cannot find
+        BlinkyAgent and fails the whole transaction with 1603 while every
+        earlier step reports success.
       -->
       <Component Id="AgentService" Guid="a4d2c9e1-3b77-4a58-8f2d-1e6b9c0d4a21">
-        <RegistryValue Root="HKLM" Key="SOFTWARE\Blinky" Name="ServiceInstalled"
-                       Type="integer" Value="1" KeyPath="yes" />
+        <File Id="AgentServiceExe"
+              Source="$(var.AgentPublish)\Blinky.Agent.Service.exe"
+              KeyPath="yes" />
 
         <!--
           LocalSystem, stated rather than defaulted: it is the account that can
