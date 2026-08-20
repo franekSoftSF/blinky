@@ -351,7 +351,7 @@ can be built against it rather than alongside it.
 | Identity | The Windows certificate store — `certlm` as a service, `certmgr` when run by a person. Key non-exportable; verified by a refused export |
 | Renewal | Every poll, replaced with a month to go, proving itself with the current certificate. No bootstrap token after the first start |
 | Logging | `%ProgramData%\Blinky\logsgent-*.log`, daily, fourteen kept. Directory: SYSTEM, Administrators, and the account running |
-| Deployment | `scripts/install-agent.ps1` — service as LocalSystem, tray from `HKLM\...\Run` for every user |
+| Deployment | `scripts/build-msi.sh` produces an MSI: service as LocalSystem, tray from `HKLM\...\Run`, configuration in `HKLM\SOFTWARE\Blinky\Agent` locked to SYSTEM and Administrators. `scripts/install-agent.ps1` does the same by hand |
 | Reader | One operation at a time per process; a reader held by something else is reported with a reason rather than dropping the token from the list |
 | Tray | Certificates with managed / not managed / unknown, PIN change, unblock online and by telephone |
 

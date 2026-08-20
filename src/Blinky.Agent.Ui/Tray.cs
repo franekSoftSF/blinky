@@ -24,6 +24,7 @@ namespace Blinky.Agent.Ui;
 public sealed class Tray : IDisposable
 {
     private readonly NotifyIcon icon;
+    private readonly Icon trayIcon;
     private readonly ToolStripMenuItem polish;
     private readonly ToolStripMenuItem english;
     private readonly ToolStripMenuItem systemTheme;
@@ -63,9 +64,16 @@ public sealed class Tray : IDisposable
         menu.Items.Add(new ToolStripMenuItem(Strings.Current["Tray.Exit"], null,
             (_, _) => ExitRequested?.Invoke()));
 
+        using var executableIcon = Environment.ProcessPath is { } processPath
+            ? Icon.ExtractAssociatedIcon(processPath)
+            : null;
+        trayIcon = executableIcon is null
+            ? (Icon)SystemIcons.Shield.Clone()
+            : (Icon)executableIcon.Clone();
+
         icon = new NotifyIcon
         {
-            Icon = SystemIcons.Shield,
+            Icon = trayIcon,
             Visible = true,
             Text = Strings.Current["App.Name"],
             ContextMenuStrip = menu,
@@ -139,5 +147,6 @@ public sealed class Tray : IDisposable
         // it, which looks like a process that would not die.
         icon.Visible = false;
         icon.Dispose();
+        trayIcon.Dispose();
     }
 }

@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Blinky agent, as an MSI.
+
+  Built by scripts/build-msi.sh, which publishes both executables first and
+  hands the directories to the <Files> elements below.
+
+  Deployed unattended:
+
+      msiexec /i blinky-agent.msi /qn ^
+              BACKEND=https://blinky.example:9443 ^
+              DOMAIN=corp.example ^
+              BOOTSTRAPTOKEN=... ^
+              SERVERCA=C:\certs\backend-ca.crt
+
+  Configuration goes into the registry rather than a file beside the binaries,
+  so a domain can change it by policy afterwards without repackaging anything.
+  That key is locked to SYSTEM and Administrators, because one of the values is
+  a bootstrap token and HKLM\SOFTWARE is world-readable by default.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="Blinky agent"
+           Manufacturer="Blinky"
+           Version="$(var.Version)"
+           UpgradeCode="6f2f1f6a-6a2b-4d1e-9a0b-7c4d2e5f8a13"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <!--
+      Downgrades are refused rather than allowed to half-work: an older service
+      binary against a newer certificate store layout is a support call nobody
+      can diagnose from a workstation.
+    -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of the Blinky agent is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!--
+      The bootstrap token must never reach an installer log. MSI writes every
+      property it knows into %TEMP%\MSI*.LOG when logging is on, and support
+      staff turn logging on precisely when something went wrong.
+    -->
+    <Property Id="MSIHIDDENPROPERTIES" Value="BOOTSTRAPTOKEN" />
+
+    <Property Id="BACKEND" Secure="yes" />
+    <Property Id="DOMAIN" Secure="yes" />
+    <Property Id="BOOTSTRAPTOKEN" Secure="yes" Hidden="yes" />
+    <Property Id="SERVERCA" Secure="yes" />
+
+    <Launch Condition="Installed OR DOMAIN"
+            Message="DOMAIN is required. The service runs as LocalSystem, whose domain is the machine name, so it cannot be worked out here - guessing produces a second, orphaned agent row for this machine." />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Blinky">
+        <Directory Id="AgentFolder" Name="agent" />
+        <Directory Id="UiFolder" Name="ui" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <!--
+        Created here as well as by the agent, because the CA file is copied in
+        before the service has ever run.
+      -->
+      <Directory Id="StateFolder" Name="Blinky" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Blinky agent" Level="1">
+      <ComponentGroupRef Id="AgentBinaries" />
+      <ComponentGroupRef Id="UiBinaries" />
+      <ComponentGroupRef Id="Configuration" />
+    </Feature>
+
+    <ComponentGroup Id="AgentBinaries" Directory="AgentFolder">
+      <Files Include="$(var.AgentPublish)\**" />
+
+      <!--
+        The service is authored in a component of its own, keyed on a registry
+        value rather than on the executable. WiX 5's <Files> has no exclusion,
+        so naming the executable here as well would harvest it twice - two
+        components pointing at one file, which builds with nothing worse than a
+        short-name collision warning and then behaves like a repair loop on the
+        machine.
+
+        A registry key path is the standard way out and costs nothing: the
+        binaries are in the same feature, so the service can never be installed
+        without them.
+      -->
+      <Component Id="AgentService" Guid="a4d2c9e1-3b77-4a58-8f2d-1e6b9c0d4a21">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Blinky" Name="ServiceInstalled"
+                       Type="integer" Value="1" KeyPath="yes" />
+
+        <!--
+          LocalSystem, stated rather than defaulted: it is the account that can
+          hold a card reader and write to the machine certificate store, and
+          the account that cannot draw a window. That split is why there is a
+          separate tray at all.
+        -->
+        <ServiceInstall Id="AgentServiceInstall"
+                        Name="BlinkyAgent"
+                        DisplayName="Blinky agent"
+                        Description="Manages PIV credentials on tokens attached to this machine."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="LocalSystem"
+                        Vital="yes">
+
+          <!--
+            Twice, then stop. An agent that cannot start is not fixed by
+            starting it again every minute for a week, and a restart loop
+            buries the reason in the log it is supposed to leave behind.
+          -->
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="none"
+                              RestartServiceDelayInSeconds="60"
+                              ResetPeriodInDays="1" />
+        </ServiceInstall>
+
+        <ServiceControl Id="AgentServiceControl"
+                        Name="BlinkyAgent"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="UiBinaries" Directory="UiFolder">
+      <Files Include="$(var.UiPublish)\**" />
+
+      <Component Id="TrayAutostart" Guid="b81e5f30-2c94-4a0d-9d7e-5f3a8c1b6e42">
+        <!--
+          HKLM rather than HKCU. The tray belongs to the machine's installation
+          and has to appear for whoever logs in next, not only for whoever
+          happened to run the installer.
+        -->
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+                       Name="BlinkyAgentUi"
+                       Type="string"
+                       Value="&quot;[UiFolder]Blinky.Agent.Ui.exe&quot;"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="Configuration" Directory="StateFolder">
+      <Component Id="AgentSettings" Guid="c93a7b12-8d45-4e6f-b0c1-2a7e9d3f5b84">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Blinky\Agent" Id="AgentSettingsKey"
+                     ForceCreateOnInstall="yes">
+          <RegistryValue Name="BackendUrl" Type="string" Value="[BACKEND]" KeyPath="yes" />
+          <RegistryValue Name="Domain" Type="string" Value="[DOMAIN]" />
+          <RegistryValue Name="Hostname" Type="string" Value="[ComputerName]" />
+          <RegistryValue Name="BootstrapToken" Type="string" Value="[BOOTSTRAPTOKEN]" />
+
+          <!--
+            SYSTEM and Administrators, and inheritance dropped. Without this the
+            bootstrap token sits in a world-readable part of HKLM, and a token
+            any user can read buys an agent certificate for anybody who asks.
+          -->
+          <util:PermissionEx User="SYSTEM" GenericAll="yes" />
+          <util:PermissionEx User="Administrators" GenericAll="yes" />
+        </RegistryKey>
+
+        <!--
+          Deliberately not removed on uninstall: the agent's identity lives in
+          the machine certificate store and its log in this directory, and an
+          upgrade that took them would look like a new machine and split one
+          workstation's history across two agent rows.
+        -->
+      </Component>
+
+      <Component Id="BackendCertificateAuthority" Guid="d0b4e8a7-51c3-4f92-8e6d-3b9a2c7f1d05"
+                 Condition="SERVERCA">
+        <CopyFile Id="CopyBackendCa" SourceProperty="SERVERCA"
+                  DestinationDirectory="StateFolder"
+                  DestinationName="backend-ca.crt" />
+
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Blinky\Agent"
+                       Name="ServerCertificateAuthorityPath"
+                       Type="string"
+                       Value="[StateFolder]backend-ca.crt"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Package>
+</Wix>

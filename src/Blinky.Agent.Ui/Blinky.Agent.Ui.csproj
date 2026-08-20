@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>..\..\assets\branding\blinky-agent.ico</ApplicationIcon>
 
     <!-- For NotifyIcon alone. WPF has never had a tray icon, and the usual
          answer is a NuGet package; two framework references cost less to keep
@@ -36,6 +37,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Blinky.Contracts\Blinky.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="..\..\assets\branding\blinky-agent.ico" Link="Assets\blinky-agent.ico" />
   </ItemGroup>
 
 </Project>

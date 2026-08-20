@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-Blinky.Agent.Service-2aa6bcce-eb6f-42a9-a277-5a9ebe5b6cc1</UserSecretsId>
+    <ApplicationIcon>..\..\assets\branding\blinky-agent.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +22,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Blinky.Contracts\Blinky.Contracts.csproj" />
     <ProjectReference Include="..\Blinky.Piv\Blinky.Piv.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\assets\branding\blinky-agent-256.png" Link="Assets\blinky-agent-256.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

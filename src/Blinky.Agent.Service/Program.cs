@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using System.Runtime.Versioning;
 using Blinky.Agent.Service;
 using Serilog;
@@ -21,6 +22,12 @@ if (OperatingSystem.IsWindows())
 {
     builder.Configuration.AddJsonFile(
         Path.Combine(AgentPaths.Root, "agent.json"), optional: true, reloadOnChange: false);
+
+    // Last, so it wins. The registry is what the installer writes and what a
+    // domain policy can change afterwards without touching a file on every
+    // workstation; a JSON file left over from a hand install should not
+    // override what the fleet was told.
+    ((IConfigurationBuilder)builder.Configuration).Add(new RegistryConfigurationSource());
 }
 
 builder.Services.AddSerilog((services, configuration) =>

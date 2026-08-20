@@ -39,3 +39,6 @@ ca/
 
 # Lab agent identity: a private key, never in the repo.
 .lab/
+
+# Build output: a 67 MB MSI does not belong in git history.
+artifacts/
