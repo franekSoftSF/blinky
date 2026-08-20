@@ -1,0 +1,14 @@
+.row-action {
+  border: 1px solid #6a3946;
+  border-radius: 8px;
+  padding: .42rem .68rem;
+  background: #281923;
+  color: #ff9aa5;
+  font-size: .7rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.row-action:hover { background: #3b202c; }
+.row-action:disabled { cursor: wait; opacity: .55; }

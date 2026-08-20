@@ -7,6 +7,7 @@ export interface TokenRow { id: string; serial: number; firmwareVersion?: string
 export interface CredentialRow { id: string; tokenSerial: number; slotId: string; subjectDn?: string; state: string; notAfter?: string; }
 export interface JobRow { id: string; type: string; state: string; tokenSerial?: number; attempt: number; createdAt: string; }
 export interface ConsoleSnapshot { agents: AgentRow[]; tokens: TokenRow[]; credentials: CredentialRow[]; jobs: JobRow[]; }
+export interface JobCreated { id: string; created: boolean; state: string; }
 
 @Injectable({ providedIn: 'root' })
 export class ConsoleStore {
@@ -16,17 +17,28 @@ export class ConsoleStore {
   readonly error = signal<string | null>(null);
   readonly snapshot = signal<ConsoleSnapshot>({ agents: [], tokens: [], credentials: [], jobs: [] });
 
+  private operatorHeaders(): HttpHeaders | undefined {
+    const token = sessionStorage.getItem('blinky.operatorToken') ?? '';
+    return token ? new HttpHeaders({ 'X-Blinky-Operator': token }) : undefined;
+  }
+
   async load(force = false): Promise<void> {
     if (this.loading() && !force) return;
     this.loading.set(true); this.error.set(null);
     try {
-      const token = sessionStorage.getItem('blinky.operatorToken') ?? '';
-      const headers = token ? new HttpHeaders({ 'X-Blinky-Operator': token }) : undefined;
-      this.snapshot.set(await firstValueFrom(this.http.get<ConsoleSnapshot>('/api/console/overview', { headers })));
+      this.snapshot.set(await firstValueFrom(this.http.get<ConsoleSnapshot>('/api/console/overview', { headers: this.operatorHeaders() })));
       this.online.set(true);
     } catch (error) {
       this.online.set(false);
       this.error.set(error instanceof Error ? error.message : 'Nie można połączyć się z API.');
     } finally { this.loading.set(false); }
+  }
+
+  async recycleCredential(tokenSerial: number, slotId: string): Promise<JobCreated> {
+    const result = await firstValueFrom(this.http.post<JobCreated>('/api/jobs/recycle',
+      { tokenSerial, slotId, reason: `console-${Date.now()}` },
+      { headers: this.operatorHeaders() }));
+    await this.load(true);
+    return result;
   }
 }
