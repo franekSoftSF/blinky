@@ -33,6 +33,15 @@ server {
 
     client_max_body_size 4m;
 
+    # The CRS image's own container healthcheck asks for this. Without it the
+    # log fills with 404s at every interval - noise that trains people to
+    # ignore the log, which is worse than the missing endpoint.
+    location = /healthz {
+        access_log off;
+        return 200 "ok
+";
+    }
+
     location / {
         proxy_pass http://api:8080;
         proxy_set_header Host              $host;
@@ -77,6 +86,15 @@ server {
     modsecurity_rules 'SecRuleEngine DetectionOnly';
 
     client_max_body_size 12m;
+
+    # The CRS image's own container healthcheck asks for this. Without it the
+    # log fills with 404s at every interval - noise that trains people to
+    # ignore the log, which is worse than the missing endpoint.
+    location = /healthz {
+        access_log off;
+        return 200 "ok
+";
+    }
 
     # A PKCS#10 request is base64 of DER, and a rule set tuned for web forms
     # reads that as an attack. Body inspection is turned off for the endpoints
