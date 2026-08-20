@@ -34,7 +34,7 @@ param(
     [Parameter(Mandatory = $true)] [string] $BootstrapToken,
     [string] $Backend = 'https://by-ca-cms.blinky.lab:9443',
     [string] $Domain = 'blinky.lab',
-    [string] $Msi = "$PSScriptRoot\blinky-agent-0.2.3.msi",
+    [string] $Msi = "$PSScriptRoot\blinky-agent-0.2.4.msi",
     [string] $CaCertificate = "$PSScriptRoot\dev-ca.crt"
 )
 
