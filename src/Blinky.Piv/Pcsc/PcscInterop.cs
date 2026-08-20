@@ -23,6 +23,11 @@ internal static partial class PcscInterop
     internal const uint ProtocolT1 = 2;
     internal const uint LeaveCard = 0;
 
+    // Initialisation, not reset: the card has already been reset by whoever
+    // did this to us, and asking for another one would throw away the only
+    // thing left worth having, which is a usable handle.
+    internal const uint InitialisationLeaveCard = 0;
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct ScardIoRequest
     {
@@ -47,6 +52,10 @@ internal static partial class PcscInterop
     [LibraryImport(Library, EntryPoint = "SCardConnectA", StringMarshalling = StringMarshalling.Utf8)]
     internal static partial int SCardConnect(IntPtr context, string reader, uint shareMode,
         uint preferredProtocols, out IntPtr card, out uint activeProtocol);
+
+    [LibraryImport(Library, EntryPoint = "SCardReconnect")]
+    internal static partial int SCardReconnect(IntPtr card, uint shareMode, uint preferredProtocols,
+        uint initialisation, out uint activeProtocol);
 
     [LibraryImport(Library, EntryPoint = "SCardDisconnect")]
     internal static partial int SCardDisconnect(IntPtr card, uint disposition);

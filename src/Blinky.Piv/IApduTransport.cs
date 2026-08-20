@@ -20,4 +20,20 @@ public interface IApduTransport : IDisposable
     /// nothing. Disposing ends it.
     /// </summary>
     IDisposable BeginTransaction();
+
+    /// <summary>
+    /// Gets a usable handle back after the card was reset underneath us, and
+    /// says whether it worked.
+    /// </summary>
+    /// <remarks>
+    /// On Windows the card is shared with the smart card service, any
+    /// installed minidriver and the logon screen, and any of them can reset
+    /// it between two of our commands. The caller has to select the applet
+    /// again afterwards - this only restores the connection.
+    /// <para>
+    /// A transport with nothing to reconnect says false, and the layer above
+    /// reports the original failure rather than inventing a recovery.
+    /// </para>
+    /// </remarks>
+    bool Reconnect() => false;
 }

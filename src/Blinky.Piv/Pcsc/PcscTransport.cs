@@ -40,7 +40,7 @@ public sealed class PcscTransport : IApduTransport
         PcscException.ThrowIfFailed(
             PcscInterop.SCardTransmit(card, ref request, command, command.Length, IntPtr.Zero,
                 buffer, ref received),
-            $"SCardTransmit({Convert.ToHexString(command)})");
+            $"SCardTransmit({ApduRedaction.Describe(command)})");
 
         if (received < 2)
         {
@@ -56,6 +56,23 @@ public sealed class PcscTransport : IApduTransport
     /// processes wait rather than fail, which is what keeps this working next to
     /// a minidriver.
     /// </summary>
+    /// <inheritdoc />
+    public bool Reconnect()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+
+        // SCARD_LEAVE_CARD: the card was already reset by whoever did this,
+        // and asking the driver for another reset would only add a second one.
+        var code = PcscInterop.SCardReconnect(card, PcscInterop.ShareShared,
+            PcscInterop.ProtocolT0 | PcscInterop.ProtocolT1,
+            PcscInterop.InitialisationLeaveCard, out _);
+
+        // No throw. Failing to recover is not a new failure to report - the
+        // caller still holds the one that started this, and that is the one
+        // worth telling somebody about.
+        return code == 0;
+    }
+
     public IDisposable BeginTransaction()
     {
         ObjectDisposedException.ThrowIf(disposed, this);

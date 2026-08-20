@@ -1,3 +1,5 @@
+using Blinky.Piv.Pcsc;
+
 namespace Blinky.Piv;
 
 /// <summary>
@@ -32,7 +34,7 @@ public sealed class PivConnection(IApduTransport transport, bool ownsTransport =
     /// </summary>
     public bool SelectPiv()
     {
-        var response = Send(new ApduCommand(InsSelect, p1: 0x04, p2: 0x00, data: PivAid, le: 0));
+        var response = SendOnce(new ApduCommand(InsSelect, p1: 0x04, p2: 0x00, data: PivAid, le: 0));
         return response.IsSuccess;
     }
 
@@ -41,10 +43,48 @@ public sealed class PivConnection(IApduTransport transport, bool ownsTransport =
     /// collecting the response across as many GET RESPONSE calls as the card
     /// asks for. Does not throw on a non-success status word.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Retried once when the card is reset underneath us. On Windows the card
+    /// is shared with the smart card service, any installed minidriver and the
+    /// logon screen, and any of them can reset it between two of our commands
+    /// - a transaction stops them interleaving, not resetting. What comes back
+    /// is <c>SCARD_W_RESET_CARD</c>, and what it means is that the connection
+    /// survived and the applet selection did not.
+    /// </para>
+    /// <para>
+    /// Seen on 20 August 2026: an enrolment generated a key on the card and
+    /// then failed at the PIN verification, leaving a key in slot 9A with no
+    /// certificate. The recovery - reconnect, select the applet, send it again
+    /// - is defined by the standard, and not doing it turned a hiccup into a
+    /// half-provisioned token.
+    /// </para>
+    /// <para>
+    /// Once. A card resetting twice in one command is not a card having a bad
+    /// moment, and retrying at it would hide that.
+    /// </para>
+    /// </remarks>
     public ApduResponse Send(ApduCommand command)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
+        try
+        {
+            return SendOnce(command);
+        }
+        catch (PcscException reset) when (reset.Code == PcscException.ResetCard)
+        {
+            if (!Transport.Reconnect() || !SelectPiv())
+            {
+                throw;
+            }
+
+            return SendOnce(command);
+        }
+    }
+
+    private ApduResponse SendOnce(ApduCommand command)
+    {
         var data = command.Data;
         var collected = new List<byte>();
 
