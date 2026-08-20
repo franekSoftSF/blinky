@@ -1,5 +1,12 @@
 # Frontend
 
+## Slot ownership is not a boolean
+
+`SlotManagement` has four values: `Managed`, `Unmanaged`, `Unknown`, and
+`Empty`. In particular, `Unknown` is the expected result when an agent cannot
+reach the backend. The console must render it neutrally and must never relabel
+it as an unmanaged/foreign credential. See `src/app/core/slot-management.ts`.
+
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.1.5.
 
 ## Development server
