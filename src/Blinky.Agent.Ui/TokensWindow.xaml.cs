@@ -229,29 +229,50 @@ public sealed record DeviceRow(string Name, string Line2, Visibility ManagedVisi
                 : Visibility.Collapsed);
 
     /// <summary>
-    /// What the card actually said, never a model name worked out from it.
+    /// What the card actually said, and nothing worked out from it.
     /// </summary>
     /// <remarks>
-    /// The form factor comes from an attestation and is therefore absent on a
-    /// token holding no key. Filling that gap by reading a model out of a
-    /// firmware version would put a guess in the one line people read as the
-    /// identity of the thing in their hand — the same mistake doc 08 records
-    /// for the form-factor column.
+    /// <para>
+    /// "YubiKey" is a finding rather than an assumption: everything in this
+    /// list answered <c>GET SERIAL</c>, a Yubico instruction that other
+    /// vendors' PIV cards refuse with <c>6D00</c> — the agent drops a card
+    /// with no serial from the inventory entirely. So a token that reached
+    /// this window is one whose own applet identified its maker.
+    /// </para>
+    /// <para>
+    /// The shape after it comes from the attestation and is therefore missing
+    /// on a token holding no key, which is why the name degrades to plain
+    /// "YubiKey" rather than to a model. A marketing name reconstructed from a
+    /// firmware version — "YubiKey 5C NFC" from 5.7.1 — would be a guess in
+    /// the one line people read as the identity of the thing in their hand,
+    /// and doc 08 records that exact mistake once already.
+    /// </para>
     /// </remarks>
     private static string Label(TokenView token)
     {
         var strings = Strings.Current;
 
-        var name = token.FormFactor is { Length: > 0 } form
-            ? form
-            : strings["Device.Generic"];
+        var name = strings["Device.YubiKey"];
 
+        // The Bio says so through its biometric slot, which is a fact about
+        // the applet rather than a form factor - and it is present whether or
+        // not anybody has enrolled a finger.
         if (token.FingerprintsEnrolled)
         {
-            name += "  " + strings["Device.Biometric"];
+            return name + " " + strings["Device.Bio"];
         }
 
-        return token.IsFipsDevice ? name + "  FIPS" : name;
+        if (token.FormFactor is { Length: > 0 } form)
+        {
+            var described = strings["Device.Form." + form];
+
+            // The table above is by name, so an unrecognised form factor falls
+            // through to the raw value rather than to nothing: a new one
+            // should read oddly, not vanish.
+            name += " " + (described == "Device.Form." + form ? form : described);
+        }
+
+        return token.IsFipsDevice ? name + " FIPS" : name;
     }
 
     public static string Describe(TokenView token)

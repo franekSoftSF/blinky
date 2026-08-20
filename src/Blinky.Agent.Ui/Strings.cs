@@ -128,6 +128,15 @@ public sealed class Strings : INotifyPropertyChanged
         ["Default.Prefilled"] = "Filled in with the factory value, which is what this card "
                                 + "reports it still has.",
 
+        ["Device.YubiKey"] = "YubiKey",
+        ["Device.Bio"] = "Bio",
+        ["Device.Form.UsbAKeychain"] = "USB-A keychain",
+        ["Device.Form.UsbANano"] = "USB-A nano",
+        ["Device.Form.UsbCKeychain"] = "USB-C keychain",
+        ["Device.Form.UsbCNano"] = "USB-C nano",
+        ["Device.Form.UsbCLightning"] = "USB-C / Lightning",
+        ["Device.Form.UsbABiometricKeychain"] = "Bio, USB-A",
+        ["Device.Form.UsbCBiometricKeychain"] = "Bio, USB-C",
         ["Device.Generic"] = "PIV token",
         ["Device.Biometric"] = "(biometric)",
 
@@ -219,6 +228,15 @@ public sealed class Strings : INotifyPropertyChanged
         ["Default.Warning"] = "wartość fabryczna",
         ["Default.Prefilled"] = "Wpisane wartością fabryczną, bo karta sama zgłasza, że wciąż ją ma.",
 
+        ["Device.YubiKey"] = "YubiKey",
+        ["Device.Bio"] = "Bio",
+        ["Device.Form.UsbAKeychain"] = "USB-A, breloczek",
+        ["Device.Form.UsbANano"] = "USB-A nano",
+        ["Device.Form.UsbCKeychain"] = "USB-C, breloczek",
+        ["Device.Form.UsbCNano"] = "USB-C nano",
+        ["Device.Form.UsbCLightning"] = "USB-C / Lightning",
+        ["Device.Form.UsbABiometricKeychain"] = "Bio, USB-A",
+        ["Device.Form.UsbCBiometricKeychain"] = "Bio, USB-C",
         ["Device.Generic"] = "Token PIV",
         ["Device.Biometric"] = "(biometryczny)",
 
