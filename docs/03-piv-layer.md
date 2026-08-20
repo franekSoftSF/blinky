@@ -87,12 +87,12 @@ Standard PIV:
 | `87` | GENERAL AUTHENTICATE | Sign, decrypt, and management-key mutual auth |
 | `CB` | GET DATA | Read a data object, tag `5C` |
 | `DB` | PUT DATA | Write a data object — this is how a certificate gets onto the card |
+| `47` | GENERATE ASYMMETRIC KEY PAIR | `P2` = slot. Returns the public key; the private key never exists off-card |
 
 Yubico extensions — the ones that make a CMS possible:
 
 | INS | Command | Note |
 |---|---|---|
-| `47` | GENERATE ASYMMETRIC KEY PAIR | `P2` = slot. Returns the public key; the private key never exists off-card |
 | `F9` | ATTEST | `P1` = slot. Returns an X.509 certificate for the key in that slot |
 | `F7` | GET METADATA | Firmware 5.3+. PIN/touch policy, key algorithm, whether the management key is default |
 | `F8` | GET SERIAL | |
@@ -100,6 +100,20 @@ Yubico extensions — the ones that make a CMS possible:
 | `FF` | SET MANAGEMENT KEY | `P2=0xFF` normal, `0xFE` requires touch |
 | `FA` | SET PIN RETRIES | Resets PIN *and* PUK to defaults as a side effect — see below |
 | `FB` | RESET | Wipes the PIV application. Only accepted when PIN *and* PUK are blocked |
+
+**`47` is standard, and an earlier draft of this document had it in the Yubico
+list.** Measured rather than argued: sent to five cards with a deliberately
+invalid algorithm identifier, so nothing could be generated, every one of them
+answered `6982` — "I understand this, authenticate the management key first" —
+including both HID cards. The control matters as much as the result: `INS 4E`,
+which nobody defines, came back `6D00` from all five, which is what makes
+`6982` mean *recognised* rather than merely *not 6D00*.
+
+This is not a footnote. It sets the size of any future vendor module: key
+generation and certificate writing are standard PIV and would need no vendor
+code at all. What is missing on a foreign card is identity, state
+introspection, management-key rotation and attestation — and only the last of
+those is unfixable, because PIV has no attestation and never will.
 
 `GET METADATA` is worth calling out: before firmware 5.3 there is no way to ask
 the card what its own PIN policy or management-key state is, so on older tokens
@@ -217,6 +231,15 @@ Two consequences, and the second one was a bug:
   the token's serial, and a card without one has no row to live in. But an
   operator who plugs in a card and sees nothing happen cannot tell that from a
   dead agent, so the agent reports it as an unsupported card and says why.
+- **What is missing is smaller than it looks, and worse.** Key generation and
+  certificate writing are standard PIV — both HID cards answer `INS 47` with
+  `6982`, meaning they understand it and want the management key first. A
+  vendor module would have to supply four things: identity, state
+  introspection, management-key rotation, and attestation. Only the last is
+  unfixable: PIV has no attestation, so a foreign card can never prove its key
+  is on hardware, and `Registered` would be unreachable for it. That makes
+  multi-vendor support a decision to accept a weaker claim for part of the
+  fleet, not a coding task — and it is out of scope for this version.
 - **`6D00` means absence, not failure.** `ATTEST` returning "instruction not
   supported" is the normal answer from a card that does not do attestation.
   Treating it as an error turned an ordinary Crescendo into an exception in the
