@@ -22,6 +22,7 @@
       <button class="icon-button menu" type="button" aria-label="Otwórz menu" (click)="menuOpen.update(v => !v)">☰</button>
       <div class="page-title"><span>{{ section() }}</span><small>{{ i18n.t('subtitle') }}</small></div>
       <div class="top-actions">
+        <button class="icon-button" type="button" (click)="theme.toggle()" [attr.aria-label]="theme.current() === 'dark' ? i18n.t('lightTheme') : i18n.t('darkTheme')">{{ theme.current() === 'dark' ? '☀' : '☾' }}</button>
         <button class="icon-button language" type="button" (click)="i18n.toggle()" [attr.aria-label]="i18n.t('language')">{{ i18n.language() === 'pl' ? 'EN' : 'PL' }}</button>
         <button class="icon-button" type="button" [attr.aria-label]="i18n.t('refresh')" (click)="refresh()">↻</button>
         <div class="operator"><span>OP</span><div><strong>{{ i18n.t('operator') }}</strong><small>{{ i18n.t('administrator') }}</small></div></div>

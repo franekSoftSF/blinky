@@ -3,12 +3,14 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 import { filter } from 'rxjs';
 import { ConsoleStore } from './core/console.store';
 import { I18n } from './core/i18n';
+import { Theme } from './core/theme';
 
 @Component({ selector: 'app-root', imports: [RouterOutlet, RouterLink, RouterLinkActive], templateUrl: './app.html', styleUrl: './app.scss' })
 export class App {
   private readonly router = inject(Router);
   private readonly store = inject(ConsoleStore);
   protected readonly i18n = inject(I18n);
+  protected readonly theme = inject(Theme);
   protected readonly menuOpen = signal(false);
   protected readonly apiOnline = this.store.online;
   protected readonly environment = computed(() => location.hostname === 'localhost' ? this.i18n.t('local') : location.hostname);
