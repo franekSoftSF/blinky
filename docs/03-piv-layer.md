@@ -328,10 +328,54 @@ and two bytes in the PIN slot.** For the PIN it is `total, remaining`; for
 slot `96` it is the remaining match attempts alone. Reading it the same way in
 both places is off by one, and the value it lands on is plausible.
 
-**Unverified.** The probe reads the flag but has not requested a temporary PIN,
-because doing so consumes a match attempt. The exact request encoding is
-confirmed on hardware in patch 0011, and nothing in the design depends on it
-until then.
+Confirmed on firmware 5.7.2 on 20 August 2026, with a finger on the sensor:
+
+```
+VERIFY 96, no data      →  63C3   three attempts, none consumed
+VERIFY 96, data 03 00   →  9000   the sensor lights, the match runs
+VERIFY 96, data 02 00   →  9000   plus sixteen bytes: a temporary PIN
+VERIFY 96, data 00      →  6A80   not an encoding this card knows
+```
+
+The last line is why guessing would have been the wrong move rather than a
+cheap one: a wrong shape is refused without consuming anything, but the right
+one **waits for a finger**, and a person who is not expecting that sees a
+program that has hung.
+
+### The finding that cost an enrolment
+
+A successful match is not enough. The first attempt generated a key with PIN
+policy `Once`, verified the user by fingerprint — `9000`, the log says *the
+user was verified by fingerprint* — and then the slot refused to sign:
+
+```
+6982   Slot 9A refused to sign: its PIN policy has not been satisfied.
+```
+
+A key generated with `Once` wants a **PIN**, and a fingerprint does not
+substitute for one however well it matched. The Bio has two additional policy
+values for exactly this, and they are set at **generation**:
+
+| | |
+|---|---|
+| `0x04` `MatchOnce` | a fingerprint match, once per session |
+| `0x05` `MatchAlways` | a match before every operation |
+
+So whether a token can be used with a finger is decided when its key is made,
+and cannot be changed afterwards without replacing the key. The agent reads
+slot `96` before generating and chooses accordingly.
+
+Both slots survive on the bench token as the evidence:
+
+| Slot | Policy | Outcome |
+|---|---|---|
+| `9A` | `Once` | key present, certificate never issued — `6982` |
+| `9C` | `MatchOnce` | provisioned, five seconds from claim to certificate |
+
+The temporary PIN is therefore **not** the mechanism by which a fingerprint
+satisfies a slot, which was the first theory and a reasonable one. It is what
+keeps a `MatchAlways` profile usable without a finger per operation, and
+nothing in the enrolment path needs it.
 
 ## Management key
 

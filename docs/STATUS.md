@@ -235,7 +235,7 @@ write it.
 | 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **done** | Written, read back, thumbprint compared, `Credential` in `Installed` and the slot in `Provisioned` — end to end through the job engine, twice. The certificate still does **not** reach the Windows store on this machine: ActivClient owns the minidriver binding |
 | 0025 | Personalisation: management key, PUK escrow, PIN policy | **open** |
 | 0026 | Job engine: leases, watchdog, `AwaitingUser` | **done, unverified** | An operator creates a job, the agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog. `AwaitingUser` has its own longer lease but nothing raises it until 0018 |
-| 0027 | Biometric user verification during enrolment | **open** |
+| 0027 | Biometric user verification during enrolment | **done** | A fingerprint replaces the PIN when the card can do it, with the PIN as fallback. Proved on a Bio 5.7.2: claim to certificate in five seconds, no PIN typed. The finding that made it work — `MatchOnce` is chosen at key generation, and a match will not satisfy a key generated with `Once` — is in [03](03-piv-layer.md) |
 | 0018 | Agent UI: PIN and touch prompts across the session boundary | **done** | A PIN typed in the user's session reached the service over the named pipe and unlocked the card. The pipe is granted to `INTERACTIVE` and `LocalSystem` and to nothing else |
 | 0029 | Reconcile credentials with what the sweep actually finds | **open** | A token reset outside Blinky leaves `Credential` rows reading `Installed` for certificates that no longer exist. The sweep corrects the *slot* and says nothing about the credential — found by resetting a token after two successful issuances |
 

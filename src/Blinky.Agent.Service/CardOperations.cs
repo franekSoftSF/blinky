@@ -183,17 +183,40 @@ public sealed class CardOperations(
                     continue;
                 }
 
-                using var connection = new PivConnection(card, ownsTransport: false);
-                var session = new PivSession(connection);
+                PivConnection connection;
+                PivSession session;
+                IDisposable transaction;
 
-                using var transaction = connection.BeginTransaction();
-
-                if (!session.Select() || session.GetSerialNumber() != (uint)serial)
+                try
                 {
+                    connection = new PivConnection(card, ownsTransport: false);
+                    session = new PivSession(connection);
+                    transaction = connection.BeginTransaction();
+
+                    if (!session.Select() || session.GetSerialNumber() != (uint)serial)
+                    {
+                        transaction.Dispose();
+                        connection.Dispose();
+                        continue;
+                    }
+                }
+                catch (Exception ex) when (ex is PcscException or PivException
+                                              or PivProtocolException)
+                {
+                    // A reader that will not answer is skipped, not fatal. One
+                    // unresponsive reader took down an enrolment aimed at a
+                    // token two readers along before this was here.
+                    logger.LogWarning("Reader {Reader} could not be used: {Message}",
+                        reader, ex.Message);
+
                     continue;
                 }
 
-                return operation(session);
+                using (connection)
+                using (transaction)
+                {
+                    return operation(session);
+                }
             }
 
             return AgentResponse.Failed($"Token {serial} is not in any reader on this machine.");

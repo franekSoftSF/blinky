@@ -149,15 +149,34 @@ public sealed class PukUnblock(
                     continue;
                 }
 
-                using var connection = new PivConnection(card, ownsTransport: false);
-                var session = new PivSession(connection);
+                PivConnection connection;
+                PivSession session;
+                IDisposable transaction;
 
-                using var transaction = connection.BeginTransaction();
-
-                if (!session.Select() || session.GetSerialNumber() != (uint)serial)
+                try
                 {
+                    connection = new PivConnection(card, ownsTransport: false);
+                    session = new PivSession(connection);
+                    transaction = connection.BeginTransaction();
+
+                    if (!session.Select() || session.GetSerialNumber() != (uint)serial)
+                    {
+                        transaction.Dispose();
+                        connection.Dispose();
+                        continue;
+                    }
+                }
+                catch (Exception ex) when (ex is PcscException or PivException
+                                              or PivProtocolException)
+                {
+                    logger.LogWarning("Reader {Reader} could not be used: {Message}",
+                        reader, ex.Message);
+
                     continue;
                 }
+
+                using var _ = connection;
+                using var __ = transaction;
 
                 session.UnblockPin(material.CurrentPuk, newPin);
 

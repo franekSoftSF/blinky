@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -44,9 +45,21 @@ public partial class MainWindow : Window
             OkButton.Visibility = wantsPin ? Visibility.Visible : Visibility.Collapsed;
             CancelButton.Content = wantsPin ? "Cancel" : "Close";
 
-            AttemptsText.Text = request.AttemptsRemaining is { } left && left <= 2
-                ? $"{left} attempts remaining before the PIN is blocked"
-                : string.Empty;
+            // On a fingerprint prompt the count is worth showing from the
+            // start rather than at two: three is all there is, and a Bio has no
+            // PUK - once biometrics block, the PIN is the only way in.
+            AttemptsText.Text = request.AttemptsRemaining switch
+            {
+                { } left when request.Type == PromptRequest.Fingerprint =>
+                    string.Format(CultureInfo.CurrentCulture,
+                        Strings.Current["Prompt.FingerprintAttempts"], left),
+
+                { } left when left <= 2 =>
+                    string.Format(CultureInfo.CurrentCulture,
+                        Strings.Current["Prompt.PinAttempts"], left),
+
+                _ => string.Empty,
+            };
 
             Show();
             Activate();
@@ -54,9 +67,11 @@ public partial class MainWindow : Window
             PinBox.Focus();
         });
 
-        // A touch prompt is information, not a question. The card is what is
-        // being waited on.
-        if (request.Type == PromptRequest.Touch)
+        // A touch or fingerprint prompt is information, not a question: the
+        // card is what is being waited on, and the service takes the window
+        // down when it answers. Leaving these pending would hold the pipe open
+        // waiting for a click nobody is going to make.
+        if (request.Type is PromptRequest.Touch or PromptRequest.Fingerprint)
         {
             answer.TrySetResult(PromptResponse.Cancel());
         }

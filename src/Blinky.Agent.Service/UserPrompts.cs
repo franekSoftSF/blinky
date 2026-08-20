@@ -62,6 +62,43 @@ public sealed class UserPrompts(ILogger<UserPrompts> logger, TimeSpan timeout,
         }
     }
 
+    /// <summary>
+    /// Tells the user to present a finger, and returns as soon as the window is
+    /// up — the waiting itself happens inside the APDU.
+    /// </summary>
+    public async Task ShowFingerprintAsync(long serial, int? attemptsRemaining, string reason,
+        CancellationToken ct)
+    {
+        try
+        {
+            await using var pipe = await ConnectAsync(ct);
+            await SendAsync(pipe, PromptRequest.ForFingerprint(serial, attemptsRemaining, reason),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            // The sensor lights whether or not anything explains it, so this is
+            // not a reason to fail the operation - but a lit sensor with no
+            // window is a program that looks frozen, so it is worth a line.
+            logger.LogWarning("No interactive session to ask for a fingerprint: {Message}",
+                ex.Message);
+        }
+    }
+
+    /// <summary>Takes the prompt off the screen once the card has answered.</summary>
+    public async Task DismissAsync(CancellationToken ct)
+    {
+        try
+        {
+            await using var pipe = await ConnectAsync(ct);
+            await SendAsync(pipe, PromptRequest.ToDismiss(), ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug("Nothing to dismiss: {Message}", ex.Message);
+        }
+    }
+
     private async Task<string?> AskAsync(PromptRequest request, CancellationToken ct)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);

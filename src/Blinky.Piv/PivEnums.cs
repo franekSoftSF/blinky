@@ -28,6 +28,29 @@ public enum PinPolicy : byte
     Never = 0x01,
     Once = 0x02,
     Always = 0x03,
+
+    /// <summary>
+    /// A fingerprint match, once per session.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Bio Multi-protocol only, and the difference is not cosmetic: a key
+    /// generated with <see cref="Once"/> wants a <b>PIN</b>, and a successful
+    /// fingerprint match does not satisfy it. Observed on firmware 5.7.2 —
+    /// <c>VERIFY 96</c> answered <c>9000</c>, the user was verified, and the
+    /// slot then refused to sign with <c>6982</c>, its PIN policy unsatisfied.
+    /// </para>
+    /// <para>
+    /// So biometric enrolment is decided at <b>generation</b>, not at
+    /// verification. A token whose owner will use a finger has to be given a
+    /// key that says so, and it cannot be changed afterwards without replacing
+    /// the key.
+    /// </para>
+    /// </remarks>
+    MatchOnce = 0x04,
+
+    /// <summary>A fingerprint match before every single operation.</summary>
+    MatchAlways = 0x05,
 }
 
 /// <summary>Whether the token demands a finger on the contact.</summary>

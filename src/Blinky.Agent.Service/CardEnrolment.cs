@@ -66,19 +66,45 @@ public sealed class CardEnrolment(
                 continue;
             }
 
-            using var connection = new PivConnection(card, ownsTransport: false);
-            var session = new PivSession(connection);
-
             // One transaction for the whole enrolment. Releasing the card
             // between phases would drop the verified PIN with it.
-            using var transaction = connection.BeginTransaction();
+            PivSession session;
+            PivConnection connection;
+            IDisposable transaction;
 
-            if (!session.Select() || session.GetSerialNumber() != (uint)serial)
+            try
             {
+                connection = new PivConnection(card, ownsTransport: false);
+                session = new PivSession(connection);
+                transaction = connection.BeginTransaction();
+
+                if (!session.Select() || session.GetSerialNumber() != (uint)serial)
+                {
+                    transaction.Dispose();
+                    connection.Dispose();
+                    continue;
+                }
+            }
+            catch (Exception ex) when (ex is PcscException or PivException or PivProtocolException)
+            {
+                // One reader that will not answer must not end an operation
+                // aimed at a token in a different one. Seen on this bench: an
+                // OMNIKEY 5022 returned 0x80100066 and took down an enrolment
+                // meant for a YubiKey two readers along, in three tenths of a
+                // second and with the reader's name nowhere near the failure
+                // an operator would read.
+                logger.LogWarning("Reader {Reader} could not be used: {Message}",
+                    reader, ex.Message);
+
                 continue;
             }
 
-            await RunAsync(session, slot, profile, serial, job, backend, attempt, ct);
+            using (connection)
+            using (transaction)
+            {
+                await RunAsync(session, slot, profile, serial, job, backend, attempt, ct);
+            }
+
             return;
         }
 
@@ -112,8 +138,18 @@ public sealed class CardEnrolment(
                 $"Slot {slot} already holds a {existing.Algorithm} key. Refusing to destroy it.");
         }
 
+        // The PIN policy is decided here, by what the token can do, and it
+        // cannot be changed later without replacing the key. A Bio gets
+        // MatchOnce so a fingerprint satisfies the slot; anything else gets
+        // Once, which means a PIN.
+        //
+        // Found the hard way: a key generated with Once on a Bio refused to
+        // sign with 6982 immediately after VERIFY 96 answered 9000. The user
+        // had been verified and the key still would not have it.
+        var biometric = session.GetBiometricMetadata() is { FingerprintsEnrolled: true };
+
         var generated = session.GenerateKeyPair(slot, PivAlgorithm.EccP256,
-            PinPolicy.Once, TouchPolicy.Never);
+            biometric ? PinPolicy.MatchOnce : PinPolicy.Once, TouchPolicy.Never);
 
         await Report(backend, job, attempt, "Attest", ct);
 
@@ -132,18 +168,7 @@ public sealed class CardEnrolment(
             throw new InvalidOperationException($"Attestation refused locally: {local}");
         }
 
-        await Report(backend, job, attempt, "VerifyUser", ct,
-            JobState.AwaitingUser, "waiting for the PIN");
-
-        var pin = await prompts.AskForPinAsync(serial, session.GetPinMetadata().RemainingRetries,
-            "Blinky is issuing a certificate onto your key.", ct);
-
-        if (pin is null)
-        {
-            throw new InvalidOperationException("Nobody entered a PIN.");
-        }
-
-        session.VerifyPin(pin);
+        await VerifyUserAsync(session, serial, job, backend, attempt, ct);
 
         await Report(backend, job, attempt, "BuildAndSignCsr", ct);
 
@@ -183,6 +208,73 @@ public sealed class CardEnrolment(
 
         logger.LogInformation("Token {Serial} slot {Slot} now holds {Subject}, issued by {Issuer}",
             serial, slot, readBack.Subject, issued.IssuerSubject);
+    }
+
+    /// <summary>
+    /// Has the person prove they are there — by fingerprint where the card can,
+    /// by PIN where it cannot.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The card decides, not the model name and not a setting. A Bio
+    /// Multi-protocol answers slot 96 with an attempt count; everything else
+    /// answers <c>6A88</c>, and that is the whole detection.
+    /// </para>
+    /// <para>
+    /// A failed match falls back to the PIN rather than failing the job. Three
+    /// attempts is not many, a cold or wet finger is not a security event, and
+    /// on a Bio the PIN is the only way in once biometrics block — the product
+    /// line ships with no PUK.
+    /// </para>
+    /// </remarks>
+    private async Task VerifyUserAsync(PivSession session, long serial, JobEnvelope job,
+        BackendClient backend, int attempt, CancellationToken ct)
+    {
+        var biometrics = session.GetBiometricMetadata();
+
+        if (biometrics is { FingerprintsEnrolled: true, AttemptsRemaining: > 0 })
+        {
+            await Report(backend, job, attempt, "VerifyUser", ct,
+                JobState.AwaitingUser, "waiting for a fingerprint");
+
+            // Told first, because the sensor lights the moment the APDU goes
+            // out and the call then blocks. A lit sensor with nothing on screen
+            // is a program that looks frozen.
+            await prompts.ShowFingerprintAsync(serial, biometrics.AttemptsRemaining,
+                "Blinky is issuing a certificate onto your key.", ct);
+
+            try
+            {
+                session.VerifyBiometric();
+
+                await prompts.DismissAsync(ct);
+
+                logger.LogInformation("Token {Serial}: the user was verified by fingerprint",
+                    serial);
+
+                return;
+            }
+            catch (PivException ex)
+            {
+                await prompts.DismissAsync(ct);
+
+                logger.LogWarning("Token {Serial}: the fingerprint did not match ({Message}); "
+                                  + "asking for the PIN instead", serial, ex.Message);
+            }
+        }
+
+        await Report(backend, job, attempt, "VerifyUser", ct,
+            JobState.AwaitingUser, "waiting for the PIN");
+
+        var pin = await prompts.AskForPinAsync(serial, session.GetPinMetadata().RemainingRetries,
+            "Blinky is issuing a certificate onto your key.", ct);
+
+        if (pin is null)
+        {
+            throw new InvalidOperationException("Nobody entered a PIN.");
+        }
+
+        session.VerifyPin(pin);
     }
 
     private static string step_DisplayName(JobEnvelope job) =>

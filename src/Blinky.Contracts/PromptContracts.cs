@@ -34,6 +34,7 @@ public sealed record PromptRequest(
 {
     public const string Pin = "Pin";
     public const string Touch = "Touch";
+    public const string Fingerprint = "Fingerprint";
     public const string Dismiss = "Dismiss";
 
     public static PromptRequest ForPin(long serial, int? attemptsRemaining, string reason) =>
@@ -46,6 +47,19 @@ public sealed record PromptRequest(
     /// </summary>
     public static PromptRequest ForTouch(long serial, string reason) =>
         new(Touch, "Touch your key", reason, serial);
+
+    /// <summary>
+    /// A Bio waiting for a finger.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="ForTouch"/>, which they resemble to a watchdog
+    /// and not at all to a person: one asks for contact with a metal disc, the
+    /// other for a fingerprint that can fail and that has three attempts behind
+    /// it. The count travels so the window can say what is left.
+    /// </remarks>
+    public static PromptRequest ForFingerprint(long serial, int? attemptsRemaining,
+        string reason) =>
+        new(Fingerprint, "Blinky needs your fingerprint", reason, serial, attemptsRemaining);
 
     public static PromptRequest ToDismiss() =>
         new(Dismiss, string.Empty, string.Empty);
