@@ -207,6 +207,7 @@ SoftHSM2 / PKCS#11 · WPF for the workstation UI · Serilog · Docker Compose
 | [06 — Security](docs/06-security.md) | Trust boundaries, key custody, threat notes |
 | [07 — Roadmap](docs/07-roadmap.md) | Phases, numbered patches, definition of done |
 | [08 — What the hardware changed](docs/08-hardware-notes.md) | Every rule that came from a measurement rather than from reading |
+| [09 — The test lab](docs/09-lab.md) | The four machines, what each one proves, and the traps in advance |
 | [Status](docs/STATUS.md) | What is done, what is only written, and what is blocked |
 
 ## Why "Blinky"

@@ -458,6 +458,14 @@
       "proof": "13 smoke checks"
     },
     {
+      "id": "0004",
+      "phase": 0,
+      "title": "The stack runs on a machine that is not localhost",
+      "state": "done-unverified",
+      "proof": "Certificates carry lab hostnames, the agent pins a CA, BLINKY_HOST points the checks elsewhere; 13 smoke checks",
+      "gap": "Verified against a one-machine stack; the lab it is for does not exist yet"
+    },
+    {
       "id": "0010",
       "phase": 1,
       "title": "Blinky.Piv transport, chaining, error map",
@@ -707,6 +715,11 @@
   ],
   "notVerified": [
     {
+      "what": "Multi-machine deployment",
+      "why": "The lab is being built; everything so far ran on one box",
+      "when": "The lab, docs/09-lab.md"
+    },
+    {
       "what": "6Cxx retry-with-length",
       "why": "Comes from T=0 readers; every reader here negotiated T=1",
       "when": "Needs a T=0 reader; covered by hand-built cases until then"
@@ -741,5 +754,50 @@
       "why": "No Samba4 provision yet",
       "when": "0061 and the phase 2 gate"
     }
-  ]
+  ],
+  "lab": {
+    "document": "docs/09-lab.md",
+    "state": "being-built",
+    "machines": [
+      {
+        "name": "blinky",
+        "role": "Docker host: api, worker, postgres, edge",
+        "proves": "The backend works when it is not on the same machine as anything else"
+      },
+      {
+        "name": "dc",
+        "role": "Samba4 AD DC",
+        "proves": "A certificate Blinky issued authenticates against a real KDC - the phase 2 gate"
+      },
+      {
+        "name": "win",
+        "role": "Windows client on VMware, with the reader",
+        "proves": "Smart-card logon as a user experiences it, and the agent as a Windows service"
+      },
+      {
+        "name": "ubuntu",
+        "role": "Linux client",
+        "proves": "PKINIT without Windows, and the pcsc-lite transport (0017)"
+      }
+    ],
+    "rungs": [
+      {
+        "name": "PKINIT succeeds with a key on the token",
+        "needs": [
+          "dc",
+          "ubuntu"
+        ],
+        "state": "not-reached"
+      },
+      {
+        "name": "Smart-card logon into the Samba4 domain",
+        "needs": [
+          "dc",
+          "win"
+        ],
+        "state": "not-reached",
+        "isPhaseGate": 2
+      }
+    ]
+  }
 }

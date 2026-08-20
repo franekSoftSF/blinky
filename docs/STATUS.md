@@ -196,6 +196,7 @@ write it.
 | 0001 | Architecture and design documents | **done** | Nine documents |
 | 0002 | Solution skeleton, central packages, CI | **done** | CI green on windows-latest |
 | 0003 | Compose stack and the edge (nginx + ModSecurity + CRS) | **done** | 13 smoke checks |
+| 0004 | The stack runs on a machine that is not localhost | **done, unverified** | Certificates carry lab hostnames, the agent pins a CA, `BLINKY_HOST` points the checks elsewhere. Verified against a one-machine stack; the lab it is for does not exist yet |
 
 ### Phase 1 — See the token — **gate met**
 
@@ -244,6 +245,7 @@ exercised against the thing it is really for.
 | Attestation rejection paths | Forgeries, wrong roots and serial mismatches are synthetic — a real one would mean a counterfeit token | Stays synthetic; the genuine path is proved on hardware |
 | The Linux transport | No Linux machine with a reader | 0017 |
 | Bio temporary PIN | Requesting one consumes a match attempt and needs a finger | 0027 |
+| Multi-machine deployment | The lab is being built; everything so far ran on one box | The lab, [09](09-lab.md) |
 | ADCS, CES and the connector | No Windows AD lab yet | 0030–0034 |
 | Samba4 publication and PKINIT | No Samba4 provision yet | 0061, and the Phase 2 gate |
 
@@ -297,10 +299,10 @@ Ordered, each item small enough to finish in one sitting.
 2. **0021 and 0028 — the built-in CA**, single and two-tier, with the `file` and
    SoftHSM key tiers. This is what makes an end-to-end demo possible with no
    directory at all.
-3. **Stand up a Samba4 provision.** The Phase 2 gate is "enrol a factory
-   YubiKey and log into a Samba4 domain with it", and that needs a domain to
-   log into. It is the only item here that needs infrastructure rather than
-   time.
+3. **Stand up the lab** — four machines, described in [09](09-lab.md). The
+   Phase 2 gate needs a domain to log into, and it is the only item here that
+   needs infrastructure rather than time. Reach the cheaper rung first: PKINIT
+   from Linux proves the certificate before a Windows client exists to blame.
 4. **0022 and 0023 — profiles and on-card CSR signing**, the first point at
    which a key is generated on a token rather than read from one.
 

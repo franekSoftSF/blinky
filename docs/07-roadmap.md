@@ -15,6 +15,7 @@ Both CA backends are built in parallel from Phase 2 onward — see
 | 0001 | Architecture, data model, PIV layer, PKI backends, agent protocol, security | This document set. Reviewed, contradictions resolved |
 | 0002 | Repository skeleton | `Blinky.slnx`, `Directory.Build.props`, `.editorconfig`, licence, CI that builds and runs unit tests |
 
+| 0004 | The stack runs on a machine that is not localhost | Certificates carry the lab's hostnames, the agent validates the backend against a pinned CA rather than skipping the check, and `BLINKY_HOST` points the smoke test at another machine |
 | 0003 | Compose stack and the edge: nginx + ModSecurity 3 + CRS v4, two listeners, dev certificates, smoke test | `docker compose up -d` then `./smoke-test.sh`: an attack on the console listener returns 403; the same attack on the agent listener is logged and passed; a PKCS#10 body reaches the API; a request with no client certificate is refused; a browser cannot forge `X-Client-Verify` |
 
 ## Phase 1 — See the token
