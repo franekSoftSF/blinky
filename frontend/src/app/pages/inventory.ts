@@ -4,7 +4,7 @@ import { ConsoleStore } from '../core/console.store';
 import { I18n } from '../core/i18n';
 
 @Component({ selector: 'app-inventory', template: `
-  <section class="list-head"><div><p class="eyebrow">{{ i18n.t('inventory') }}</p><h1>{{ title() }}</h1><p>{{ subtitle() }}</p></div><div class="list-actions"><label class="search">⌕ <input [placeholder]="i18n.t('search')" (input)="query.set($any($event.target).value)" /></label><button class="primary">+ {{ i18n.t('newOperation') }}</button></div></section>
+  <section class="list-head"><div><p class="eyebrow">{{ i18n.t('inventory') }}</p><h1>{{ title() }}</h1><p>{{ subtitle() }}</p></div><div class="list-actions"><label class="search">⌕ <input [placeholder]="i18n.t('search')" (input)="query.set($any($event.target).value)" /></label><button class="action-button" type="button" (click)="store.load(true)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>{{ i18n.t('refresh') }}</button></div></section>
   @if (message()) { <div class="notice"><strong>{{ message() }}</strong></div> }
   <article class="panel list-panel"><div class="table-wrap"><table><thead><tr>@for (column of columns(); track column) { <th>{{ column }}</th> }</tr></thead><tbody>
     @for (row of rows(); track row.id) { <tr>@for (cell of row.cells; track $index) { <td>@if ($index === 0) { <strong>{{ cell }}</strong> } @else if ($index === row.stateIndex) { <span class="state" [attr.data-state]="cell">{{ cell }}</span> } @else { {{ cell }} }</td> } @if (kind === 'certificates') { <td><button class="row-action" type="button" [disabled]="busy() === row.id" (click)="recycle(row)">{{ i18n.t('recycle') }}</button></td> }</tr> }
