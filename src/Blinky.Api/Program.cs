@@ -134,6 +134,16 @@ app.MapPost("/api/agents/{id:guid}/heartbeat",
         using var session = database.OpenSession();
         using var transaction = session.BeginTransaction();
 
+        foreach (var card in request.Unsupported ?? [])
+        {
+            // Not stored: the identity model is the token's serial, and a card
+            // that answers no Yubico instruction has none. Visible in the log
+            // and in the heartbeat is what stops it looking like a dead agent.
+            app.Logger.LogInformation(
+                "Agent {AgentId} has an unmanageable card in {Reader}: {Reason}",
+                id, card.ReaderName, card.Reason);
+        }
+
         var agent = session.Get<Agent>(id);
         agent.Version = request.Version;
         agent.LastHeartbeatAt = DateTime.UtcNow;
@@ -157,4 +167,7 @@ app.MapPost("/api/agents/{id:guid}/heartbeat",
 app.Run();
 
 /// <summary>What an agent reports when it checks in.</summary>
-internal sealed record HeartbeatRequest(string? Version, string[]? Readers);
+internal sealed record HeartbeatRequest(
+    string? Version,
+    string[]? Readers,
+    UnsupportedCardReport[]? Unsupported);

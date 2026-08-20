@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "building",
-    "summary": "Patches 0010-0015 done. The agent enrols itself, watches readers and reports what it finds; four tokens land in the database with correct firmware, form factor and slot states, and a hand-provisioned slot comes back Stale. 135 tests, 13 smoke checks. Left in phase 1: 0016 (Bio) and 0018 (agent UI)."
+    "summary": "Patches 0010-0015 and 0019 done. The agent enrols itself, reports four YubiKeys correctly, and names an HID Crescendo as an unsupported card rather than dropping it. 141 tests. Left in phase 1: 0016 (Bio) and 0018 (agent UI)."
   },
   "phases": [
     {
@@ -324,6 +324,11 @@
     {
       "id": "facts-not-conclusions",
       "choice": "Agents report what the card said; the server decides what it means",
+      "state": "locked-validated"
+    },
+    {
+      "id": "foreign-piv-cards",
+      "choice": "Detected by asking the card for a serial, never by reader name; reported as unsupported with a reason rather than skipped",
       "state": "locked-validated"
     }
   ],

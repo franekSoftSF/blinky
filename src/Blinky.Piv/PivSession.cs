@@ -256,9 +256,17 @@ public sealed class PivSession(PivConnection connection)
     }
 
     /// <summary>
-    /// Asks the token to attest to the key in a slot. Returns null when the
-    /// slot holds no key, which is what a blank token answers.
+    /// Asks the token to attest to the key in a slot. Returns null when there
+    /// is nothing to attest - either the slot holds no key, or the card does
+    /// not do attestation at all.
     /// </summary>
+    /// <remarks>
+    /// <c>6D00</c> belongs in that list and its absence was a real bug: ATTEST
+    /// is a Yubico instruction, and a PIV card from another vendor answers
+    /// "instruction not supported". Treating that as a failure turned an
+    /// ordinary HID Crescendo into an exception in the middle of an inventory
+    /// pass.
+    /// </remarks>
     public X509Certificate2? Attest(PivSlot slot)
     {
         const byte insAttest = 0xF9;
@@ -266,7 +274,8 @@ public sealed class PivSession(PivConnection connection)
         var response = Connection.Send(new ApduCommand(insAttest, p1: slot.Id, le: 0));
 
         if (response.Status.Value is StatusWord.IncorrectParameters
-            or StatusWord.ReferencedDataNotFound)
+            or StatusWord.ReferencedDataNotFound
+            or StatusWord.InstructionNotSupported)
         {
             return null;
         }
@@ -292,7 +301,7 @@ public sealed class PivSession(PivConnection connection)
     /// </summary>
     public X509Certificate2? GetAttestationCertificate()
     {
-        var der = ReadDataObject([0x5F, 0xFF, 0x01], "GET DATA F9");
+        var der = ReadDataObject([0x5F, 0xFF, 0x01], "GET DATA F9", tolerateUnsupported: true);
         if (der is null)
         {
             return null;
@@ -310,6 +319,19 @@ public sealed class PivSession(PivConnection connection)
                 $"Slot F9 holds bytes that are not a certificate: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// True when the card answers the Yubico instructions - which is what
+    /// "this is a YubiKey" actually means here.
+    /// </summary>
+    /// <remarks>
+    /// Asked of the card, never inferred from a reader name. An HID Crescendo
+    /// speaks PIV perfectly well and answers every Yubico extension with
+    /// <c>6D00</c>; Blinky can read its PIN retry counter and nothing else, so
+    /// it must be recognised as unmanageable rather than either ignored or
+    /// treated as broken.
+    /// </remarks>
+    public bool IsYubiKey() => GetSerialNumber() is not null;
 
     /// <summary>
     /// One read-only pass over the token: identity, credential state,
@@ -337,13 +359,15 @@ public sealed class PivSession(PivConnection connection)
     }
 
     /// <summary>Reads a data object, or null when the card holds none.</summary>
-    private byte[]? ReadDataObject(byte[] tag, string operation)
+    private byte[]? ReadDataObject(byte[] tag, string operation, bool tolerateUnsupported = false)
     {
         byte[] request = [0x5C, (byte)tag.Length, .. tag];
         var response = Connection.Send(
             new ApduCommand(InsGetData, p1: 0x3F, p2: 0xFF, data: request, le: 0));
 
-        if (response.Status.IsEmptySlot)
+        if (response.Status.IsEmptySlot
+            || (tolerateUnsupported
+                && response.Status.Value == StatusWord.InstructionNotSupported))
         {
             return null;
         }

@@ -191,6 +191,37 @@ attestation". Read off a 5.7.1:
 If any of that fails, no request reaches the CA. A CMS that signs first and
 verifies later is a CMS that will eventually certify a software key.
 
+## Cards that are not YubiKeys
+
+PIV is a standard, so other vendors' cards select the applet and answer the
+standard commands. An HID Crescendo Key V3 on the bench selects cleanly and
+reports its PIN retry counter through the empty-VERIFY probe — and answers
+every Yubico instruction with `6D00`:
+
+```
+SELECT PIV          9000    it speaks PIV
+VERIFY (empty)      63C6    six attempts remaining - standard PIV, so it works
+GET VERSION         6D00
+GET SERIAL          6D00    no serial, therefore no identity in this model
+GET METADATA        6D00    nothing can be established about its state
+ATTEST              6D00    no attestation, so no proof of hardware
+```
+
+**The detection is the serial.** `PivSession.IsYubiKey()` asks the card, never
+the reader name — reader names are chosen by the vendor and by the OS, and
+"HID Global Crescendo Key V3 0" is a string, not a fact.
+
+Two consequences, and the second one was a bug:
+
+- **It cannot be managed and must not be ignored.** Blinky's identity model is
+  the token's serial, and a card without one has no row to live in. But an
+  operator who plugs in a card and sees nothing happen cannot tell that from a
+  dead agent, so the agent reports it as an unsupported card and says why.
+- **`6D00` means absence, not failure.** `ATTEST` returning "instruction not
+  supported" is the normal answer from a card that does not do attestation.
+  Treating it as an error turned an ordinary Crescendo into an exception in the
+  middle of an inventory pass over four other tokens.
+
 ## Biometric verification — Bio Multi-protocol Edition
 
 The YubiKey Bio Multi-protocol Edition verifies the user with an on-card

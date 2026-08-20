@@ -123,6 +123,7 @@ Three things in that table are the design working rather than data:
 |---|---|---|
 | Runtime | .NET 10 | Same stack as the rest of these projects |
 | Token access | PC/SC + raw PIV APDUs | No native library to deploy, no CLI output to parse, full access to the administrative commands a CMS needs. Validated on hardware before the decision was locked — see above |
+| Foreign PIV cards | Recognised by asking for a serial, reported as unsupported with a reason | Another vendor's card selects the PIV applet perfectly well. It has no serial, so it has no identity in this model - but silence looks exactly like a broken agent |
 | Token scope | YubiKey 5, PIV applet | Attestation and management-key policy are vendor-specific; other vendors are a later interface, not a v1 branch |
 | CA backends | Built-in **and** ADCS, one interface, both from the start | Neither is optional: Samba4 has no ADCS, and a Windows estate will not accept a new CA |
 | Built-in CA crypto | .NET for signing, BouncyCastle only for CMC/PKCS#7 | Less third-party crypto in the path that matters |
@@ -190,7 +191,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Phase | Title | State |
 |---|---|---|
 | 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token | **in progress** — 0010 to 0015 done; 0016 and 0018 left |
+| 1 | See the token | **in progress** — 0010 to 0015 and 0019 done; 0016 and 0018 left |
 
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |

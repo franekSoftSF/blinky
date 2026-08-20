@@ -76,6 +76,19 @@ public sealed record SlotReport(
     DateTimeOffset? NotBefore,
     DateTimeOffset? NotAfter);
 
+/// <summary>
+/// A card that speaks PIV but is not something Blinky can manage.
+/// </summary>
+/// <remarks>
+/// Reported rather than skipped. An operator who plugs in a card and sees
+/// nothing happen has no way to tell that from a broken agent, and "nothing
+/// happened" is the hardest support call there is.
+/// </remarks>
+public sealed record UnsupportedCardReport(
+    string ReaderName,
+    string Reason,
+    int? PinRetriesLeft);
+
 /// <summary>What the server says back after taking a report.</summary>
 public sealed record InventoryAccepted(
     Guid TokenId,

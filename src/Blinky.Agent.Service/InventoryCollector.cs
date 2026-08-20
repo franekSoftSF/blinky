@@ -24,25 +24,22 @@ public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
     /// as failures: on a machine with Windows Hello that is the normal state of
     /// most of the list.
     /// </summary>
-    public IReadOnlyList<TokenInventoryReport> ReadAll()
+    public InventorySweep ReadAll()
     {
         if (!PcscContext.IsSupported)
         {
-            return [];
+            return new InventorySweep([], []);
         }
 
         using var context = PcscContext.Establish();
-        var reports = new List<TokenInventoryReport>();
+        var tokens = new List<TokenInventoryReport>();
+        var unsupported = new List<UnsupportedCardReport>();
 
         foreach (var reader in context.ListReaders())
         {
             try
             {
-                var report = Read(context, reader);
-                if (report is not null)
-                {
-                    reports.Add(report);
-                }
+                Read(context, reader, tokens, unsupported);
             }
             catch (Exception ex) when (ex is PcscException or PivException or PivProtocolException)
             {
@@ -50,15 +47,16 @@ public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
             }
         }
 
-        return reports;
+        return new InventorySweep(tokens, unsupported);
     }
 
-    private TokenInventoryReport? Read(PcscContext context, string reader)
+    private void Read(PcscContext context, string reader,
+        List<TokenInventoryReport> tokens, List<UnsupportedCardReport> unsupported)
     {
         using var card = context.Connect(reader);
         if (card is null)
         {
-            return null;
+            return;
         }
 
         using var connection = new PivConnection(card, ownsTransport: false);
@@ -66,21 +64,32 @@ public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
 
         using var transaction = connection.BeginTransaction();
 
+        // No PIV applet at all - a virtual reader, or a card that is something
+        // else entirely. Normal, and not worth a word.
         if (!session.Select())
         {
-            return null;
+            return;
         }
 
         var token = session.ReadInventory();
+
         if (token.SerialNumber is not { } serial)
         {
-            return null;
+            // Speaks PIV, but answers none of the Yubico instructions. Blinky
+            // cannot manage it and must say so rather than leave the reader
+            // looking empty.
+            unsupported.Add(new UnsupportedCardReport(reader,
+                "a PIV card that does not answer the Yubico instructions - "
+                + "outside what this version manages",
+                token.Pin.RemainingRetries));
+
+            return;
         }
 
         var attestation = ReadAttestation(session, serial);
         var slots = token.Slots.Select(slot => Describe(slot)).ToList();
 
-        return new TokenInventoryReport(
+        tokens.Add(new TokenInventoryReport(
             Protocol.SchemaVersion,
             serial,
             reader,
@@ -99,7 +108,7 @@ public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
                 ? null
                 : new ManagementKeyReport(token.ManagementKey.Algorithm.ToString(),
                     token.ManagementKey.IsDefault, token.ManagementKey.TouchPolicy.ToString()),
-            slots);
+            slots));
     }
 
     /// <summary>
@@ -194,3 +203,11 @@ public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
             notAfter);
     }
 }
+
+/// <summary>
+/// One pass over the readers: what can be managed, and what was found but
+/// cannot be.
+/// </summary>
+public sealed record InventorySweep(
+    IReadOnlyList<TokenInventoryReport> Tokens,
+    IReadOnlyList<UnsupportedCardReport> Unsupported);

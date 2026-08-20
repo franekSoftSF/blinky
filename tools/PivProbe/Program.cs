@@ -114,6 +114,19 @@ internal static class Program
                 return false;
             }
 
+            // Asked of the card, never inferred from the reader name. An HID
+            // Crescendo speaks PIV and answers no Yubico instruction, so
+            // everything below would be blanks presented as findings.
+            if (!session.IsYubiKey())
+            {
+                Console.WriteLine("  NOT A YUBIKEY - speaks PIV, answers no Yubico instruction");
+                Console.WriteLine($"  PIN           {Describe(session.GetPinMetadata())}");
+                Console.WriteLine("  This version manages YubiKey 5 only. The card is readable,");
+                Console.WriteLine("  but its state cannot be established and it cannot be managed.");
+                Console.WriteLine();
+                return true;
+            }
+
             Print(session, recorder);
             Console.WriteLine();
             return true;

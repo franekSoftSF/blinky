@@ -58,10 +58,11 @@ public sealed class BackendClient(Uri backend, bool acceptAnyServerCertificate =
     }
 
     public async Task<bool> HeartbeatAsync(Guid agentId, string version, string[] readers,
-        CancellationToken ct)
+        IReadOnlyList<UnsupportedCardReport> unsupported, CancellationToken ct)
     {
         var response = await Authenticated().PostAsJsonAsync(
-            $"/api/agents/{agentId}/heartbeat", new { version, readers }, ct);
+            $"/api/agents/{agentId}/heartbeat",
+            new { version, readers, unsupported }, ct);
 
         return response.IsSuccessStatusCode;
     }

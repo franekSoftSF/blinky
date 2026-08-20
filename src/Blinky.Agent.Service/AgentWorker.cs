@@ -13,6 +13,8 @@ public sealed class AgentWorker(
     InventoryCollector collector,
     ILogger<AgentWorker> logger) : BackgroundService
 {
+    private readonly HashSet<string> reportedUnsupported = new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly string Version =
         FileVersionInfo.GetVersionInfo(typeof(AgentWorker).Assembly.Location).ProductVersion
         ?? "0.0.0";
@@ -97,12 +99,22 @@ public sealed class AgentWorker(
     {
         try
         {
-            var reports = collector.ReadAll();
+            var sweep = collector.ReadAll();
 
             await backend.HeartbeatAsync(agentId, Version,
-                [.. reports.Select(r => r.ReaderName)], ct);
+                [.. sweep.Tokens.Select(r => r.ReaderName)], sweep.Unsupported, ct);
 
-            foreach (var report in reports)
+            foreach (var card in sweep.Unsupported)
+            {
+                // Once per reader per run of the service: repeating it every
+                // poll would bury everything else in the log.
+                if (reportedUnsupported.Add(card.ReaderName))
+                {
+                    logger.LogWarning("Reader {Reader}: {Reason}", card.ReaderName, card.Reason);
+                }
+            }
+
+            foreach (var report in sweep.Tokens)
             {
                 var accepted = await backend.ReportInventoryAsync(report, ct);
 
