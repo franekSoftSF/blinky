@@ -328,6 +328,14 @@ tag `0x7C` with `0x80` witness, `0x81` challenge and `0x82` response. Mutual —
 both sides prove knowledge — which is what allows the agent to detect a swapped
 or emulated card before writing anything to it.
 
+**One trap that is not the card's fault.** The factory value is the same eight
+bytes three times, which makes it a degenerate 3DES key — equivalent to single
+DES. .NET's `TripleDES` refuses to accept it at all: *"known weak key for
+TripleDES"*. Every pre-5.7 token still at its factory value is therefore
+unreachable through the obvious API, and the three DES operations have to be
+assembled by hand. The weakness is real, and refusing to speak to the card does
+not remove it — replacing the key at first contact does.
+
 Personalisation replaces the default with the derived value from
 [02 — Data model](02-data-model.md#secrets-at-rest) and sets
 `mgmt_key_state = Diversified`. Blinky refuses to issue onto a token still

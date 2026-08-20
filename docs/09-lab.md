@@ -78,6 +78,14 @@ This is the first machine on which the agent runs as a Windows service rather
 than from a console, which is what patch 0060 packages and what session 0
 isolation is about — see [01](01-architecture.md).
 
+**Keep it clean of other smart-card middleware.** On the development machine,
+HID ActivClient is installed and Windows binds the YubiKey to *its* minidriver —
+`certutil -scinfo` reports `Card: HID ActivClient (YubiKey 5)`. A certificate
+written into a PIV slot then never reaches the user's certificate store,
+because propagation goes through whichever minidriver claimed the card. This
+does not affect Blinky's own reads and writes, which go straight to PC/SC, but
+it does break the half of the story a user sees.
+
 Do not join the machine you work on to the lab domain. The agent needs
 `LocalSystem`, the reader, and a domain that will be rebuilt several times.
 

@@ -14,17 +14,17 @@ namespace Blinky.Piv;
 /// <see cref="PinState.Unknown"/> rather than a guess, because an operator
 /// needs to see the difference between "not set" and "cannot tell".
 /// </remarks>
-public sealed class PivSession(PivConnection connection)
+public partial class PivSession(PivConnection connection)
 {
-    private const byte InsVerify = 0x20;
+    internal const byte InsVerify = 0x20;
     private const byte InsGetData = 0xCB;
     private const byte InsGetMetadata = 0xF7;
     private const byte InsGetSerial = 0xF8;
     private const byte InsGetVersion = 0xFD;
 
-    private const byte PinSlot = 0x80;
+    internal const byte PinSlot = 0x80;
     private const byte PukSlot = 0x81;
-    private const byte ManagementKeySlot = 0x9B;
+    internal const byte ManagementKeySlot = 0x9B;
     private const byte BiometricSlot = 0x96;
 
     // GET METADATA tags.

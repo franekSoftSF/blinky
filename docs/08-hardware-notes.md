@@ -26,7 +26,9 @@ virtual reader — with HID ActivClient installed alongside.
 | The **form factor exists only inside an attestation** | Blank on three of four tokens, present on the one holding a key. Reading it from a model name would have filled the column with a guess | `InventoryCollector` |
 | A PIV card with no serial **vanished silently** from the agent's view | An HID Crescendo produced no report at all; an operator cannot tell that from a dead agent | [03](03-piv-layer.md), `UnsupportedCardReport` |
 | **A blocked PIN and a token with no PUK are different situations**, not one "cannot get in" flag | Three deliberate wrong attempts left `Blocked`, 0 retries and `puk_state=Default`; the factory PUK restored it to 3/3 | `TokenClassification`, [07 § Phase gate](07-roadmap.md) |
-| The installed **minidriver does not contend** for the card | `SCARD_SHARE_SHARED` plus a transaction acquired cleanly with HID ActivClient present | [03 § Transport](03-piv-layer.md#transport) |
+| **.NET refuses the PIV factory 3DES management key outright** | `TripleDES.Key` throws "known weak key": the factory value is the same eight bytes three times, a degenerate 3DES key. Every pre-5.7 token at its factory value is unreachable through the obvious API | `ManagementKey.TripleDesEde` |
+| The installed **minidriver does not contend at the PC/SC layer, and does claim the card at the CSP layer** | Transactions acquire cleanly with HID ActivClient present — but `certutil -scinfo` reports the YubiKey as `Card: HID ActivClient (YubiKey 5)`, and a certificate written into a PIV slot does not reach the user's certificate store | [03 § Transport](03-piv-layer.md#transport), [09](09-lab.md) |
+| **Outbound command chaining works** | A 1019-byte certificate object written to a slot and read back identical — more than one APDU of data, so `CLA 0x10` ran for real | `PivConnection`, `tools/IssueOnCard` |
 | **Virtual readers appear in the list** and answer `SELECT PIV` with `6A82` | Windows Hello for Business, on every machine that has it enabled | `PivSession.Select` |
 
 ## The stack

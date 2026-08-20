@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "gate-met",
-    "summary": "Phase 1 gate met. Phase 2 started: the built-in CA issues certificates in both topologies through ICertificateAuthority, with the smart-card logon extensions and the SID extension, and revokes onto a CRL. Not yet proved: that such a certificate logs anybody in, which needs the lab.",
+    "summary": "Phase 2 in progress. Blinky now generates a key on a token, has the card sign its own certificate request, verifies the attestation, issues from the built-in CA and writes the certificate back - proved end to end on two tokens covering both management-key algorithms. Not yet proved: that such a certificate reaches the Windows store, or logs anybody in.",
     "nothingIssuedYet": true
   },
   "phases": [
@@ -565,13 +565,16 @@
       "id": "0023",
       "phase": 2,
       "title": "Key generation, on-card CSR signing, attestation-gated submission",
-      "state": "open"
+      "state": "done",
+      "proof": "Proved on two tokens: mutual management-key authentication with AES-192 and 3DES, key generated on card, attestation verified, card signed its own request"
     },
     {
       "id": "0024",
       "phase": 2,
       "title": "Certificate write-back, Issued to Installed",
-      "state": "open"
+      "state": "done-unverified",
+      "proof": "1019 bytes written and read back identical, which also exercised outbound chaining",
+      "gap": "The certificate does not reach the Windows certificate store on this machine: HID ActivClient owns the minidriver binding"
     },
     {
       "id": "0025",
@@ -731,11 +734,6 @@
       "when": "Needs a T=0 reader; covered by hand-built cases until then"
     },
     {
-      "what": "Outbound command chaining (CLA 0x10)",
-      "why": "Needs a write longer than one APDU",
-      "when": "0024"
-    },
-    {
       "what": "Attestation rejection paths",
       "why": "A real one would mean a counterfeit token",
       "when": "Stays synthetic; the genuine path is proved on hardware"
@@ -769,6 +767,11 @@
       "what": "That an issued certificate logs anybody in",
       "why": "Needs a domain",
       "when": "The phase 2 gate, docs/09-lab.md"
+    },
+    {
+      "what": "That a written certificate reaches the Windows certificate store",
+      "why": "HID ActivClient owns the minidriver binding on this machine",
+      "when": "A clean Windows client, docs/09-lab.md"
     }
   ],
   "lab": {

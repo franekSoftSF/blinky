@@ -221,8 +221,8 @@ write it.
 | 0021 | Built-in CA: generation script, key tiers | **done, unverified** | `scripts/new-ca.sh` builds both shapes and the chains verify. The SoftHSM key tier is not written — only `file`, and it refuses without an explicit opt-in |
 | 0028 | Built-in CA topology: single or two-tier | **done** | Chain validates in both; `pathlen` asserted so the reversal cannot return |
 | 0022 | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | EKUs, UPN SAN and the SID extension are issued and asserted. The profile model still lives in code rather than in the database |
-| 0023 | Key generation, on-card CSR signing, attestation-gated submission | **open** |
-| 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **open** |
+| 0023 | Key generation, on-card CSR signing, attestation-gated submission | **done** | Proved on two tokens: management key authenticated mutually (AES-192 and 3DES), key generated, attestation verified, card signed its own request |
+| 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **done, unverified** | 1019 bytes written and read back identical, which also ran outbound chaining for the first time. The certificate does **not** reach the Windows store on this machine: ActivClient owns the minidriver binding |
 | 0025 | Personalisation: management key, PUK escrow, PIN policy | **open** |
 | 0026 | Job engine: leases, watchdog, `AwaitingUser` | **open** |
 | 0027 | Biometric user verification during enrolment | **open** |
@@ -241,12 +241,12 @@ exercised against the thing it is really for.
 | What | Why not yet | When it gets proved |
 |---|---|---|
 | `6Cxx` retry-with-length | Comes from T=0 readers; every reader here negotiated T=1 | Needs a T=0 reader, or stays covered by hand-built cases |
-| Outbound command chaining (`CLA 0x10`) | Needs a write longer than one APDU, and nothing writes yet | 0024, the first certificate written to a card |
 | Attestation rejection paths | Forgeries, wrong roots and serial mismatches are synthetic — a real one would mean a counterfeit token | Stays synthetic; the genuine path is proved on hardware |
 | The Linux transport | No Linux machine with a reader | 0017 |
 | Bio temporary PIN | Requesting one consumes a match attempt and needs a finger | 0027 |
 | The SoftHSM key tier | Needs Pkcs11Interop and a container; the `file` tier proves the rest | The other half of 0021 |
 | That an issued certificate actually logs anybody in | Needs a domain | The Phase 2 gate, [09](09-lab.md) |
+| That a written certificate reaches the Windows certificate store | HID ActivClient owns the minidriver binding on this machine | A clean Windows client, [09](09-lab.md) |
 | Multi-machine deployment | The lab is being built; everything so far ran on one box | The lab, [09](09-lab.md) |
 | ADCS, CES and the connector | No Windows AD lab yet | 0030–0034 |
 | Samba4 publication and PKINIT | No Samba4 provision yet | 0061, and the Phase 2 gate |

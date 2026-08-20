@@ -17,6 +17,7 @@
   <Folder Name="/tools/">
     <Project Path="tools/AgentEnrol/AgentEnrol.csproj" />
     <Project Path="tools/InsProbe/InsProbe.csproj" />
+    <Project Path="tools/IssueOnCard/IssueOnCard.csproj" />
     <Project Path="tools/PivProbe/PivProbe.csproj" />
     <Project Path="tools/SchemaTool/SchemaTool.csproj" />
   </Folder>
