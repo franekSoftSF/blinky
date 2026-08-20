@@ -116,6 +116,9 @@ Two things the hardware settled that reading a specification would not have:
 | Edge | nginx + ModSecurity 3 + CRS v4, in the container that will also serve Angular | A WAF that adds no box to the diagram |
 | WAF on the agent channel | `DetectionOnly`, no body inspection on DER-carrying endpoints | Measured: blocking mode treats base64-of-DER as an attack. mTLS and schema validation are the control there; the WAF is a sensor |
 | Client certificate | Verified at the edge, forwarded as a header, stripped on the console listener | The API never terminates TLS, and a browser cannot claim an agent identity |
+| Where mTLS is enforced | Edge asks (`optional`), API requires | Requiring at the edge refuses the handshake before enrolment can happen, and only the database knows whether a certificate still belongs to a live agent |
+| Agent CA | Separate from the credential CA | "This machine is in the fleet" is a much weaker claim than "this person holds this key on hardware" |
+| Bootstrap token | Per deployment, constant-time compared, audited, rotatable | Per-machine tokens are not shippable in an MSI; the token buys an identity, never an authorisation |
 | Agent shape | LocalSystem service + per-session UI process | Session 0 cannot draw a PIN prompt, and LocalSystem cannot prove who is at the keyboard |
 | Identity | Agent = mTLS, user = Kerberos from the user's own session | No authorisation decision is made on the workstation |
 | Store | PostgreSQL + NHibernate | Same as FAG, including the SQL schema script and `SchemaValidator` |
@@ -150,7 +153,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | `Blinky.Contracts` | skeleton | Protocol version, `JobType`, `JobState`. Envelope in patch 0015 |
 | `Blinky.Domain` | **done** | Patch 0013: eleven entities from doc 02, with the states the hardware turned up |
 | `Blinky.Infrastructure` | **done** | Patch 0013: NHibernate mappings, generated schema, `SchemaValidator` reporting clean in both services |
-| `Blinky.Api` | skeleton | Serilog and `/health`. Agent enrolment in patch 0014 |
+| `Blinky.Api` | **enrolment done** | Patch 0014: bootstrap enrolment, agent CA, mTLS enforcement, heartbeat. Proven end to end by `tools/AgentEnrol` |
 | `Blinky.Worker` | skeleton | Host and Serilog, no scanners. Job engine in patch 0026 |
 | `Blinky.Pki` — built-in CA | not started | Phase 2, patches 0021 and 0028 (topology) |
 | `Blinky.Pki` — ADCS | not started | Phase 3 |
@@ -165,7 +168,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Phase | Title | State |
 |---|---|---|
 | 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token | **in progress** — 0010 to 0013 done; 0014 next |
+| 1 | See the token | **in progress** — 0010 to 0014 done; 0015 next |
 
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |

@@ -39,14 +39,33 @@ Api: validate token, create/lookup Agent by (hostname, domain), issue client cer
 agent stores cert in LocalMachine\My, uses it for everything afterwards
 ```
 
-The bootstrap token is single-purpose and rate-limited; it authorises exactly
-one certificate issuance. Agent certificates are short-lived (90 days) and
-renewed automatically over mTLS, so a leaked bootstrap token stops being useful
-quickly and a leaked agent certificate expires on its own.
+The bootstrap token is **per deployment, not per machine** — an earlier draft
+of this document said it authorises exactly one issuance, which cannot be true
+of a token shipped in an MSI to a fleet. It is compared in constant time,
+rate-limited, revocable by changing it, and every use is audited. Agent
+certificates are short-lived (90 days) and renewed automatically over mTLS, so
+a leaked bootstrap token buys agent certificates only until it is rotated, and
+a leaked agent certificate expires on its own.
+
+What the token cannot do is authorise anything: it buys an identity for a
+machine, and a machine identity never authorises an issuance on its own. That
+still needs the user's own Kerberos ticket.
 
 Registration is idempotent on `(hostname, domain)`. `domain` is a required MSI
 property for the same reason as in FAG: LocalSystem's `UserDomainName` returns
 the *machine* name, and guessing produces a second, orphaned agent row.
+
+**Where the check happens.** The edge asks for a client certificate but does
+not require one (`ssl_verify_client optional`), and the API refuses every path
+except enrolment without a verified one. Requiring it at the edge would refuse
+the handshake before enrolment could ever be reached — and the API's check is
+the stronger of the two anyway, because only the database knows whether that
+certificate still belongs to an agent that exists and is not suspended. A
+revoked agent stops working immediately rather than at the next proxy reload.
+
+The subject of an issued certificate comes from the registration, never from
+the request. A machine proves it holds a key; it does not get to choose what it
+is called.
 
 Agent identity survives uninstall — the GUID lives in
 `ProgramData\Blinky\agent-id.txt`, outside the install directory — so a version
@@ -57,6 +76,7 @@ upgrade is not a new agent.
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/api/agents/enroll` | Bootstrap. The only unauthenticated endpoint |
+| `GET` | `/api/agents/whoami` | Which agent row this certificate belongs to |
 | `POST` | `/api/agents/{id}/heartbeat` | Liveness, agent version, reader list |
 | `POST` | `/api/agents/{id}/renew-certificate` | Rotate the client certificate |
 | `GET` | `/api/jobs/next?agentId=` | Claim the next job; takes a lease |

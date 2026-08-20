@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "building",
-    "summary": "Patches 0010-0013 done. Blinky.Piv carries transport, read path and attestation, all validated on hardware. The domain, NHibernate mappings and a generated schema are in, with SchemaValidator reporting clean in both containers and a jsonb round trip proven against PostgreSQL. 114 tests. Next is 0014, agent enrolment."
+    "summary": "Patches 0010-0014 done. Blinky.Piv reads tokens and verifies attestation on hardware; the domain and schema are in with SchemaValidator clean; and an agent now enrols over the mTLS channel, gets a certificate from the agent CA and uses it. 120 tests, 13 smoke checks. Next is 0015, the agent service itself."
   },
   "phases": [
     {
@@ -121,7 +121,7 @@
       "name": "Blinky.Api",
       "type": "aspnet-core",
       "phase": 1,
-      "state": "skeleton"
+      "state": "enrolment-done"
     },
     {
       "name": "Blinky.Worker",
@@ -173,6 +173,12 @@
     },
     {
       "name": "tools/SchemaTool",
+      "type": "cli",
+      "phase": 1,
+      "state": "done"
+    },
+    {
+      "name": "tools/AgentEnrol",
       "type": "cli",
       "phase": 1,
       "state": "done"
@@ -297,6 +303,16 @@
     {
       "id": "schema-authorship",
       "choice": "The schema is generated from the mappings by tools/SchemaTool; a CI test fails when the committed file stops matching",
+      "state": "locked"
+    },
+    {
+      "id": "mtls-enforcement",
+      "choice": "The edge asks for a client certificate (optional) and the API requires one on every path except enrolment",
+      "state": "locked-validated"
+    },
+    {
+      "id": "agent-ca",
+      "choice": "A separate CA issues agent client certificates; short-lived and rotated",
       "state": "locked"
     }
   ],

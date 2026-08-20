@@ -33,6 +33,14 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Blinky: Host=postgres;Database=${POSTGRES_DB:-blinky};Username=${POSTGRES_USER:-blinky};Password=${POSTGRES_PASSWORD:-blinky}
+      Blinky__Enrolment__BootstrapToken: ${BOOTSTRAP_TOKEN:-change-me-before-anyone-else-can-reach-this}
+      Blinky__AgentCa__CertificatePath: /etc/blinky/certs/agent-ca.crt
+      Blinky__AgentCa__KeyPath: /etc/blinky/certs/agent-ca.key
+    volumes:
+      # The agent CA signs the certificates agents authenticate with. Dev
+      # material from scripts/dev-certs.sh; in production this is the one thing
+      # here that belongs behind a key store.
+      - ./certs:/etc/blinky/certs:ro
     depends_on:
       postgres:
         condition: service_healthy

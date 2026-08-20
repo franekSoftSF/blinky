@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\Blinky.Domain\Blinky.Domain.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Piv\Blinky.Piv.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Infrastructure\Blinky.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Blinky.Api\Blinky.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>

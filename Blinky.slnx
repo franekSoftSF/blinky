@@ -15,6 +15,8 @@
     <Project Path="tests/Blinky.UnitTests/Blinky.UnitTests.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/AgentEnrol/AgentEnrol.csproj" />
     <Project Path="tools/PivProbe/PivProbe.csproj" />
+    <Project Path="tools/SchemaTool/SchemaTool.csproj" />
   </Folder>
 </Solution>

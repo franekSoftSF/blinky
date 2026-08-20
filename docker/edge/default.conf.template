@@ -60,8 +60,15 @@ server {
 
     # mTLS. The agent proves the machine here; the user proves themselves with
     # Kerberos inside the request. See docs/05-agent-protocol.md.
+    #
+    # "optional", not "on", for one reason: enrolment is the only endpoint an
+    # agent can reach before it has a certificate, and "on" refuses the
+    # handshake before the API ever sees the request. The verdict is forwarded
+    # and the API refuses everything else without it - which is the stronger
+    # check anyway, because only the database knows whether that certificate
+    # still belongs to an agent that exists and is not suspended.
     ssl_client_certificate /etc/nginx/certs/agent-ca.crt;
-    ssl_verify_client      on;
+    ssl_verify_client      optional;
     ssl_verify_depth       2;
 
     modsecurity on;

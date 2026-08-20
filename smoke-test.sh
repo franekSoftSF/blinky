@@ -58,18 +58,43 @@ check "agent identity cannot be forged from the console" 401 \
 
 echo
 echo "agent listener - mTLS"
-check "no client certificate is refused" 400 \
+check "no client certificate is refused by the API" 401 \
     "$(status "$AGENT/api/agents/whoami")"
-check "valid client certificate is identified" 200 \
+check "a certificate no agent holds is refused" 401 \
     "$(status --cert /certs/test-agent.crt --key /certs/test-agent.key \
         "$AGENT/api/agents/whoami")"
-check "an attack here is logged, not blocked (DetectionOnly)" 404 \
+# 401 is the API refusing an unregistered certificate; 403 would be the
+# edge refusing the request. That difference is the whole check.
+check "an attack here is logged, not blocked (DetectionOnly)" 401 \
     "$(status --cert /certs/test-agent.crt --key /certs/test-agent.key \
         --get --data-urlencode "id=1' OR '1'='1" "$AGENT/api/jobs/next")"
-check "a PKCS#10 body reaches the API, not the rule set" 404 \
+check "a PKCS#10 body reaches the API, not the rule set" 401 \
     "$(status --cert /certs/test-agent.crt --key /certs/test-agent.key -X POST \
         -H 'Content-Type: application/pkcs10' \
         --data-binary @/certs/test-agent.crt "$AGENT/api/credentials/issue")"
+
+echo
+echo "agent enrolment"
+
+enrol() {
+    dotnet run --project tools/AgentEnrol --no-build -- \
+        --backend "https://localhost:${AGENT_PORT:-9443}" \
+        --hostname smoke-test --domain blinky.invalid \
+        --token "${BOOTSTRAP_TOKEN:-change-me-before-anyone-else-can-reach-this}" \
+        --out "$(mktemp -d)/agent" --insecure 2>/dev/null \
+        | grep -oE "enrolled: [0-9a-f-]+" | cut -d" " -f2
+}
+
+first=$(enrol)
+second=$(enrol)
+
+check "an agent enrols and the issued certificate works" "yes" \
+    "$([ -n "$first" ] && echo yes || echo no)"
+check "enrolling the same machine twice reuses the agent" "$first" "$second"
+check "a bad bootstrap token is refused" 401 \
+    "$(status -X POST -H "Content-Type: application/json" \
+        -d '{"hostname":"x","domain":"y","bootstrapToken":"wrong","certificateSigningRequest":""}' \
+        "$AGENT/api/agents/enroll")"
 
 echo
 echo "api"
