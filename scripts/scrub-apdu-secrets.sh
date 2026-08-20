@@ -49,33 +49,37 @@ psql() {
 # about which instruction carried which secret.
 pattern='SCardTransmit\([0-9A-Fa-f]{6,}\)'
 
+# jobs.result is jsonb, so the match and the replacement both go through text
+# and the result is cast back. The replacement contains no quote, backslash or
+# control character, so what goes back in is still valid JSON.
+
 echo "Rows holding an APDU:"
 psql -c "select id, type, state, created_at
          from jobs
-         where result ~ '$pattern'
+         where result::text ~ '$pattern'
          order by created_at;"
 
 if [[ $DRY_RUN -eq 1 ]]; then
     echo
     echo "What they would become:"
     psql -c "select id,
-                    regexp_replace(result, '$pattern',
+                    regexp_replace(result::text, '$pattern',
                                    'SCardTransmit(<redacted>)', 'g') as result
              from jobs
-             where result ~ '$pattern';"
+             where result::text ~ '$pattern';"
     echo
     echo "Nothing was changed. Run without --dry-run to apply."
     exit 0
 fi
 
 psql -c "update jobs
-         set result = regexp_replace(result, '$pattern',
-                                     'SCardTransmit(<redacted>)', 'g')
-         where result ~ '$pattern';"
+         set result = regexp_replace(result::text, '$pattern',
+                                     'SCardTransmit(<redacted>)', 'g')::jsonb
+         where result::text ~ '$pattern';"
 
 echo
 echo "Remaining rows with an APDU (should be none):"
-psql -t -c "select count(*) from jobs where result ~ '$pattern';"
+psql -t -c "select count(*) from jobs where result::text ~ '$pattern';"
 
 cat <<'EOF'
 
