@@ -234,6 +234,11 @@ profile with PIN policy `Always` usable on a Bio without demanding a fingerprint
 for every single operation. Metadata tag `08` reports whether one is currently
 set.
 
+One trap found while implementing the read path: **tag `06` is one byte here
+and two bytes in the PIN slot.** For the PIN it is `total, remaining`; for
+slot `96` it is the remaining match attempts alone. Reading it the same way in
+both places is off by one, and the value it lands on is plausible.
+
 **Unverified.** The probe reads the flag but has not requested a temporary PIN,
 because doing so consumes a match attempt. The exact request encoding is
 confirmed on hardware in patch 0011, and nothing in the design depends on it
@@ -275,6 +280,28 @@ a touch-policy profile.
 
 `Cached` gives one touch fifteen seconds of validity, which is why
 personalisation batches its touch-requiring operations together.
+
+## The read path
+
+`PivSession` is everything above the transport that can be learned without
+writing to a token: firmware, serial, PIN and PUK state, management-key
+algorithm, biometrics, slot occupancy and certificates.
+
+Two rules run through it, and both come from what the hardware turned out to
+do:
+
+- **Ask the card, do not infer.** Biometrics are detected by the answer to
+  slot `96`, never by the model name — two tokens on the bench present
+  identically over USB and only one does on-card comparison. The management-key
+  algorithm is read, never derived from the firmware number, even though the
+  firmware number happens to predict it on all three.
+- **"Cannot tell" is a distinct answer.** Firmware below 5.3 has no
+  `GET METADATA`, so the state is `Unknown` rather than a guess. An operator
+  needs to see the difference between a PIN that is not set and a PIN that
+  could not be asked about.
+
+`ReadInventory()` is one pass over a token; empty slots come back as empty
+rather than as exceptions, because that is the normal finding.
 
 ## Error map
 

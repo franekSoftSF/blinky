@@ -37,8 +37,11 @@ public sealed class TranscriptReplayTests
         // 6A82, and three YubiKeys answering 9000. Neither is an error.
         var transport = TranscriptTransport.FromFixture(Fixture);
 
+        var select = Convert.ToHexString(
+            new ApduCommand(0xA4, p1: 0x04, data: PivConnection.PivAid, le: 0).Encode());
+
         var selects = transport.Exchanges
-            .Where(e => e.Label == "SELECT PIV")
+            .Where(e => Convert.ToHexString(e.Command) == select)
             .ToList();
 
         Assert.Contains(selects, e => e.Status == 0x9000);
@@ -67,8 +70,12 @@ public sealed class TranscriptReplayTests
         // fails loudly if somebody drops in a raw transcript.
         var transport = TranscriptTransport.FromFixture(Fixture);
 
+        // Matched by command bytes, not by label: labels are cosmetic and the
+        // probe has renamed them once already.
+        var getSerial = Convert.ToHexString(new ApduCommand(0xF8, le: 0).Encode());
+
         var serials = transport.Exchanges
-            .Where(e => e.Label == "GET SERIAL" && e.Status == 0x9000)
+            .Where(e => Convert.ToHexString(e.Command) == getSerial && e.Status == 0x9000)
             .Select(e => Convert.ToHexString(e.Response))
             .ToList();
 

@@ -53,8 +53,11 @@ Two findings worth more than the table:
   line. The rule distinguishes the two cases; see the decisions below.
 
 None of the three has anything in a slot, so certificate parsing and
-attestation are still unexercised. That needs a token somebody is willing to
-have written to.
+attestation are still unexercised **on hardware**. Both paths exist and are
+covered by hand-built cases — a PIV data object assembled around a generated
+certificate, plain and gzipped — but the DoD for patch 0011 asks for a token
+provisioned by `ykman`, and that half is **not met**. It needs a key somebody
+is willing to have written to.
 
 The probe records an APDU transcript, which is the fixture the `Blinky.Piv`
 unit tests replay in patch 0010. Transcripts contain the token serial and any
@@ -108,7 +111,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Compose stack | **done** | postgres, api, worker, edge. `docker compose up -d` works |
 | Edge and WAF | **done** | nginx + ModSecurity 3 + CRS v4, two listeners, mTLS forwarded to the API. 9 smoke checks green |
 | `tools/PivProbe` | **done** | Read-only hardware spike; see *Validated on hardware* |
-| `Blinky.Piv` | **transport done** | Patch 0010: PC/SC, transactions, chaining both ways, `6Cxx`, typed error map. 46 tests. Drives `tools/PivProbe` against real tokens. Read path is 0011 |
+| `Blinky.Piv` | **transport + read path** | Patches 0010 and 0011: PC/SC, chaining, typed error map, then `PivSession` — firmware, serial, PIN/PUK, management key, biometrics, slots, certificates. 84 tests. `tools/PivProbe` is now only printing |
 | `Blinky.Contracts` | skeleton | Protocol version, `JobType`, `JobState`. Envelope in patch 0015 |
 | `Blinky.Domain` | skeleton | `TokenState`, `CredentialState`. Entities and mappings in patch 0013 |
 | `Blinky.Infrastructure` | not started | Phase 1 |
@@ -127,7 +130,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Phase | Title | State |
 |---|---|---|
 | 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token | **in progress** — 0010 done; 0011 next |
+| 1 | See the token | **in progress** — 0010 done, 0011 done except the provisioned-token check; 0012 next |
 
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |
@@ -140,6 +143,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Risk | Impact | Current handling |
 |---|---|---|
 | PIV APDU layer misbehaves on real firmware in ways no emulator shows | Phase 1 redesign; everything downstream is blocked | Reduced by 0010: the probe runs on `Blinky.Piv` and produced byte-identical output on all three tokens. Hardware suite from 0011; `yubico-piv-tool` as an independent oracle |
+| No provisioned token on the bench | Certificate reads, `61xx` chaining and attestation are all unexercised on real hardware; 0011's DoD is half met | Stated, not hidden. Needs one token written to — `ykman` on the 5.7.1 would do it |
 | `61xx` chaining is untested on hardware | The first certificate read could fail in the field | No capture contains it — every response so far fitted one APDU. Covered by hand-built cases; the first real chained read happens in 0011 |
 | The agent cannot run on Linux | Narrows deployment to Windows | Named, not hidden: `PcscContext.IsSupported`, an explicit exception, and patch 0017 |
 | Management-key algorithm differs across firmware (3DES before 5.7, AES-192 after) | Personalisation fails on part of the fleet | Read `GET METADATA`, fall back once, record `Unknown` rather than guessing |

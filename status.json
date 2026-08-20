@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "building",
-    "summary": "Phase 0 complete. Patch 0010 done: Blinky.Piv carries the PC/SC transport, transactions, chaining both ways, 6Cxx and a typed error map, with 46 tests including replay of a real three-token capture. tools/PivProbe runs on it and produces byte-identical output against hardware. Next is 0011, the read path."
+    "summary": "Patches 0010 and 0011 done: Blinky.Piv carries the PC/SC transport, chaining, the typed error map and the read path, with 84 tests including a semantic replay of a real three-token capture. tools/PivProbe is now only printing. Certificate reads and attestation remain unexercised on hardware because every slot on the bench is empty."
   },
   "phases": [
     {
@@ -97,7 +97,7 @@
       "name": "Blinky.Piv",
       "type": "library",
       "phase": 1,
-      "state": "transport-done"
+      "state": "read-path-done"
     },
     {
       "name": "Blinky.Contracts",
@@ -376,6 +376,11 @@
       "id": "windows-only-transport",
       "impact": "medium",
       "handling": "PcscContext.IsSupported plus an explicit PlatformNotSupportedException; patch 0017"
+    },
+    {
+      "id": "no-provisioned-token",
+      "impact": "medium",
+      "handling": "Certificate parsing covered by hand-built PIV data objects; the hardware half of 0011 stays open until a token is written to"
     }
   ]
 }

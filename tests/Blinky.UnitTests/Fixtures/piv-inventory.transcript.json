@@ -12,85 +12,91 @@
     "Sw": "9000"
   },
   {
-    "Label": "GET VERSION",
+    "Label": "inventory",
     "Command": "00FD000000",
     "Response": "050702",
     "Sw": "9000"
   },
   {
-    "Label": "GET SERIAL",
+    "Label": "inventory",
     "Command": "00F8000000",
     "Response": "00BADA55",
     "Sw": "9000"
   },
   {
-    "Label": "VERIFY (empty, retry probe)",
+    "Label": "inventory",
     "Command": "00200080",
     "Response": "",
     "Sw": "63C8"
   },
   {
-    "Label": "GET METADATA 80 (PIN)",
+    "Label": "inventory",
     "Command": "00F7008000",
     "Response": "0101FF05010006020808",
     "Sw": "9000"
   },
   {
-    "Label": "GET METADATA 81 (PUK)",
+    "Label": "inventory",
     "Command": "00F7008100",
     "Response": "0101FF05010006020000",
     "Sw": "9000"
   },
   {
-    "Label": "GET METADATA 9B (management key)",
+    "Label": "inventory",
     "Command": "00F7009B00",
     "Response": "01010A02020001050101",
     "Sw": "9000"
   },
   {
-    "Label": "GET DATA 9A",
+    "Label": "inventory",
+    "Command": "00F7009600",
+    "Response": "070101060103080100",
+    "Sw": "9000"
+  },
+  {
+    "Label": "inventory",
     "Command": "00CB3FFF055C035FC10500",
     "Response": "",
     "Sw": "6A82"
   },
   {
-    "Label": "GET DATA 9C",
-    "Command": "00CB3FFF055C035FC10A00",
-    "Response": "",
-    "Sw": "6A82"
-  },
-  {
-    "Label": "GET DATA 9D",
-    "Command": "00CB3FFF055C035FC10B00",
-    "Response": "",
-    "Sw": "6A82"
-  },
-  {
-    "Label": "GET DATA 9E",
-    "Command": "00CB3FFF055C035FC10100",
-    "Response": "",
-    "Sw": "6A82"
-  },
-  {
-    "Label": "GET METADATA 9A",
+    "Label": "inventory",
     "Command": "00F7009A00",
     "Response": "",
     "Sw": "6A88"
   },
   {
-    "Label": "GET METADATA 9C",
+    "Label": "inventory",
+    "Command": "00CB3FFF055C035FC10A00",
+    "Response": "",
+    "Sw": "6A82"
+  },
+  {
+    "Label": "inventory",
     "Command": "00F7009C00",
     "Response": "",
     "Sw": "6A88"
   },
   {
-    "Label": "GET METADATA 9D",
+    "Label": "inventory",
+    "Command": "00CB3FFF055C035FC10B00",
+    "Response": "",
+    "Sw": "6A82"
+  },
+  {
+    "Label": "inventory",
     "Command": "00F7009D00",
     "Response": "",
     "Sw": "6A88"
   },
   {
-    "Label": "GET METADATA 9E",
+    "Label": "inventory",
+    "Command": "00CB3FFF055C035FC10100",
+    "Response": "",
+    "Sw": "6A82"
+  },
+  {
+    "Label": "inventory",
     "Command": "00F7009E00",
     "Response": "",
     "Sw": "6A88"
@@ -108,85 +114,91 @@
     "Sw": "9000"
   },
   {
-    "Label": "GET VERSION",
+    "Label": "inventory",
     "Command": "00FD000000",
     "Response": "050701",
     "Sw": "9000"
   },
   {
-    "Label": "GET SERIAL",
+    "Label": "inventory",
     "Command": "00F8000000",
     "Response": "00BADA56",
     "Sw": "9000"
   },
   {
-    "Label": "VERIFY (empty, retry probe)",
+    "Label": "inventory",
     "Command": "00200080",
     "Response": "",
     "Sw": "63C3"
   },
   {
-    "Label": "GET METADATA 80 (PIN)",
+    "Label": "inventory",
     "Command": "00F7008000",
     "Response": "0101FF05010106020303",
     "Sw": "9000"
   },
   {
-    "Label": "GET METADATA 81 (PUK)",
+    "Label": "inventory",
     "Command": "00F7008100",
     "Response": "0101FF05010106020303",
     "Sw": "9000"
   },
   {
-    "Label": "GET METADATA 9B (management key)",
+    "Label": "inventory",
     "Command": "00F7009B00",
     "Response": "01010A02020001050101",
     "Sw": "9000"
   },
   {
-    "Label": "GET DATA 9A",
+    "Label": "inventory",
+    "Command": "00F7009600",
+    "Response": "",
+    "Sw": "6A88"
+  },
+  {
+    "Label": "inventory",
     "Command": "00CB3FFF055C035FC10500",
     "Response": "",
     "Sw": "6A82"
   },
   {
-    "Label": "GET DATA 9C",
-    "Command": "00CB3FFF055C035FC10A00",
-    "Response": "",
-    "Sw": "6A82"
-  },
-  {
-    "Label": "GET DATA 9D",
-    "Command": "00CB3FFF055C035FC10B00",
-    "Response": "",
-    "Sw": "6A82"
-  },
-  {
-    "Label": "GET DATA 9E",
-    "Command": "00CB3FFF055C035FC10100",
-    "Response": "",
-    "Sw": "6A82"
-  },
-  {
-    "Label": "GET METADATA 9A",
+    "Label": "inventory",
     "Command": "00F7009A00",
     "Response": "",
     "Sw": "6A88"
   },
   {
-    "Label": "GET METADATA 9C",
+    "Label": "inventory",
+    "Command": "00CB3FFF055C035FC10A00",
+    "Response": "",
+    "Sw": "6A82"
+  },
+  {
+    "Label": "inventory",
     "Command": "00F7009C00",
     "Response": "",
     "Sw": "6A88"
   },
   {
-    "Label": "GET METADATA 9D",
+    "Label": "inventory",
+    "Command": "00CB3FFF055C035FC10B00",
+    "Response": "",
+    "Sw": "6A82"
+  },
+  {
+    "Label": "inventory",
     "Command": "00F7009D00",
     "Response": "",
     "Sw": "6A88"
   },
   {
-    "Label": "GET METADATA 9E",
+    "Label": "inventory",
+    "Command": "00CB3FFF055C035FC10100",
+    "Response": "",
+    "Sw": "6A82"
+  },
+  {
+    "Label": "inventory",
     "Command": "00F7009E00",
     "Response": "",
     "Sw": "6A88"
@@ -204,85 +216,91 @@
     "Sw": "9000"
   },
   {
-    "Label": "GET VERSION",
+    "Label": "inventory",
     "Command": "00FD000000",
     "Response": "050403",
     "Sw": "9000"
   },
   {
-    "Label": "GET SERIAL",
+    "Label": "inventory",
     "Command": "00F8000000",
     "Response": "00BADA57",
     "Sw": "9000"
   },
   {
-    "Label": "VERIFY (empty, retry probe)",
+    "Label": "inventory",
     "Command": "00200080",
     "Response": "",
     "Sw": "63C3"
   },
   {
-    "Label": "GET METADATA 80 (PIN)",
+    "Label": "inventory",
     "Command": "00F7008000",
     "Response": "0101FF05010106020303",
     "Sw": "9000"
   },
   {
-    "Label": "GET METADATA 81 (PUK)",
+    "Label": "inventory",
     "Command": "00F7008100",
     "Response": "0101FF05010106020303",
     "Sw": "9000"
   },
   {
-    "Label": "GET METADATA 9B (management key)",
+    "Label": "inventory",
     "Command": "00F7009B00",
     "Response": "01010302020001050101",
     "Sw": "9000"
   },
   {
-    "Label": "GET DATA 9A",
+    "Label": "inventory",
+    "Command": "00F7009600",
+    "Response": "",
+    "Sw": "6A88"
+  },
+  {
+    "Label": "inventory",
     "Command": "00CB3FFF055C035FC10500",
     "Response": "",
     "Sw": "6A82"
   },
   {
-    "Label": "GET DATA 9C",
-    "Command": "00CB3FFF055C035FC10A00",
-    "Response": "",
-    "Sw": "6A82"
-  },
-  {
-    "Label": "GET DATA 9D",
-    "Command": "00CB3FFF055C035FC10B00",
-    "Response": "",
-    "Sw": "6A82"
-  },
-  {
-    "Label": "GET DATA 9E",
-    "Command": "00CB3FFF055C035FC10100",
-    "Response": "",
-    "Sw": "6A82"
-  },
-  {
-    "Label": "GET METADATA 9A",
+    "Label": "inventory",
     "Command": "00F7009A00",
     "Response": "",
     "Sw": "6A88"
   },
   {
-    "Label": "GET METADATA 9C",
+    "Label": "inventory",
+    "Command": "00CB3FFF055C035FC10A00",
+    "Response": "",
+    "Sw": "6A82"
+  },
+  {
+    "Label": "inventory",
     "Command": "00F7009C00",
     "Response": "",
     "Sw": "6A88"
   },
   {
-    "Label": "GET METADATA 9D",
+    "Label": "inventory",
+    "Command": "00CB3FFF055C035FC10B00",
+    "Response": "",
+    "Sw": "6A82"
+  },
+  {
+    "Label": "inventory",
     "Command": "00F7009D00",
     "Response": "",
     "Sw": "6A88"
   },
   {
-    "Label": "GET METADATA 9E",
+    "Label": "inventory",
+    "Command": "00CB3FFF055C035FC10100",
+    "Response": "",
+    "Sw": "6A82"
+  },
+  {
+    "Label": "inventory",
     "Command": "00F7009E00",
     "Response": "",
     "Sw": "6A88"
