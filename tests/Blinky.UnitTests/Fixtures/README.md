@@ -37,7 +37,7 @@ appearance within each capture. The two files number independently, so the same
 placeholder means different tokens in each.
 
 **Attestation is not recorded at all.** An attestation certificate carries the
-device's real serial in extension `1.3.6.1.4.1.41482.13.2` and identifies one
+device's real serial in extension `1.3.6.1.4.1.41482.3.7` and identifies one
 physical token. The probe stops recording around the ATTEST call rather than
 filtering it out afterwards — the first attempt did filter, missed the
 `GET RESPONSE` continuations, and put two thirds of a certificate into a file

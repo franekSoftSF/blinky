@@ -70,6 +70,31 @@ The probe records an APDU transcript, which is the fixture the `Blinky.Piv`
 unit tests replay in patch 0010. Transcripts contain the token serial and any
 certificate on the card and are **not** committed — `out/` is ignored.
 
+On 2026-08-20, attestation was verified end to end against the pinned Yubico
+root:
+
+```
+attestation   trusted
+  intermediate CN=Yubico PIV Attestation
+  issued by    CN=Yubico PIV Root CA Serial 263751
+  firmware     5.7.1
+  device       29177301   UsbCKeychain
+  key policy   pin=Once touch=Never
+```
+
+Two things the hardware settled that reading a specification would not have:
+
+- **The intermediate is different on every device.** Three tokens produced
+  three `CN=Yubico PIV Attestation` certificates with three different serial
+  numbers, all issued by the same root. Only the root can be pinned; the
+  intermediate is untrusted input read from the card and has to be verified,
+  not assumed. Pinning an intermediate would produce code that works on the
+  token it was written against and fails on every other one.
+- **The attestation extensions live under `1.3.6.1.4.1.41482.3`, not `.13`.**
+  This document set had the wrong arc, the code inherited it, and the verifier
+  rejected a genuine token as "not an attestation". The numbers within the arc
+  are 3, 7, 8, 9 — not sequential, not guessable.
+
 ## Decisions locked
 
 | Decision | Choice | Why |
@@ -84,6 +109,7 @@ certificate on the card and are **not** committed — `out/` is ignored.
 | Management key | Per-token, HKDF-derived from an HSM-held master | One token's key opens one token; the database holds no key material |
 | PIN | Never stored, anywhere, in any form | If a workflow appears to need a stored PIN, the workflow is wrong |
 | PUK | Random per token, escrowed AES-256-GCM under an HSM KEK | Unblocking has to work over the phone; disclosure is audited and alertable |
+| Attestation trust | Only the Yubico root is pinned, embedded with its SHA-256 checked at load; the intermediate is read from the card and verified | The intermediate differs per device — measured on three tokens |
 | Bio Multi-protocol tokens | First-class target, detected by asking slot `96`, never by model name | Verification is a fingerprint, not a PIN, and the absence of a PUK is by design. Treating it as a broken normal token would reject the product line |
 | Non-Bio tokens without a PUK | Refused at personalisation unless policy `AllowUnrecoverableTokens` is set | Somebody removed the recovery path and nobody recorded why. The first blocked PIN then destroys a credential with no warning anyone gave |
 | Transport | HTTPS REST + SignalR doorbell, no broker | One port, one certificate, one auth model; the doorbell carries no state |
@@ -118,7 +144,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Compose stack | **done** | postgres, api, worker, edge. `docker compose up -d` works |
 | Edge and WAF | **done** | nginx + ModSecurity 3 + CRS v4, two listeners, mTLS forwarded to the API. 9 smoke checks green |
 | `tools/PivProbe` | **done** | Read-only hardware spike; see *Validated on hardware* |
-| `Blinky.Piv` | **transport + read path** | Patches 0010 and 0011: PC/SC, chaining, typed error map, then `PivSession` — firmware, serial, PIN/PUK, management key, biometrics, slots, certificates. 84 tests. `tools/PivProbe` is now only printing |
+| `Blinky.Piv` | **transport, read path, attestation** | Patches 0010, 0011 and 0012. 108 tests. `tools/PivProbe` is now only printing, and verifies a live token against the pinned root |
 | `Blinky.Contracts` | skeleton | Protocol version, `JobType`, `JobState`. Envelope in patch 0015 |
 | `Blinky.Domain` | skeleton | `TokenState`, `CredentialState`. Entities and mappings in patch 0013 |
 | `Blinky.Infrastructure` | not started | Phase 1 |
@@ -137,7 +163,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Phase | Title | State |
 |---|---|---|
 | 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token | **in progress** — 0010 and 0011 done and validated on hardware; 0012 next |
+| 1 | See the token | **in progress** — 0010, 0011 and 0012 done and validated on hardware; 0013 next |
 
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |

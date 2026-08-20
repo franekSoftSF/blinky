@@ -11,4 +11,8 @@
     <InternalsVisibleTo Include="Blinky.UnitTests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Attestation\yubico-piv-attestation-root.pem" />
+  </ItemGroup>
+
 </Project>

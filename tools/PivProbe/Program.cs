@@ -20,6 +20,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Blinky.Piv;
+using Blinky.Piv.Attestation;
 using Blinky.Piv.Pcsc;
 
 namespace Blinky.Tools.PivProbe;
@@ -225,41 +226,56 @@ internal static class Program
     }
 
     /// <summary>
-    /// Attestation is still raw here: parsing it and verifying the chain to the
-    /// pinned Yubico root is patch 0012, and pretending otherwise would put an
-    /// unverified certificate on screen next to verified facts.
+    /// Reads the attestation for slot 9A and verifies it against the pinned
+    /// Yubico root. This is the part a synthetic PKI cannot prove: the unit
+    /// tests show the verifier rejects forgeries, and this shows it accepts a
+    /// real token.
     /// </summary>
     private static void PrintAttestation(PivSession session, RecordingTransport recorder)
     {
         // An attestation certificate names the device: the real serial sits in
-        // extension 1.3.6.1.4.1.41482.13.2 and the certificate is unique to one
+        // extension 1.3.6.1.4.1.41482.3.7 and the certificate is unique to one
         // token. Nothing about it goes into a transcript that might be
-        // committed. Patch 0012 builds a synthetic chain for its fixtures.
-        currentLabel = "ATTEST 9A";
+        // committed, so recording stops here rather than being filtered later.
         recorder.Paused = true;
-
-        var response = session.Connection.Send(
-            new ApduCommand(0xF9, PivSlot.Authentication.Id, le: 0));
-
-        if (!response.IsSuccess)
-        {
-            var reason = response.Status.Value is 0x6A80 or 0x6A88
-                ? " - no key in 9A"
-                : string.Empty;
-            Console.WriteLine($"  attestation   unavailable (SW {response.Status}){reason}");
-            recorder.Paused = false;
-            return;
-        }
 
         try
         {
-            var certificate = X509CertificateLoader.LoadCertificate(response.Data);
-            Console.WriteLine($"  attestation   {response.Data.Length} bytes, "
-                              + $"issuer {Shorten(certificate.Issuer)} (unverified - patch 0012)");
+            var leaf = session.Attest(PivSlot.Authentication);
+            if (leaf is null)
+            {
+                Console.WriteLine("  attestation   no key in 9A, nothing to attest");
+                return;
+            }
+
+            var intermediate = session.GetAttestationCertificate();
+            if (intermediate is null)
+            {
+                Console.WriteLine("  attestation   slot F9 is empty - cannot build a chain");
+                return;
+            }
+
+            var serial = session.GetSerialNumber();
+            var verifier = new AttestationVerifier(YubicoRoots.PivAttestation);
+            var result = verifier.Verify(leaf, intermediate, PivSlot.Authentication, serial);
+
+            Console.WriteLine($"  attestation   {result}");
+            Console.WriteLine($"    intermediate {Shorten(intermediate.Subject)}");
+            Console.WriteLine($"    issued by    {Shorten(intermediate.Issuer)}");
+
+            if (result.Attestation is { } attestation)
+            {
+                Console.WriteLine($"    firmware     {attestation.Firmware}");
+                Console.WriteLine($"    device       {attestation.SerialNumber}"
+                                  + $"   {attestation.FormFactor}"
+                                  + (attestation.IsFipsDevice ? "   FIPS" : string.Empty));
+                Console.WriteLine($"    key policy   pin={attestation.PinPolicy} "
+                                  + $"touch={attestation.TouchPolicy}");
+            }
         }
-        catch (Exception ex)
+        catch (PivException ex)
         {
-            Console.WriteLine($"  attestation   unparseable: {ex.Message}");
+            Console.WriteLine($"  attestation   {ex.Message}");
         }
         finally
         {

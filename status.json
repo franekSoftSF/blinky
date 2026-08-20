@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "building",
-    "summary": "Patches 0010 and 0011 done and validated on hardware: transport, chaining, typed error map and the read path, with 92 tests over two real captures. A token provisioned with ykman closed the second half of 0011 - certificate read, slot metadata, and 61xx chaining exercised on a card. Attestation is reachable and is patch 0012."
+    "summary": "Patches 0010-0012 done and validated on hardware: transport, chaining, typed error map, the read path, and attestation verified against a pinned Yubico root on a live token. 108 tests. Next is 0013, the domain and schema."
   },
   "phases": [
     {
@@ -97,7 +97,7 @@
       "name": "Blinky.Piv",
       "type": "library",
       "phase": 1,
-      "state": "read-path-done"
+      "state": "attestation-done"
     },
     {
       "name": "Blinky.Contracts",
@@ -282,6 +282,11 @@
       "id": "pcsc-interop",
       "choice": "Own LibraryImport into winscard.dll rather than a NuGet wrapper; Windows-only until pcsc-lite marshalling can be tested (patch 0017)",
       "state": "locked"
+    },
+    {
+      "id": "attestation-trust",
+      "choice": "Pin only the Yubico root, embedded with its SHA-256 checked at load; the per-device intermediate is read from the card and verified",
+      "state": "locked-validated"
     }
   ],
   "openQuestions": [

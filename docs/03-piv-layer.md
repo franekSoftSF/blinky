@@ -171,10 +171,22 @@ CA`, and the checks are:
 
 - the chain terminates in the pinned Yubico root,
 - the attested public key equals the key in the CSR,
-- the serial in extension `1.3.6.1.4.1.41482.13.2` equals the token being
+- the serial in extension `1.3.6.1.4.1.41482.3.7` equals the token being
   enrolled,
-- the PIN and touch policy in `1.3.6.1.4.1.41482.13.3` satisfy the profile,
-- firmware `1.3.6.1.4.1.41482.13.1` and form factor `…13.4` are recorded.
+- the PIN and touch policy in `1.3.6.1.4.1.41482.3.8` satisfy the profile,
+- firmware `1.3.6.1.4.1.41482.3.3` and form factor `…3.9` are recorded.
+
+The extension arc is `…41482.3`, and the numbers within it are not sequential.
+An earlier draft of this document had them under `…41482.13`, which is wrong;
+it was caught when the verifier rejected a genuine token as "not an
+attestation". Read off a 5.7.1:
+
+```
+1.3.6.1.4.1.41482.3.3   050701          firmware 5.7.1, three raw bytes
+1.3.6.1.4.1.41482.3.7   020401BD35D5    serial, a DER INTEGER: 29177301
+1.3.6.1.4.1.41482.3.8   0201            PIN policy Once, touch policy Never
+1.3.6.1.4.1.41482.3.9   03              form factor: USB-C keychain
+```
 
 If any of that fails, no request reaches the CA. A CMS that signs first and
 verifies later is a CMS that will eventually certify a software key.

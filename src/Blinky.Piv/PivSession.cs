@@ -229,18 +229,9 @@ public sealed class PivSession(PivConnection connection)
                   ?? throw new ArgumentException($"Slot {slot} holds no certificate object.",
                       nameof(slot));
 
-        byte[] request = [0x5C, (byte)tag.Length, .. tag];
-        var response = Connection.Send(
-            new ApduCommand(InsGetData, p1: 0x3F, p2: 0xFF, data: request, le: 0));
+        var data = ReadDataObject(tag, $"GET DATA {slot}");
 
-        if (response.Status.IsEmptySlot)
-        {
-            return null;
-        }
-
-        PivStatus.ThrowIfFailed(response.Status, $"GET DATA {slot}");
-
-        return ExtractCertificate(response.Data);
+        return data is null ? null : ExtractCertificate(data);
     }
 
     /// <summary>Reads a certificate and parses it, or null when the slot is empty.</summary>
@@ -261,6 +252,62 @@ public sealed class PivSession(PivConnection connection)
             throw new PivProtocolException(
                 $"Slot {slot} holds {der.Length} bytes that are not an X.509 certificate: "
                 + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Asks the token to attest to the key in a slot. Returns null when the
+    /// slot holds no key, which is what a blank token answers.
+    /// </summary>
+    public X509Certificate2? Attest(PivSlot slot)
+    {
+        const byte insAttest = 0xF9;
+
+        var response = Connection.Send(new ApduCommand(insAttest, p1: slot.Id, le: 0));
+
+        if (response.Status.Value is StatusWord.IncorrectParameters
+            or StatusWord.ReferencedDataNotFound)
+        {
+            return null;
+        }
+
+        PivStatus.ThrowIfFailed(response.Status, $"ATTEST {slot}");
+
+        try
+        {
+            return X509CertificateLoader.LoadCertificate(response.Data);
+        }
+        catch (Exception ex)
+        {
+            throw new PivProtocolException(
+                $"ATTEST {slot} returned {response.Data.Length} bytes that are not a "
+                + $"certificate: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The token's own attestation certificate, from slot F9. This is the
+    /// intermediate every attestation from this device chains through, and it
+    /// differs from one device to the next - so it is read, never pinned.
+    /// </summary>
+    public X509Certificate2? GetAttestationCertificate()
+    {
+        var der = ReadDataObject([0x5F, 0xFF, 0x01], "GET DATA F9");
+        if (der is null)
+        {
+            return null;
+        }
+
+        var certificate = ExtractCertificate(der) ?? der;
+
+        try
+        {
+            return X509CertificateLoader.LoadCertificate(certificate);
+        }
+        catch (Exception ex)
+        {
+            throw new PivProtocolException(
+                $"Slot F9 holds bytes that are not a certificate: {ex.Message}");
         }
     }
 
@@ -287,6 +334,23 @@ public sealed class PivSession(PivConnection connection)
         }
 
         return new TokenInventory(serial, firmware, pin, puk, managementKey, biometrics, slots);
+    }
+
+    /// <summary>Reads a data object, or null when the card holds none.</summary>
+    private byte[]? ReadDataObject(byte[] tag, string operation)
+    {
+        byte[] request = [0x5C, (byte)tag.Length, .. tag];
+        var response = Connection.Send(
+            new ApduCommand(InsGetData, p1: 0x3F, p2: 0xFF, data: request, le: 0));
+
+        if (response.Status.IsEmptySlot)
+        {
+            return null;
+        }
+
+        PivStatus.ThrowIfFailed(response.Status, operation);
+
+        return response.Data;
     }
 
     /// <summary>

@@ -37,7 +37,7 @@ public sealed class FixtureSafetyTests
     public void No_attestation_data_is_in_a_fixture(string fixture)
     {
         // An attestation certificate carries the device's real serial in
-        // extension 1.3.6.1.4.1.41482.13.2 and identifies one physical token.
+        // extension 1.3.6.1.4.1.41482.3.7 and identifies one physical token.
         // The probe stops recording around it rather than filtering afterwards.
         var attest = Convert.ToHexString(
             new ApduCommand(0xF9, PivSlot.Authentication.Id, le: 0).Encode());

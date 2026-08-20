@@ -47,7 +47,7 @@ somebody's key stops working.
 id                    uuid
 serial                bigint UNIQUE   -- YubiKey serial, from the attestation cert
 firmware_version      text            -- '5.4.3'
-form_factor           text            -- from attestation extension 1.3.6.1.4.1.41482.13.4
+form_factor           text            -- from attestation extension 1.3.6.1.4.1.41482.3.9
 attestation_thumbprint text           -- F9 slot cert, pinned at registration
 state                 text            -- see lifecycle below
 cardholder_id         uuid NULL
