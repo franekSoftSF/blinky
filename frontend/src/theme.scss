@@ -1,0 +1,64 @@
+html[data-theme='light'] {
+  background: #eef3f8;
+  color: #142238;
+}
+
+html[data-theme='light'] body {
+  background: radial-gradient(circle at 75% -10%, #d9edf5 0, transparent 38%), #eef3f8;
+}
+
+html[data-theme='light'] .sidebar,
+html[data-theme='light'] .topbar {
+  background: #f9fbfded;
+  border-color: #d8e1eb;
+}
+
+html[data-theme='light'] .sidebar nav a { color: #5e6f83; }
+html[data-theme='light'] .sidebar nav a:hover { background: #eaf1f6; color: #142238; }
+html[data-theme='light'] .sidebar nav a.active { background: #d9f2f5; color: #087d8c; }
+html[data-theme='light'] .sidebar-footer { border-color: #d8e1eb; }
+
+html[data-theme='light'] .panel,
+html[data-theme='light'] .metric {
+  background: #ffffffeb;
+  border-color: #d6e0ea;
+  box-shadow: 0 12px 32px #26446612;
+}
+
+html[data-theme='light'] .metric:hover { border-color: #8fc9d0; }
+html[data-theme='light'] .metric-icon,
+html[data-theme='light'] .service-icon,
+html[data-theme='light'] .empty > span { background: #ddf2f5; color: #087f8e; }
+html[data-theme='light'] .metric small,
+html[data-theme='light'] .metric em,
+html[data-theme='light'] .panel header p,
+html[data-theme='light'] .welcome p,
+html[data-theme='light'] .list-head p,
+html[data-theme='light'] .health-row small,
+html[data-theme='light'] .setting-copy p { color: #697b90; }
+
+html[data-theme='light'] .panel header,
+html[data-theme='light'] .health-row,
+html[data-theme='light'] td { border-color: #e1e7ee; }
+html[data-theme='light'] th { background: #f2f6f9; color: #63758a; }
+html[data-theme='light'] td { color: #53667b; }
+html[data-theme='light'] td strong,
+html[data-theme='light'] .empty strong { color: #16263b; }
+
+html[data-theme='light'] .icon-button,
+html[data-theme='light'] .search,
+html[data-theme='light'] .settings input {
+  background: #fff;
+  border-color: #cbd7e2;
+  color: #263950;
+}
+
+html[data-theme='light'] .search input { color: #263950; }
+html[data-theme='light'] .page-title small,
+html[data-theme='light'] .brand small,
+html[data-theme='light'] .sidebar-footer small,
+html[data-theme='light'] .operator small { color: #6b7e92; }
+
+html[data-theme='light'] .notice { background: #fff8e8; border-color: #e8c879; color: #765612; }
+html[data-theme='light'] .row-action { background: #fff2f3; border-color: #e0abb0; color: #a53d4b; }
+html[data-theme='light'] .row-action:hover { background: #ffe5e8; }

@@ -419,6 +419,40 @@ app.MapPost("/api/agents/{id:guid}/renew-certificate",
         };
     });
 
+// One coherent, read-only snapshot for the browser. Keeping the first console
+// endpoint coarse-grained avoids four races between counters and tables, and
+// keeps the Angular bundle on the same-origin /api contract used behind nginx.
+app.MapGet("/api/console/overview", (HttpContext context, Database database) =>
+{
+    if (!IsOperator(context, operatorToken))
+    {
+        return Results.Json(new { error = "an operator token is required" }, statusCode: 401);
+    }
+
+    using var session = database.OpenSession();
+    var agents = session.Query<Agent>().ToList().Select(a => new
+    {
+        a.Id, a.Hostname, a.Domain, a.Version, state = a.State.ToString(), a.LastHeartbeatAt,
+    }).ToList();
+    var tokens = session.Query<Token>().ToList().Select(t => new
+    {
+        t.Id, t.Serial, t.FirmwareVersion, t.FormFactor, state = t.State.ToString(),
+        pinState = t.PinState.ToString(), pukState = t.PukState.ToString(), t.LastSeenAt,
+    }).ToList();
+    var credentials = session.Query<Credential>().ToList().Select(c => new
+    {
+        c.Id, tokenSerial = c.Token.Serial, c.SlotId, c.SubjectDn,
+        state = c.State.ToString(), c.NotAfter,
+    }).ToList();
+    var jobs = session.Query<Job>().OrderByDescending(j => j.CreatedAt).Take(100).ToList().Select(j => new
+    {
+        j.Id, type = j.Type.ToString(), state = j.State.ToString(), j.TokenSerial,
+        j.Attempt, j.CreatedAt,
+    }).ToList();
+
+    return Results.Ok(new { agents, tokens, credentials, jobs });
+});
+
 app.MapPost("/api/agents/{id:guid}/heartbeat",
     (Guid id, HeartbeatRequest request, HttpContext context, Database database) =>
     {

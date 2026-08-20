@@ -17,6 +17,15 @@ server {
     http2 on;
     server_name _;
 
+    # Docker's embedded DNS, named so nginx re-resolves the upstreams instead
+    # of pinning the addresses it saw at startup. Without this, restarting the
+    # api container leaves the edge pointing at an address nothing answers on,
+    # and every request is a 502 until nginx is restarted too - a failure that
+    # looks like the api being down long after it came back.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $api     http://api:8080;
+    set $console http://console:8080;
+
     ssl_certificate     /etc/nginx/certs/edge.crt;
     ssl_certificate_key /etc/nginx/certs/edge.key;
     ssl_protocols       TLSv1.2 TLSv1.3;
@@ -55,8 +64,27 @@ server {
 ";
     }
 
-    location / {
-        proxy_pass http://api:8080;
+    # The console and the API share one origin, which is the whole reason the
+    # console is served from here rather than from its own port: no CORS, no
+    # second certificate, and one place where the rule set sees everything.
+    #
+    # /health is the API's, and named here because it is the one endpoint of
+    # the API's that does not live under /api. Left to the catch-all it would
+    # be answered by the console with index.html and a 200 - which is worse
+    # than a 404, because everything watching it would go on reporting healthy.
+    location = /health {
+        proxy_pass $api$request_uri;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        proxy_set_header X-Client-Verify "";
+        proxy_set_header X-Client-Cert   "";
+    }
+
+    location /api/ {
+        proxy_pass $api$request_uri;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
@@ -68,6 +96,16 @@ server {
         proxy_set_header X-Client-Verify "";
         proxy_set_header X-Client-Cert   "";
     }
+
+    # Static files, and a router behind them. The console container answers
+    # every path that is not /api with index.html, so a refresh on a deep link
+    # is a page rather than a 404.
+    location / {
+        proxy_pass $console$request_uri;
+        proxy_set_header Host            $host;
+        proxy_set_header X-Real-IP       $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
 }
 
 # ---------------------------------------------------------------- agents
@@ -75,6 +113,15 @@ server {
     listen 9443 ssl;
     http2 on;
     server_name _;
+
+    # Docker's embedded DNS, named so nginx re-resolves the upstreams instead
+    # of pinning the addresses it saw at startup. Without this, restarting the
+    # api container leaves the edge pointing at an address nothing answers on,
+    # and every request is a 502 until nginx is restarted too - a failure that
+    # looks like the api being down long after it came back.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $api     http://api:8080;
+    set $console http://console:8080;
 
     ssl_certificate     /etc/nginx/certs/edge.crt;
     ssl_certificate_key /etc/nginx/certs/edge.key;
@@ -126,7 +173,7 @@ server {
     location /hubs/ {
         modsecurity off;
 
-        proxy_pass http://api:8080;
+        proxy_pass $api$request_uri;
         proxy_http_version 1.1;
         proxy_set_header Upgrade    $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -139,7 +186,7 @@ server {
     }
 
     location / {
-        proxy_pass http://api:8080;
+        proxy_pass $api$request_uri;
         proxy_set_header Host              $host;
         proxy_set_header X-Real-IP         $remote_addr;
         proxy_set_header X-Forwarded-Proto https;

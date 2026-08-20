@@ -75,6 +75,15 @@ services:
     deploy:
       replicas: 1
 
+  # The console: built from frontend/ and served as static files. Behind the
+  # edge rather than on a port of its own, so the browser sees one origin for
+  # the page and the API both - no CORS, one certificate, and the rule set in
+  # front of everything.
+  console:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+
   edge:
     image: owasp/modsecurity-crs:nginx
     ports:
@@ -94,6 +103,11 @@ services:
       - ./certs:/etc/nginx/certs:ro
     depends_on:
       - api
+
+      # nginx resolves upstream names once at start. Without this the edge can
+      # come up before the console exists and refuse to start at all, with an
+      # error about a host that is merely late.
+      - console
 
 volumes:
   postgres-data:

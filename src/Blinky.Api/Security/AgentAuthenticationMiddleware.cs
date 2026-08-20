@@ -30,6 +30,7 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
     /// </summary>
     public static readonly string[] OperatorPaths =
     [
+        "/api/console/overview",
         "/api/jobs/inventory",
         "/api/jobs/enrol",
         "/api/jobs/recycle",
