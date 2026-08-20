@@ -42,9 +42,16 @@ var options = new AgentOptions();
 builder.Configuration.GetSection("Agent").Bind(options);
 builder.Services.AddSingleton(options);
 
-builder.Services.AddSingleton(options.IdentityDirectory is { Length: > 0 } directory
-    ? new AgentIdentity(directory)
-    : AgentIdentity.Default());
+// The certificate store is where a client certificate belongs on Windows, and
+// is the default. A configured directory is an explicit request for files -
+// a bench that does not want to touch certlm, or a platform that has no store.
+builder.Services.AddSingleton<IAgentIdentity>(services =>
+    options.IdentityDirectory is { Length: > 0 } directory
+        ? new FileAgentIdentity(directory)
+        : OperatingSystem.IsWindows()
+            ? new CertificateStoreIdentity(
+                services.GetRequiredService<ILogger<CertificateStoreIdentity>>())
+            : FileAgentIdentity.Default());
 
 builder.Services.AddSingleton<InventoryCollector>();
 

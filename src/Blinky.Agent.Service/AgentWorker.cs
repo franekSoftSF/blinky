@@ -10,7 +10,7 @@ namespace Blinky.Agent.Service;
 /// </summary>
 public sealed class AgentWorker(
     AgentOptions options,
-    AgentIdentity identity,
+    IAgentIdentity identity,
     InventoryCollector collector,
     JobExecutor executor,
     CardGate gate,
@@ -125,7 +125,12 @@ public sealed class AgentWorker(
             var existing = identity.ReadId();
             backend.Authenticate(identity.Load());
 
-            logger.LogInformation("Using the existing identity {AgentId}", existing);
+            // Where it came from, every time. The same machine run once as a
+            // service and once by hand uses two different stores and enrols
+            // twice, and without this line that is a mystery rather than a
+            // sentence.
+            logger.LogInformation("Using the existing identity {AgentId} from {Where}",
+                existing, identity.Description);
             return existing;
         }
 

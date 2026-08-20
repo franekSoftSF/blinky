@@ -46,17 +46,26 @@ start() {
     dotnet publish "$root/src/Blinky.Agent.Service" -c Debug -o "$lab/agent" --nologo -v q
     dotnet publish "$root/src/Blinky.Agent.Ui" -c Debug -o "$lab/ui" --nologo -v q
 
-    # The identity lives beside the published copies rather than inside them:
-    # a republish overwrites everything in those directories, and an agent that
-    # loses its certificate enrols again as a second row for the same machine.
-    export Agent__IdentityDirectory="${AGENT_IDENTITY:-$lab/identity}"
+    # No Agent__IdentityDirectory: the agent uses the Windows certificate
+    # store, which is where a client certificate belongs. Not elevated here, so
+    # it lands in CurrentUser\My - certmgr.msc - rather than the machine store;
+    # the agent logs which one it used. Set AGENT_IDENTITY to force files back.
+    if [[ -n "${AGENT_IDENTITY:-}" ]]; then
+        export Agent__IdentityDirectory="$AGENT_IDENTITY"
+        mkdir -p "$AGENT_IDENTITY"
+    fi
+
+    # Only used when nothing is enrolled yet, which after moving to the store
+    # is the first run on this machine.
+    if [[ -z "${Agent__BootstrapToken:-}" && -f "$root/.env" ]]; then
+        Agent__BootstrapToken="$(grep '^BOOTSTRAP_TOKEN=' "$root/.env" | cut -d= -f2-)"
+        export Agent__BootstrapToken
+    fi
     export Agent__BackendUrl="${AGENT_BACKEND:-https://localhost:9443}"
     export Agent__Hostname="${AGENT_HOSTNAME:-devbox}"
     export Agent__Domain="${AGENT_DOMAIN:-corp.example}"
     export Agent__ServerCertificateAuthorityPath="${AGENT_SERVER_CA:-$root/certs/dev-ca.crt}"
     export Agent__PollIntervalSeconds="${AGENT_POLL:-120}"
-
-    mkdir -p "$Agent__IdentityDirectory"
 
     echo "starting the service and the tray ..."
 
@@ -73,7 +82,7 @@ start() {
 
     echo
     echo "  service log   $lab/agent.log"
-    echo "  identity      $Agent__IdentityDirectory"
+    echo "  identity      ${Agent__IdentityDirectory:-Windows certificate store}"
     echo
     echo "The tray icon is by the clock. Builds no longer collide with this."
 }

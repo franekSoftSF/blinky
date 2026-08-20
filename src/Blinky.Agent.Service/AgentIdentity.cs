@@ -8,13 +8,22 @@ namespace Blinky.Agent.Service;
 /// authenticates with.
 /// </summary>
 /// <remarks>
-/// Stored outside the installation directory, in ProgramData, and deliberately
-/// not removed by uninstall. A version upgrade must not look like a new agent -
-/// that would split one machine's history across two rows and lose whatever
-/// the old one knew.
+/// <para>
+/// Kept for platforms with no certificate store — patch 0017's Linux agent —
+/// and for a bench where nobody wants an enrolment writing into the machine
+/// store. On Windows the real implementation is
+/// <see cref="CertificateStoreIdentity"/>: a private key in a file is a private
+/// key somebody can copy.
+/// </para>
+/// <para>
+/// Outside the installation directory and deliberately not removed by an
+/// uninstall. A version upgrade must not look like a new agent.
+/// </para>
 /// </remarks>
-public sealed class AgentIdentity(string directory)
+public sealed class FileAgentIdentity(string directory) : IAgentIdentity
 {
+    public string Description => directory;
+
     private string IdPath => Path.Combine(directory, "agent-id.txt");
 
     private string CertificatePath => Path.Combine(directory, "agent.crt");
@@ -24,7 +33,7 @@ public sealed class AgentIdentity(string directory)
     public bool Exists => File.Exists(IdPath) && File.Exists(CertificatePath)
                                               && File.Exists(KeyPath);
 
-    public static AgentIdentity Default() => new(Path.Combine(
+    public static FileAgentIdentity Default() => new(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "Blinky"));
 
