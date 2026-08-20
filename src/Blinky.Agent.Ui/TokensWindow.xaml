@@ -210,6 +210,17 @@
                     </StackPanel>
                 </Button>
 
+                <Button x:Name="OfflineButton" Style="{StaticResource Flat}"
+                        HorizontalContentAlignment="Stretch" Margin="0,0,0,8"
+                        Click="UnblockOffline_Click">
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold"
+                                   Text="{Binding Path=[Manage.Offline], Source={x:Static local:Strings.Current}}" />
+                        <TextBlock x:Name="OfflineStateText" FontSize="11" Margin="0,3,0,0"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource TextMuted}" />
+                    </StackPanel>
+                </Button>
+
                 <!-- No "change PUK" here. A PUK somebody chooses is a PUK
                      that is written down and the same across a drawer of
                      tokens; letting a person pick a better one is a workaround

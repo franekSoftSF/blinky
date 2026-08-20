@@ -28,7 +28,16 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
     /// they carry their own check, because an unauthenticated write endpoint
     /// is not a smaller problem than the wrong kind of authentication.
     /// </summary>
-    public static readonly string[] OperatorPaths = ["/api/jobs/inventory", "/api/jobs/enrol"];
+    public static readonly string[] OperatorPaths =
+    [
+        "/api/jobs/inventory",
+        "/api/jobs/enrol",
+
+        // Both reached from a console, never from an agent: the machine whose
+        // token is being rescued is the one that cannot call anybody.
+        "/api/tokens/offline-unblock",
+        "/api/tokens/puk/refused",
+    ];
 
     public async Task InvokeAsync(HttpContext context, Database database)
     {

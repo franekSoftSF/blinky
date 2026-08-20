@@ -285,6 +285,51 @@ app.MapPost("/api/tokens/{serial:long}/puk/rotated",
             ? Results.NoContent()
             : Results.NotFound(new { error = "no such checkout" }));
 
+// The helpdesk's side of a telephone call. The workstation is offline; whoever
+// is answering the phone is not. Operator-authorised, because this reads a PUK
+// out loud to somebody whose identity nothing here can check - that is a
+// process control rather than a technical one, and pretending otherwise would
+// be worse than saying it plainly.
+app.MapPost("/api/tokens/offline-unblock",
+    (OfflineUnblockRequest request, HttpContext context, PukEscrow escrow) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        try
+        {
+            var answer = escrow.AnswerOffline(request.Challenge, "operator");
+
+            return answer is null
+                ? Results.NotFound(new { error = "no such token" })
+                : Results.Ok(answer);
+        }
+        catch (PukUnavailableException ex)
+        {
+            return Results.Json(new { error = ex.Message }, statusCode: 422);
+        }
+    });
+
+// "The code you read me was refused." Somebody has to be able to say that, or
+// the next code read out is refused as well: the rotation happened here and
+// never reached the card.
+app.MapPost("/api/tokens/puk/refused",
+    (PukRefused refused, HttpContext context, PukEscrow escrow) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        return escrow.Refused(refused.TokenSerial)
+            ? Results.NoContent()
+            : Results.NotFound(new { error = "nothing to roll back" });
+    });
+
 // What the backend believes is on a token, so an agent can compare it with
 // what the card actually holds. The disagreement is the point: a credential the
 // server thinks is installed and the card does not have is the leak that
@@ -421,6 +466,9 @@ static bool IsOperator(HttpContext context, string expected)
 internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
 
 /// <summary>One credential the backend holds, as an agent needs to see it.</summary>
+/// <summary>An offline code that the card would not take.</summary>
+internal sealed record PukRefused(long TokenSerial);
+
 internal sealed record KnownCredential(
     string SlotId,
     string? SerialNumber,

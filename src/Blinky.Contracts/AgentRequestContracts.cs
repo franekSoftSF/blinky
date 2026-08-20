@@ -24,6 +24,13 @@ public static class AgentRequestPipe
 }
 
 /// <summary>Something the person at the keyboard asked for.</summary>
+/// <remarks>
+/// <paramref name="SlotId"/> carries the challenge on an offline unblock. That
+/// is a reuse of a field meant for something else, and it is here rather than
+/// in <see cref="AgentSecrets"/> for a reason: a challenge is a serial and a
+/// random number, safe to log, and the secrets record exists precisely so that
+/// nothing in it is ever logged.
+/// </remarks>
 public sealed record AgentRequest(
     string Op,
     long? TokenSerial = null,
@@ -45,6 +52,18 @@ public sealed record AgentRequest(
     /// </remarks>
     public const string UnblockPin = "UnblockPin";
 
+    /// <summary>
+    /// Ask for the code to read down a telephone.
+    /// </summary>
+    /// <remarks>
+    /// Costs nothing and touches no card: it is a serial and a random number.
+    /// The token only finds out anything happened when the answer comes back.
+    /// </remarks>
+    public const string OfflineChallenge = "OfflineChallenge";
+
+    /// <summary>Unblock with the code an operator read back.</summary>
+    public const string UnblockOffline = "UnblockOffline";
+
     /// <summary>The rules a new PIN has to satisfy on this deployment.</summary>
     public const string GetPinPolicy = "GetPinPolicy";
 }
@@ -59,7 +78,14 @@ public sealed record AgentRequest(
 /// </remarks>
 public sealed record AgentSecrets(
     string? CurrentPin = null,
-    string? NewPin = null);
+    string? NewPin = null,
+
+    /// <remarks>
+    /// The code an operator read out. It carries a PUK, so it belongs in here
+    /// with the other things that are never logged — not in the request beside
+    /// the operation name.
+    /// </remarks>
+    string? OfflineResponse = null);
 
 /// <summary>A request and its secrets, as one line on the pipe.</summary>
 public sealed record AgentRequestEnvelope(AgentRequest Request, AgentSecrets? Secrets = null);
@@ -70,7 +96,10 @@ public sealed record AgentResponse(
     string? Error = null,
     IReadOnlyList<TokenView>? Tokens = null,
     PinComplexityPolicy? PinComplexityPolicy = null,
-    int? AttemptsRemaining = null)
+    int? AttemptsRemaining = null,
+
+    /// <summary>The code to read down a telephone.</summary>
+    string? Challenge = null)
 {
     public static AgentResponse Failed(string error, int? attemptsRemaining = null) =>
         new(false, error, AttemptsRemaining: attemptsRemaining);

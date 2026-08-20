@@ -112,11 +112,29 @@ public sealed class AgentRequestServer(
                     cards.ChangePin(token, envelope.Secrets?.CurrentPin,
                         envelope.Secrets?.NewPin, options.PinPolicy),
 
+                AgentRequest.OfflineChallenge when request.TokenSerial is { } token =>
+                    new AgentResponse(true, Challenge: OfflineUnblock.Challenge(token,
+                        System.Security.Cryptography.RandomNumberGenerator.GetBytes(
+                            OfflineUnblock.NonceLength))),
+
+                AgentRequest.UnblockOffline when request.TokenSerial is { } token =>
+                    await unblock.UnblockOfflineAsync(token,
+
+                        // The challenge travels back in the request because it
+                        // is half the derivation: the replacement PUK comes
+                        // from the response and the challenge together, and the
+                        // service kept no state between the two calls.
+                        request.SlotId ?? string.Empty,
+                        envelope.Secrets?.OfflineResponse,
+                        envelope.Secrets?.NewPin ?? string.Empty,
+                        options.PinPolicy, ct),
+
                 AgentRequest.UnblockPin when request.TokenSerial is { } token =>
                     await unblock.UnblockAsync(token, envelope.Secrets?.NewPin ?? string.Empty,
                         options.PinPolicy, ct),
 
-                AgentRequest.ChangePin or AgentRequest.UnblockPin =>
+                AgentRequest.ChangePin or AgentRequest.UnblockPin
+                    or AgentRequest.UnblockOffline or AgentRequest.OfflineChallenge =>
                     AgentResponse.Failed("That request has to name a token."),
 
                 _ => AgentResponse.Failed($"This agent does not know the request {request.Op}."),

@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Blinky.Agent.Ui"
-        Title="Blinky" Height="500" Width="470"
+        Title="Blinky" Height="580" Width="470"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource Background}"
@@ -80,10 +80,39 @@
         <TextBlock x:Name="RulesText" Grid.Row="1" Margin="0,0,0,16" TextWrapping="Wrap"
                    FontSize="12" Foreground="{DynamicResource TextMuted}" />
 
-        <!-- The first field is the current PIN when changing, the PUK when
-             unblocking. One layout, one label that moves. -->
-        <TextBlock x:Name="FirstLabel" Grid.Row="2" Style="{StaticResource Label}" />
-        <PasswordBox x:Name="FirstBox" Grid.Row="3" />
+        <!-- The code to read down a telephone. Shown, not hidden: it is not a
+             secret to the person holding the token, and it has to be read out
+             character by character. -->
+        <Border x:Name="ChallengePanel" Grid.Row="2" Visibility="Collapsed"
+                CornerRadius="8" Padding="14,12" Margin="0,0,0,14"
+                Background="{DynamicResource AccentSoft}">
+            <StackPanel>
+                <TextBlock x:Name="ChallengeLabel" FontSize="11"
+                           Foreground="{DynamicResource TextMuted}" />
+                <TextBox x:Name="ChallengeText" IsReadOnly="True" BorderThickness="0"
+                         Background="Transparent" FontFamily="Consolas" FontSize="20"
+                         Margin="0,6,0,0" Padding="0"
+                         Foreground="{DynamicResource Accent}" />
+            </StackPanel>
+        </Border>
+
+        <!-- The first field is the current PIN when changing, and the code an
+             operator read back when unblocking offline. -->
+        <TextBlock x:Name="FirstLabel" Grid.Row="3" Style="{StaticResource Label}"
+                   Margin="0,0,0,4" />
+        <PasswordBox x:Name="FirstBox" Grid.Row="3" Margin="0,22,0,14"
+                     VerticalAlignment="Bottom" />
+
+        <!-- A code being copied off a telephone call is typed wrong often
+             enough that hiding it would be perverse: the person has to be able
+             to see what they typed. -->
+        <TextBox x:Name="CodeBox" Grid.Row="3" Visibility="Collapsed"
+                 FontSize="16" FontFamily="Consolas" Padding="8,6" MaxLength="32"
+                 Margin="0,22,0,14" VerticalAlignment="Bottom"
+                 Background="{DynamicResource FieldBackground}"
+                 Foreground="{DynamicResource Text}"
+                 BorderBrush="{DynamicResource Divider}"
+                 CaretBrush="{DynamicResource Text}" />
 
         <TextBlock x:Name="NewLabel" Grid.Row="4" Style="{StaticResource Label}" />
         <PasswordBox x:Name="NewBox" Grid.Row="5" PasswordChanged="Validate" />

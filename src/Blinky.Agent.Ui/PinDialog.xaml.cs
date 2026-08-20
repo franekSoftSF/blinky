@@ -20,6 +20,16 @@ public enum PinDialogKind
     /// <c>PukUnblock</c> and docs/10-agent-ui.md.
     /// </remarks>
     Unblock,
+
+    /// <summary>
+    /// Unblocking from a machine with no network, over a telephone.
+    /// </summary>
+    /// <remarks>
+    /// The dialog shows a challenge to read out and takes the code an operator
+    /// reads back. The replacement PUK is worked out from those two things on
+    /// both sides, so nothing has to travel afterwards.
+    /// </remarks>
+    UnblockOffline,
 }
 
 /// <summary>
@@ -53,6 +63,9 @@ public partial class PinDialog : Window
     private readonly PinDialogKind kind;
     private readonly PinComplexityPolicy policy;
 
+    /// <summary>The code being read down a telephone, and half the derivation.</summary>
+    private string challenge = string.Empty;
+
     public PinDialog(RequestClient client, TokenView token, PinDialogKind kind,
         PinComplexityPolicy policy)
     {
@@ -65,32 +78,55 @@ public partial class PinDialog : Window
 
         var strings = Strings.Current;
 
+        var offline = kind == PinDialogKind.UnblockOffline;
         var unblocking = kind == PinDialogKind.Unblock;
 
-        Title = strings[unblocking ? "Pin.UnblockTitle" : "Pin.ChangeTitle"];
+        Title = strings[offline ? "Pin.OfflineTitle"
+            : unblocking ? "Pin.UnblockTitle"
+            : "Pin.ChangeTitle"];
+
         TitleText.Text = Title;
 
-        RulesText.Text = (unblocking ? strings["Pin.UnblockExplained"] + "  " : string.Empty)
+        RulesText.Text = (offline ? strings["Pin.OfflineExplained"] + "  "
+                             : unblocking ? strings["Pin.UnblockExplained"] + "  "
+                             : string.Empty)
                          + strings["Pin.Rules"] + " " + strings["Pin.RulesCaveat"];
 
-        // An unblock asks for one thing: the new PIN. There is no first field
-        // because there is nothing for the person to supply - the PUK is not
-        // theirs to know.
+        // An online unblock asks for one thing: the new PIN. There is nothing
+        // for the person to supply, because the PUK is not theirs to know.
+        // Offline there is one thing - the code somebody read back.
         FirstLabel.Visibility = unblocking ? Visibility.Collapsed : Visibility.Visible;
-        FirstBox.Visibility = FirstLabel.Visibility;
+        FirstBox.Visibility = unblocking || offline ? Visibility.Collapsed : Visibility.Visible;
+        CodeBox.Visibility = offline ? Visibility.Visible : Visibility.Collapsed;
 
-        FirstLabel.Text = strings["Pin.Current"];
+        ChallengePanel.Visibility = offline ? Visibility.Visible : Visibility.Collapsed;
+        ChallengeLabel.Text = strings["Pin.ChallengeLabel"];
+
+        FirstLabel.Text = strings[offline ? "Pin.OfflineCode" : "Pin.Current"];
         NewLabel.Text = strings["Pin.New"];
         RepeatLabel.Text = strings["Pin.Repeat"];
 
         Prefill();
+
+        if (offline)
+        {
+            // Asked for as the window opens rather than when the person is
+            // ready: it costs nothing, touches no card, and having the code
+            // already on screen is the difference between a call that starts
+            // and one that waits.
+            Loaded += async (_, _) => await ShowChallengeAsync();
+        }
 
         Loaded += (_, _) =>
         {
             // Focus goes to the first box a person has to fill. Landing in a
             // field that is already filled in means the first keystroke
             // silently replaces it.
-            if (unblocking || FirstBox.Password.Length > 0)
+            if (offline)
+            {
+                CodeBox.Focus();
+            }
+            else if (unblocking || FirstBox.Password.Length > 0)
             {
                 NewBox.Focus();
             }
@@ -134,6 +170,30 @@ public partial class PinDialog : Window
     }
 
     /// <summary>
+    /// Asks the service for a code to read out.
+    /// </summary>
+    /// <remarks>
+    /// Kept here for the life of the dialog because the replacement PUK is
+    /// derived from it: a second challenge would derive a different value and
+    /// the card would end up holding one the server never recorded.
+    /// </remarks>
+    private async Task ShowChallengeAsync()
+    {
+        var answer = await client.SendAsync(
+            new AgentRequest(AgentRequest.OfflineChallenge, token.Serial));
+
+        if (answer is { Succeeded: true, Challenge: { Length: > 0 } code })
+        {
+            challenge = code;
+            ChallengeText.Text = code;
+            return;
+        }
+
+        ChallengeText.Text = "—";
+        Refuse(answer.Error ?? Strings.Current["Error.NoService"]);
+    }
+
+    /// <summary>
     /// Runs while somebody types, and sends nothing anywhere.
     /// </summary>
     /// <remarks>
@@ -164,7 +224,10 @@ public partial class PinDialog : Window
         }
 
         MessageText.Text = string.Empty;
-        OkButton.IsEnabled = value.Length >= policy.MinimumLength && value == repeat;
+
+        var codeReady = kind != PinDialogKind.UnblockOffline || CodeBox.Text.Length > 0;
+
+        OkButton.IsEnabled = value.Length >= policy.MinimumLength && value == repeat && codeReady;
     }
 
     private void Refuse(string message)
@@ -191,11 +254,27 @@ public partial class PinDialog : Window
         MessageText.Foreground = (Brush?)TryFindResource("TextMuted") ?? Brushes.Gray;
         MessageText.Text = Strings.Current["Pin.Working"];
 
-        var (op, secrets) = kind == PinDialogKind.Unblock
-            ? (AgentRequest.UnblockPin, new AgentSecrets(NewPin: value))
-            : (AgentRequest.ChangePin, new AgentSecrets(CurrentPin: first, NewPin: value));
+        var request = kind switch
+        {
+            PinDialogKind.UnblockOffline =>
+                new AgentRequest(AgentRequest.UnblockOffline, token.Serial, challenge),
 
-        var response = await client.SendAsync(new AgentRequest(op, token.Serial), secrets);
+            PinDialogKind.Unblock => new AgentRequest(AgentRequest.UnblockPin, token.Serial),
+
+            _ => new AgentRequest(AgentRequest.ChangePin, token.Serial),
+        };
+
+        var secrets = kind switch
+        {
+            PinDialogKind.UnblockOffline =>
+                new AgentSecrets(NewPin: value, OfflineResponse: CodeBox.Text),
+
+            PinDialogKind.Unblock => new AgentSecrets(NewPin: value),
+
+            _ => new AgentSecrets(CurrentPin: first, NewPin: value),
+        };
+
+        var response = await client.SendAsync(request, secrets);
 
         // Cleared the moment the call returns. These boxes were the only place
         // the values existed in this process and there is no reason for them to
@@ -203,11 +282,12 @@ public partial class PinDialog : Window
         FirstBox.Clear();
         NewBox.Clear();
         RepeatBox.Clear();
+        CodeBox.Clear();
 
         if (response.Succeeded)
         {
             MessageBox.Show(
-                Strings.Current[kind == PinDialogKind.Unblock ? "Pin.Unblocked" : "Pin.Changed"],
+                Strings.Current[kind == PinDialogKind.ChangePin ? "Pin.Changed" : "Pin.Unblocked"],
                 Strings.Current["App.Name"], MessageBoxButton.OK, MessageBoxImage.Information);
 
             DialogResult = true;

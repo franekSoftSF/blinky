@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Blinky.Api.Persistence;
+using Blinky.Contracts;
 using Blinky.Domain;
 using Blinky.Domain.Entities;
 using NHibernate.Linq;
@@ -155,6 +156,131 @@ public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> 
         });
 
         transaction.Commit();
+
+        return true;
+    }
+
+    /// <summary>
+    /// Answers a challenge read down a telephone from a machine with no
+    /// network.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The response is the PUK the card holds, and the replacement is derived
+    /// from it and the challenge — so the workstation arrives at the same new
+    /// value without being told, and the code that was spoken aloud is dead as
+    /// soon as the card takes it. See <see cref="PukDerivation"/>.
+    /// </para>
+    /// <para>
+    /// The replacement is promoted here rather than on confirmation, because
+    /// there is nobody to confirm: the machine is offline and may stay that way
+    /// for a week. The value it replaces is kept as a candidate, so an unblock
+    /// that failed at the card leaves a token that can still be rescued — see
+    /// <see cref="Candidates"/> and <see cref="Refused"/>.
+    /// </para>
+    /// </remarks>
+    public OfflineUnblockResponse? AnswerOffline(string challenge, string actor)
+    {
+        var read = OfflineUnblock.ReadChallenge(challenge);
+        if (read is null)
+        {
+            throw new PukUnavailableException(
+                "That is not a Blinky challenge, or it was mistyped. Ask for it again.");
+        }
+
+        var (serial, _) = read.Value;
+
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var token = session.Query<Token>().SingleOrDefault(t => t.Serial == serial);
+        if (token is null)
+        {
+            return null;
+        }
+
+        if (token.PukState is CredentialSecretState.NotApplicable
+            or CredentialSecretState.Disabled)
+        {
+            throw new PukUnavailableException(
+                $"Token {serial} has no usable PUK ({token.PukState}).");
+        }
+
+        var current = Current(session, token);
+        var next = PukDerivation.Next(current, challenge);
+
+        // The new value becomes the one on record and the old one stays behind
+        // it. Nothing here knows yet whether the card accepted the change.
+        session.Save(Wrap(token, next, SecretKind.Puk));
+
+        session.Save(new AuditEvent
+        {
+            OccurredAt = DateTime.UtcNow,
+            EventType = "puk.disclosed",
+            Actor = actor,
+            SubjectType = nameof(Token),
+            SubjectId = token.Id,
+            TokenSerial = serial,
+            Detail = $$"""{"reason":"offline-unblock","challenge":"{{challenge}}"}""",
+        });
+
+        token.PukState = CredentialSecretState.Set;
+        token.UpdatedAt = DateTime.UtcNow;
+        session.Update(token);
+
+        transaction.Commit();
+
+        logger.LogWarning("The PUK for token {Serial} was read out to {Actor} for an "
+                          + "offline unblock", serial, actor);
+
+        return new OfflineUnblockResponse(serial, OfflineUnblock.Response(current));
+    }
+
+    /// <summary>
+    /// Takes back the last offline rotation, because the card never took it.
+    /// </summary>
+    /// <remarks>
+    /// The helpdesk's undo. An offline unblock that failed at the card - a
+    /// mistyped PIN, a token pulled out, a reader that stopped answering -
+    /// leaves this escrow one step ahead of the token, and the next code read
+    /// out would be refused as well. Somebody has to be able to say so.
+    /// </remarks>
+    public bool Refused(long serial)
+    {
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var token = session.Query<Token>().SingleOrDefault(t => t.Serial == serial);
+        if (token is null)
+        {
+            return false;
+        }
+
+        var newest = session.Query<SecretEnvelope>()
+            .Where(e => e.Token.Id == token.Id && e.Kind == SecretKind.Puk)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefault();
+
+        if (newest is null)
+        {
+            return false;
+        }
+
+        session.Delete(newest);
+
+        session.Save(new AuditEvent
+        {
+            OccurredAt = DateTime.UtcNow,
+            EventType = "puk.rollback",
+            SubjectType = nameof(Token),
+            SubjectId = token.Id,
+            TokenSerial = serial,
+            Detail = """{"reason":"the card refused the code that was read out"}""",
+        });
+
+        transaction.Commit();
+
+        logger.LogWarning("The last PUK rotation for token {Serial} was rolled back", serial);
 
         return true;
     }

@@ -43,6 +43,53 @@ public sealed class PukUnblock(
     CardGate gate,
     ILogger<PukUnblock> logger)
 {
+    /// <summary>
+    /// The same unblock, for a machine that cannot reach the backend.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The challenge was shown to somebody, read down a telephone, and answered
+    /// by an operator who is online even though this machine is not. The
+    /// response carries the PUK — there is no way for an offline workstation to
+    /// learn it otherwise, short of holding a derivation secret that would let
+    /// any compromised laptop unblock any token unaided.
+    /// </para>
+    /// <para>
+    /// What makes the spoken value harmless is that it is spent: the
+    /// replacement is derived here from the response and the challenge, and the
+    /// server derives the same one from the same two things. Neither has to
+    /// tell the other, which is the only reason this works with no network.
+    /// </para>
+    /// </remarks>
+    public async Task<AgentResponse> UnblockOfflineAsync(long serial, string challenge,
+        string? response, string newPin, PinComplexityPolicy policy, CancellationToken ct)
+    {
+        var verdict = PinRules.Check(newPin, policy, serial);
+        if (!verdict.IsAcceptable)
+        {
+            return AgentResponse.Failed(verdict.Explanation);
+        }
+
+        var puk = OfflineUnblock.ReadResponse(response);
+
+        if (puk is null)
+        {
+            // The check character disagreed. Almost always a transcription
+            // error, and catching it here is the entire reason the code is not
+            // eight bare digits: sent to the card it would have cost one of
+            // three attempts.
+            return AgentResponse.Failed(
+                "That code does not check out. Read it back and try again - nothing was sent "
+                + "to the token.");
+        }
+
+        var next = PukDerivation.Next(puk, challenge);
+
+        using var held = await gate.AcquireAsync(ct);
+
+        return OnCard(serial, new PukMaterial(Guid.Empty, puk, next), newPin);
+    }
+
     public async Task<AgentResponse> UnblockAsync(long serial, string newPin,
         PinComplexityPolicy policy, CancellationToken ct)
     {
@@ -75,7 +122,11 @@ public sealed class PukUnblock(
         // Told last, and only about a card that took the change. Promoting the
         // replacement before the card has it would leave escrow holding a value
         // the token never saw.
-        if (!await backend.ConfirmPukRotatedAsync(serial, material.CheckoutId, ct))
+        //
+        // Guid.Empty means the offline path, where the server promoted its side
+        // when it read the code out and there is nothing to confirm.
+        if (material.CheckoutId != Guid.Empty
+            && !await backend.ConfirmPukRotatedAsync(serial, material.CheckoutId, ct))
         {
             logger.LogError("Token {Serial} took a new PUK but the backend did not record it. "
                             + "Escrow still holds both.", serial);

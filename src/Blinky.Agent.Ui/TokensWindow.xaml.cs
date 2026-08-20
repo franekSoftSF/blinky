@@ -166,6 +166,11 @@ public partial class TokensWindow : Window
         // has none by design, and offering an action that would certainly fail
         // teaches people that this window guesses.
         UnblockButton.IsEnabled = token.HasPuk;
+        OfflineButton.IsEnabled = token.HasPuk;
+
+        OfflineStateText.Text = token.HasPuk
+            ? strings["Manage.OfflineHint"]
+            : strings["Tokens.NoPuk"];
 
         UnblockStateText.Text = token.HasPuk
             ? strings["Manage.UnblockHint"]
@@ -184,6 +189,9 @@ public partial class TokensWindow : Window
 
     private async void Unblock_Click(object sender, RoutedEventArgs e) =>
         await OpenAsync(PinDialogKind.Unblock);
+
+    private async void UnblockOffline_Click(object sender, RoutedEventArgs e) =>
+        await OpenAsync(PinDialogKind.UnblockOffline);
 
     private async Task OpenAsync(PinDialogKind kind)
     {

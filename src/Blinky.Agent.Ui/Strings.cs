@@ -147,6 +147,14 @@ public sealed class Strings : INotifyPropertyChanged
         ["Tray.ThemeLight"] = "Light",
         ["Tray.ThemeDark"] = "Dark",
 
+        ["Manage.Offline"] = "Unblock by telephone",
+        ["Manage.OfflineHint"] = "For a machine with no connection to the backend.",
+        ["Pin.OfflineTitle"] = "Unblock by telephone",
+        ["Pin.OfflineExplained"] = "Read the code below to your helpdesk and type back the one "
+                                   + "they read to you. The code they give works once, on this "
+                                   + "token only, and stops working the moment it is used.",
+        ["Pin.ChallengeLabel"] = "Read this out",
+        ["Pin.OfflineCode"] = "Code from the helpdesk",
         ["Prompt.PinTitle"] = "Blinky needs your PIN",
         ["Prompt.TouchTitle"] = "Touch your token",
         ["Error.NoService"] = "The Blinky agent service is not answering on this machine.",
@@ -230,6 +238,14 @@ public sealed class Strings : INotifyPropertyChanged
         ["Tray.ThemeLight"] = "Jasny",
         ["Tray.ThemeDark"] = "Ciemny",
 
+        ["Manage.Offline"] = "Odblokuj przez telefon",
+        ["Manage.OfflineHint"] = "Dla maszyny bez połączenia z serwerem.",
+        ["Pin.OfflineTitle"] = "Odblokowanie przez telefon",
+        ["Pin.OfflineExplained"] = "Przeczytaj poniższy kod helpdeskowi i wpisz ten, który "
+                                   + "odczytają Tobie. Ich kod działa raz, tylko na tym tokenie "
+                                   + "i przestaje działać w chwili użycia.",
+        ["Pin.ChallengeLabel"] = "Przeczytaj to",
+        ["Pin.OfflineCode"] = "Kod od helpdesku",
         ["Prompt.PinTitle"] = "Blinky prosi o PIN",
         ["Prompt.TouchTitle"] = "Dotknij tokenu",
         ["Error.NoService"] = "Usługa agenta Blinky nie odpowiada na tej maszynie.",

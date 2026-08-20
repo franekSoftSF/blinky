@@ -59,13 +59,18 @@ nothing: it explains why a retry into that slot will be refused.
 ## The PIN dialog
 
 Three operations share one layout, because they differ only in what the first
-field means:
+field means — and in one case whether there is a first field at all:
 
 | Operation | First field | Card command |
 |---|---|---|
-| Set (a card with no PIN of its own) | — | `CHANGE REFERENCE DATA` from the default |
-| Change | Current PIN | `CHANGE REFERENCE DATA` |
-| Unblock | PUK, supplied by the service, never typed by the user | `RESET RETRY COUNTER` |
+| Change the PIN | Current PIN, filled in when the card says it is still the factory one | `CHANGE REFERENCE DATA` |
+| Unblock, online | *nothing* — the PUK is not the user's to know | `RESET RETRY COUNTER`, then `CHANGE REFERENCE DATA` |
+| Unblock, by telephone | The code an operator read back | the same two |
+
+There is deliberately no "change the PUK". A PUK somebody chooses is written
+down, shared, and identical across a drawer of tokens; a better one chosen by a
+better-informed person is still all three. The value is Blinky's, and using it
+replaces it.
 
 Below that, always: **the new PIN twice**. The confirmation field is not
 ceremony. A mistyped PIN that the card accepts is a token the user cannot open
@@ -146,6 +151,62 @@ unblock their own token without an operator. It turns "I forgot my PIN" into
 self-service, which is either the point or the hole, depending on whose fleet
 it is. The default is operator-approved, because that is the choice that can be
 loosened later without a migration.
+
+## Unblocking with no network
+
+The workstation is offline. The person answering the telephone is not.
+
+1. The agent shows a **challenge** — the token's serial and a random number,
+   sixteen characters in Crockford's base32, grouped in fours.
+2. Somebody reads it out. An operator types it into the console.
+3. The server answers with a **response**, fourteen characters, and reads it
+   back down the line.
+4. The agent unblocks with it, then rotates the PUK.
+
+**The response carries the PUK, and no design avoids that.** The card needs the
+PUK bytes and an offline machine has no other way to learn them. The
+alternative — a derivation secret on every workstation — trades a value spoken
+once for a value that lets any compromised laptop unblock any token unaided.
+That is the worse trade, and saying so plainly is better than a scheme that
+looks like it hides the PUK and does not.
+
+What makes the spoken value harmless is that it is **spent**. Both sides derive
+the replacement from the response and the challenge together:
+
+    next = HMAC-SHA256(currentPuk, "blinky-puk-rotation|" + challenge)[0..8] as digits
+
+The server derives it when it reads the code out; the agent derives it when the
+card accepts it. Neither tells the other, which is the only reason this works
+with no network — and the code that was spoken opens nothing from the moment
+the card takes the new value.
+
+### Why the codes are not eight bare digits
+
+A check character. A PIN unblock has three PUK attempts behind it, and a
+mistyped code sent to the card spends one of them; caught in the agent it costs
+a "read that back to me". The alphabet has no `I`, `L`, `O` or `U`, and
+decoding folds those onto `1` and `0`, because somebody will type what they
+think they heard. The check is position-weighted so that two characters
+transposed — the second most common mistake — do not produce the same one.
+
+Verified on hardware on 20 August 2026: two full cycles on one token, the
+second using a PUK the two sides derived separately and never exchanged, and a
+deliberately mistyped code refused with the card's attempt counter untouched at
+3/3.
+
+### What is left ragged, on purpose
+
+An offline unblock that fails **at the card** cannot say so — that is what
+offline means. The server has already rotated its side, so the next code read
+out would be refused as well. The way back is a person saying "that code did
+not work", which is `POST /api/tokens/puk/refused` and, later, a button in the
+console. Automating it is not possible; the machine that knows is the one that
+cannot call.
+
+### What none of this does
+
+Establish that the helpdesk is talking to the right person. That is a process
+control, and a challenge on a screen does not become one by being cryptographic.
 
 ## Renewal
 
