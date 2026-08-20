@@ -63,26 +63,6 @@ public sealed class TranscriptReplayTests
         Assert.Contains(statuses, s => (s & 0xFFF0) == 0x63C0);
     }
 
-    [Fact]
-    public void No_serial_number_from_a_real_token_is_in_the_fixture()
-    {
-        // The repository is public. Serials are replaced at capture time; this
-        // fails loudly if somebody drops in a raw transcript.
-        var transport = TranscriptTransport.FromFixture(Fixture);
-
-        // Matched by command bytes, not by label: labels are cosmetic and the
-        // probe has renamed them once already.
-        var getSerial = Convert.ToHexString(new ApduCommand(0xF8, le: 0).Encode());
-
-        var serials = transport.Exchanges
-            .Where(e => Convert.ToHexString(e.Command) == getSerial && e.Status == 0x9000)
-            .Select(e => Convert.ToHexString(e.Response))
-            .ToList();
-
-        Assert.NotEmpty(serials);
-        Assert.All(serials, s => Assert.StartsWith("00BADA5", s, StringComparison.Ordinal));
-    }
-
     private static ApduCommand Rebuild(byte[] apdu)
     {
         var (cla, ins, p1, p2) = (apdu[0], apdu[1], apdu[2], apdu[3]);

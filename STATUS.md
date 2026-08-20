@@ -52,12 +52,19 @@ Two findings worth more than the table:
   tokens without a PUK" as a blanket default would refuse an entire product
   line. The rule distinguishes the two cases; see the decisions below.
 
-None of the three has anything in a slot, so certificate parsing and
-attestation are still unexercised **on hardware**. Both paths exist and are
-covered by hand-built cases — a PIV data object assembled around a generated
-certificate, plain and gzipped — but the DoD for patch 0011 asks for a token
-provisioned by `ykman`, and that half is **not met**. It needs a key somebody
-is willing to have written to.
+On 2026-08-20 the 5.7.1 was provisioned with `ykman` — an ECC P-256 key and a
+self-signed certificate in slot `9A` — which closed the second half of patch
+0011's definition of done:
+
+| What it proved | Evidence |
+|---|---|
+| A certificate is read off a card and parses | `9A` reports `CN=blinky-test`, ECC-256 |
+| Slot metadata matches what was written | `key=EccP256 origin=Generated pin=Once touch=Never`, read from the card rather than inferred from the certificate |
+| **`61xx` chaining works on hardware** | `613D` then `00C000003D`: 256 bytes, then the 61 the card said were left |
+| Attestation is reachable | 601 bytes, issuer `CN=Yubico PIV Attestation`. Parsing and chain verification are patch 0012 |
+
+Chaining had until then existed only in hand-built cases — every response from
+a blank token fitted a single APDU.
 
 The probe records an APDU transcript, which is the fixture the `Blinky.Piv`
 unit tests replay in patch 0010. Transcripts contain the token serial and any
@@ -130,7 +137,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Phase | Title | State |
 |---|---|---|
 | 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token | **in progress** — 0010 done, 0011 done except the provisioned-token check; 0012 next |
+| 1 | See the token | **in progress** — 0010 and 0011 done and validated on hardware; 0012 next |
 
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |
@@ -143,8 +150,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Risk | Impact | Current handling |
 |---|---|---|
 | PIV APDU layer misbehaves on real firmware in ways no emulator shows | Phase 1 redesign; everything downstream is blocked | Reduced by 0010: the probe runs on `Blinky.Piv` and produced byte-identical output on all three tokens. Hardware suite from 0011; `yubico-piv-tool` as an independent oracle |
-| No provisioned token on the bench | Certificate reads, `61xx` chaining and attestation are all unexercised on real hardware; 0011's DoD is half met | Stated, not hidden. Needs one token written to — `ykman` on the 5.7.1 would do it |
-| `61xx` chaining is untested on hardware | The first certificate read could fail in the field | No capture contains it — every response so far fitted one APDU. Covered by hand-built cases; the first real chained read happens in 0011 |
+| `6Cxx` and outbound chaining are untested on hardware | A T=0 reader, or the first certificate write, could fail in the field | Neither capture contains them: `6Cxx` needs a T=0 reader and outbound chaining needs a write. Hand-built cases cover both; the first real write lands in 0024 |
 | The agent cannot run on Linux | Narrows deployment to Windows | Named, not hidden: `PcscContext.IsSupported`, an explicit exception, and patch 0017 |
 | Management-key algorithm differs across firmware (3DES before 5.7, AES-192 after) | Personalisation fails on part of the fleet | Read `GET METADATA`, fall back once, record `Unknown` rather than guessing |
 | ADCS template supplies the subject in the request, so no SID extension is emitted | Certificates issue cleanly and then fail to log anybody in | Backend registration refuses the combination up front (patch 0033) |

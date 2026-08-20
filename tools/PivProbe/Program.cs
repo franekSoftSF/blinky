@@ -113,7 +113,7 @@ internal static class Program
                 return false;
             }
 
-            Print(session);
+            Print(session, recorder);
             Console.WriteLine();
             return true;
         }
@@ -129,7 +129,7 @@ internal static class Program
         }
     }
 
-    private static void Print(PivSession session)
+    private static void Print(PivSession session, RecordingTransport recorder)
     {
         currentLabel = "inventory";
         var token = session.ReadInventory();
@@ -154,7 +154,7 @@ internal static class Program
             }
         }
 
-        PrintAttestation(session);
+        PrintAttestation(session, recorder);
     }
 
     private static string Describe(FirmwareVersion firmware) =>
@@ -229,9 +229,15 @@ internal static class Program
     /// pinned Yubico root is patch 0012, and pretending otherwise would put an
     /// unverified certificate on screen next to verified facts.
     /// </summary>
-    private static void PrintAttestation(PivSession session)
+    private static void PrintAttestation(PivSession session, RecordingTransport recorder)
     {
+        // An attestation certificate names the device: the real serial sits in
+        // extension 1.3.6.1.4.1.41482.13.2 and the certificate is unique to one
+        // token. Nothing about it goes into a transcript that might be
+        // committed. Patch 0012 builds a synthetic chain for its fixtures.
         currentLabel = "ATTEST 9A";
+        recorder.Paused = true;
+
         var response = session.Connection.Send(
             new ApduCommand(0xF9, PivSlot.Authentication.Id, le: 0));
 
@@ -241,6 +247,7 @@ internal static class Program
                 ? " - no key in 9A"
                 : string.Empty;
             Console.WriteLine($"  attestation   unavailable (SW {response.Status}){reason}");
+            recorder.Paused = false;
             return;
         }
 
@@ -253,6 +260,10 @@ internal static class Program
         catch (Exception ex)
         {
             Console.WriteLine($"  attestation   unparseable: {ex.Message}");
+        }
+        finally
+        {
+            recorder.Paused = false;
         }
     }
 
@@ -314,13 +325,24 @@ internal sealed class RecordingTransport(
 {
     public string Description => inner.Description;
 
+    /// <summary>
+    /// While set, exchanges are not written down at all. Used around
+    /// attestation: filtering it out afterwards missed the GET RESPONSE
+    /// continuations and leaked two thirds of the certificate into a fixture.
+    /// Not recording it cannot half-work.
+    /// </summary>
+    public bool Paused { get; set; }
+
     public ApduResponse Transmit(ReadOnlySpan<byte> apdu)
     {
         var command = Convert.ToHexString(apdu);
         var response = inner.Transmit(apdu);
 
-        transcript.Add(new TranscriptEntry(label(), command,
-            Convert.ToHexString(response.Data), response.Status.ToString()));
+        if (!Paused)
+        {
+            transcript.Add(new TranscriptEntry(label(), command,
+                Convert.ToHexString(response.Data), response.Status.ToString()));
+        }
 
         return response;
     }

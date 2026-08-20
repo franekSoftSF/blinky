@@ -18,11 +18,11 @@
     ]
   },
   "status": {
-    "updated": "2026-08-19",
+    "updated": "2026-08-20",
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "building",
-    "summary": "Patches 0010 and 0011 done: Blinky.Piv carries the PC/SC transport, chaining, the typed error map and the read path, with 84 tests including a semantic replay of a real three-token capture. tools/PivProbe is now only printing. Certificate reads and attestation remain unexercised on hardware because every slot on the bench is empty."
+    "summary": "Patches 0010 and 0011 done and validated on hardware: transport, chaining, typed error map and the read path, with 92 tests over two real captures. A token provisioned with ykman closed the second half of 0011 - certificate read, slot metadata, and 61xx chaining exercised on a card. Attestation is reachable and is patch 0012."
   },
   "phases": [
     {
@@ -368,19 +368,14 @@
       "handling": "Patch 0016 reads it, 0027 uses it; the temporary-PIN encoding is marked unverified in doc 03"
     },
     {
-      "id": "chaining-untested-on-hardware",
-      "impact": "medium",
-      "handling": "Hand-built 61xx and 6Cxx cases; the first real chained read lands in 0011"
-    },
-    {
       "id": "windows-only-transport",
       "impact": "medium",
       "handling": "PcscContext.IsSupported plus an explicit PlatformNotSupportedException; patch 0017"
     },
     {
-      "id": "no-provisioned-token",
+      "id": "t0-and-outbound-chaining-untested",
       "impact": "medium",
-      "handling": "Certificate parsing covered by hand-built PIV data objects; the hardware half of 0011 stays open until a token is written to"
+      "handling": "6Cxx needs a T=0 reader and outbound chaining needs a write; hand-built cases cover both until patch 0024"
     }
   ]
 }
