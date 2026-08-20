@@ -74,15 +74,20 @@ public sealed class AgentWorker(
     /// Drains whatever work is waiting. The doorbell is an optimisation, never
     /// a correctness requirement - a poll finds the same work a second later.
     /// </summary>
-    private async Task RunClaimedJobsAsync(BackendClient backend, CancellationToken ct)
+    /// <returns>True when at least one job ran, so the caller can re-read.</returns>
+    private async Task<bool> RunClaimedJobsAsync(BackendClient backend, CancellationToken ct)
     {
+        var ranSomething = false;
+
         while (!ct.IsCancellationRequested)
         {
             var claim = await backend.ClaimJobAsync(ct);
             if (claim is null)
             {
-                return;
+                return ranSomething;
             }
+
+            ranSomething = true;
 
             logger.LogInformation("Claimed job {JobId} ({Type}), attempt {Attempt}, "
                                   + "lease until {Lease:HH:mm:ss}",
@@ -102,13 +107,15 @@ public sealed class AgentWorker(
                 logger.LogError("Job {JobId} ran but the backend did not record the outcome: "
                                 + "{Message}", claim.Job.JobId, ex.Message);
 
-                return;
+                return ranSomething;
             }
 
             logger.LogInformation("Job {JobId} {Outcome}{Step}", claim.Job.JobId,
                 result.Succeeded ? "succeeded" : "failed",
                 result.FailedStep is null ? string.Empty : $" at {result.FailedStep}");
         }
+
+        return ranSomething;
     }
 
     private async Task<Guid> EnsureIdentityAsync(BackendClient backend, CancellationToken ct)
@@ -164,7 +171,16 @@ public sealed class AgentWorker(
                 }
             }
 
-            await RunClaimedJobsAsync(backend, ct);
+            // Re-read when a job ran, because a job is precisely the thing that
+            // changes what is on the card. Reporting the sweep taken at the top
+            // of this method would post a picture from before the enrolment and
+            // overwrite the state the enrolment just produced - a slot that
+            // holds a certificate, recorded as empty, 50ms after it was
+            // recorded as provisioned.
+            if (await RunClaimedJobsAsync(backend, ct))
+            {
+                sweep = collector.ReadAll();
+            }
 
             foreach (var report in sweep.Tokens)
             {
@@ -210,6 +226,12 @@ public sealed class AgentOptions
     public string? BootstrapToken { get; set; }
 
     public int PollIntervalSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// How long to wait for somebody to answer a prompt. Generous: a person
+    /// walking back to their desk is not a failure.
+    /// </summary>
+    public int PromptTimeoutSeconds { get; set; } = 120;
 
     /// <summary>
     /// The CA that signed the backend's certificate. Copy `certs/dev-ca.crt`

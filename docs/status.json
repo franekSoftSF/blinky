@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "gate-met",
-    "summary": "Phase 2 in progress. The issuance path is proved on hardware and the job engine now carries work from an operator to an agent and back: claim on a lease, per-step progress, results, and a watchdog that returns abandoned work to the queue. Still open: personalisation (0025, waiting on a decision), the agent UI (0018) and biometric verification (0027).",
+    "summary": "Phase 2 in progress. Blinky issues: on 2026-08-20 an operator job produced a certificate on a YubiKey 5.7.1 end to end - key generated on card, attestation verified server-side, card signed its own request, certificate written back and read back, credential Installed and slot Provisioned - with the PIN typed by a person into the agent UI (0018, now done). A smartcard-logon profile is still correctly refused without a resolved objectSid, so the live run used a client-auth profile. Still open: personalisation (0025, waiting on a decision), biometric verification (0027), and reconciling credentials with what a sweep finds (0029).",
     "nothingIssuedYet": true
   },
   "phases": [

@@ -1,5 +1,6 @@
 using Blinky.Api.Agents;
 using Blinky.Api.Persistence;
+using Blinky.Api.Credentials;
 using Blinky.Api.Jobs;
 using Blinky.Api.Security;
 using Blinky.Api.Tokens;
@@ -25,6 +26,17 @@ builder.Services.AddSingleton(_ => AgentCertificateAuthority.Load(
 
 builder.Services.AddSingleton<TokenInventoryService>();
 builder.Services.AddSingleton<JobService>();
+
+// The certificate authority, loaded from what scripts/new-ca.sh produced. CA
+// instances and profiles in the database are the open half of patch 0022.
+builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
+    Blinky.Pki.BuiltIn.BuiltInCaFactory.LoadFromDirectory(
+        builder.Configuration["Blinky:Ca:Directory"] ?? "/etc/blinky/ca",
+        builder.Configuration["Blinky:Ca:Password"],
+        builder.Configuration.GetValue("Blinky:Ca:AllowFileKeys", false),
+        TimeSpan.FromHours(6)));
+
+builder.Services.AddSingleton<CredentialIssuanceService>();
 
 builder.Services.AddSingleton(services => new AgentEnrolmentService(
     services.GetRequiredService<Database>(),
@@ -179,6 +191,63 @@ app.MapPost("/api/jobs/inventory",
         return Results.Ok(new { job.Id, created, state = job.State.ToString() });
     });
 
+app.MapPost("/api/jobs/enrol",
+    (EnrolmentJobRequest request, HttpContext context, JobService jobs) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        // The slot is part of the key: two credentials on one token are two
+        // jobs, and re-posting the same one is not a second key on the card.
+        //
+        // The reason is part of it too, and deliberately the operator's to
+        // supply. A job that failed on a mistyped PIN is finished as far as the
+        // row is concerned, and without a way to say "this is a new attempt"
+        // the same request would keep returning the dead one.
+        var key = $"enrol:{request.TokenSerial}:{request.SlotId}:{request.ProfileName}"
+                  + $":{request.Reason ?? "initial"}";
+
+        var (job, created) = jobs.Create(JobType.Enroll, key,
+            id => JobEnvelope.Enrolment(id, key, DateTimeOffset.UtcNow.AddHours(1),
+                request.TokenSerial, request.SlotId, request.ProfileName, request.DisplayName,
+                request.Upn, request.ObjectSid),
+            request.AgentId);
+
+        return Results.Ok(new { job.Id, created, state = job.State.ToString() });
+    });
+
+// An agent asking for a certificate. The attestation is verified here, against
+// this server's pinned root - see docs/06-security.md.
+app.MapPost("/api/credentials/issue",
+    async (IssueCredentialRequest request, CredentialIssuanceService credentials,
+        CancellationToken ct) =>
+    {
+        if (!Protocol.IsSupported(request.SchemaVersion))
+        {
+            return Results.Json(new { error = "unsupported schema version" }, statusCode: 400);
+        }
+
+        try
+        {
+            return Results.Ok(await credentials.IssueAsync(request, ct));
+        }
+        catch (Blinky.Pki.IssuancePolicyException ex)
+        {
+            // A refusal, not a fault: somebody asked for something they may not
+            // have, and the reason belongs in the response.
+            return Results.Json(new { error = ex.Message }, statusCode: 422);
+        }
+    });
+
+app.MapPost("/api/credentials/{id:guid}/installed",
+    (Guid id, CredentialInstalled confirmation, CredentialIssuanceService credentials) =>
+        credentials.MarkInstalled(confirmation with { CredentialId = id })
+            ? Results.NoContent()
+            : Results.NotFound(new { error = "no such credential" }));
+
 app.MapPost("/api/agents/{id:guid}/heartbeat",
     (Guid id, HeartbeatRequest request, HttpContext context, Database database) =>
     {
@@ -248,6 +317,25 @@ static bool IsOperator(HttpContext context, string expected)
 /// <summary>What an agent reports when it checks in.</summary>
 /// <summary>Asks for one token inventory pass on one agent.</summary>
 internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
+
+/// <remarks>
+/// <c>ProfileName</c> rather than <c>Profile</c>, and that is not a style
+/// choice. CRS rule 930120 tests argument <b>names</b> against
+/// <c>lfi-os-files.data</c>, which contains the Unix dotfile <c>.profile</c>;
+/// a field called <c>profile</c> arrives as <c>ARGS_NAMES:json.profile</c> and
+/// the edge answers 403 before the API sees it. The alternative was an
+/// exclusion that turns off an LFI rule for a whole endpoint. See
+/// docs/06-security.md.
+/// </remarks>
+internal sealed record EnrolmentJobRequest(
+    Guid? AgentId,
+    long TokenSerial,
+    string SlotId,
+    string ProfileName,
+    string DisplayName,
+    string? Upn,
+    string? ObjectSid,
+    string? Reason = null);
 
 internal sealed record HeartbeatRequest(
     string? Version,

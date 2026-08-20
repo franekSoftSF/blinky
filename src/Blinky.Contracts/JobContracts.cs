@@ -26,6 +26,35 @@ public sealed record JobEnvelope(
         DateTimeOffset deadline) =>
         new(Protocol.SchemaVersion, jobId, JobType.Inventory, idempotencyKey, deadline, null,
             [new JobStep("ReadAllReaders")]);
+
+    /// <summary>
+    /// One step, not eight. Generate, attest, sign, issue and write all share a
+    /// single PC/SC transaction on the workstation: a verified PIN and an
+    /// authenticated management key are lost the moment the card is released,
+    /// so phases that were scheduled separately would each have to ask for the
+    /// PIN again or keep it somewhere. The agent <b>reports</b> the phases
+    /// instead, which is where the diagnostic value was. This corrects
+    /// docs/05-agent-protocol.md.
+    /// </summary>
+    /// <remarks>
+    /// Still no PIN in here, and there never will be: this payload is stored in
+    /// the database.
+    /// </remarks>
+    public static JobEnvelope Enrolment(Guid jobId, string idempotencyKey,
+        DateTimeOffset deadline, long tokenSerial, string slotId, string profile,
+        string displayName, string? upn, string? objectSid) =>
+        new(Protocol.SchemaVersion, jobId, JobType.Enroll, idempotencyKey, deadline,
+            tokenSerial,
+        [
+            new JobStep("EnrolCredential", new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["slot"] = slotId,
+                ["profile"] = profile,
+                ["displayName"] = displayName,
+                ["upn"] = upn ?? string.Empty,
+                ["objectSid"] = objectSid ?? string.Empty,
+            }),
+        ]);
 }
 
 /// <summary>One instruction in a job.</summary>

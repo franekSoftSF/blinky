@@ -19,6 +19,7 @@ namespace Blinky.Agent.Service;
 /// </remarks>
 public sealed class JobExecutor(
     InventoryCollector collector,
+    ICardEnrolment? enrolment,
     ILogger<JobExecutor> logger)
 {
     public async Task<JobResult> ExecuteAsync(JobEnvelope job, BackendClient backend,
@@ -51,7 +52,7 @@ public sealed class JobExecutor(
 
             try
             {
-                await RunAsync(step, backend, ct);
+                await RunAsync(job, step, backend, attempt, ct);
             }
             catch (Piv.PivException ex)
             {
@@ -74,9 +75,10 @@ public sealed class JobExecutor(
     /// newer than this agent, and the job is refused rather than partly done.
     /// </summary>
     public static readonly IReadOnlySet<string> Supported =
-        new HashSet<string>(StringComparer.Ordinal) { "ReadAllReaders" };
+        new HashSet<string>(StringComparer.Ordinal) { "ReadAllReaders", "EnrolCredential" };
 
-    private async Task RunAsync(JobStep step, BackendClient backend, CancellationToken ct)
+    private async Task RunAsync(JobEnvelope job, JobStep step, BackendClient backend,
+        int attempt, CancellationToken ct)
     {
         switch (step.Op)
         {
@@ -93,6 +95,19 @@ public sealed class JobExecutor(
                                       + "cards this version cannot manage",
                     sweep.Tokens.Count, sweep.Unsupported.Count);
 
+                return;
+            }
+
+            case "EnrolCredential":
+            {
+                if (enrolment is null)
+                {
+                    throw new InvalidOperationException(
+                        "This agent cannot enrol: it needs a card reader and an interactive "
+                        + "session, and this build has neither on this platform.");
+                }
+
+                await enrolment!.EnrolAsync(job, step, backend, attempt, ct);
                 return;
             }
 

@@ -37,11 +37,17 @@ services:
       Blinky__Operator__Token: ${OPERATOR_TOKEN:-change-me-too}
       Blinky__AgentCa__CertificatePath: /etc/blinky/certs/agent-ca.crt
       Blinky__AgentCa__KeyPath: /etc/blinky/certs/agent-ca.key
+      Blinky__Ca__Directory: /etc/blinky/ca
+      Blinky__Ca__Password: ${CA_PASSWORD:-blinky}
+      # Development material. A file-backed CA key refuses to load without this
+      # said out loud, because nobody ever decides to use one - they inherit it.
+      Blinky__Ca__AllowFileKeys: "true"
     volumes:
       # The agent CA signs the certificates agents authenticate with. Dev
       # material from scripts/dev-certs.sh; in production this is the one thing
       # here that belongs behind a key store.
       - ./certs:/etc/blinky/certs:ro
+      - ./ca:/etc/blinky/ca:ro
     depends_on:
       postgres:
         condition: service_healthy

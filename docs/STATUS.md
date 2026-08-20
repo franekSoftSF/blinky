@@ -18,9 +18,19 @@ and stores it. Four YubiKeys, two cards from another vendor and a virtual
 reader all come out the far end correctly, and no code has written a byte to
 any card.
 
-Nothing is issued yet. That is Phase 2, which starts with the certificate
-authority interface and the built-in CA — the first patch after which the
-system does something for a cardholder rather than about one.
+Blinky now issues. On 20 August 2026 an operator created a job, an agent
+claimed it, generated a key on a YubiKey 5.7.1, had the card sign its own
+request, the server verified the attestation and issued, the agent wrote the
+certificate back and read it back to check it — with the PIN typed by a person
+into a window that the service cannot draw and never sees the contents of. The
+run took thirteen seconds from claim to `Installed`, and `ykman piv info`
+confirms the certificate independently.
+
+What is still missing is the directory. A `smartcard-logon` certificate is
+refused without a resolved `objectSid`, which is correct and which is why the
+first issuance used a `client-auth` profile instead — a certificate that does
+not pretend to be a logon credential. Making that refusal stop mattering is
+what the lab in [09](09-lab.md) is for.
 
 ## Validated on hardware
 
@@ -220,12 +230,14 @@ write it.
 | 0020 | `ICertificateAuthority`, `CaCapabilities`, profiles | **done** | Both topologies issue through one interface; capabilities describe the difference |
 | 0021 | Built-in CA: generation script, key tiers | **done, unverified** | `scripts/new-ca.sh` builds both shapes and the chains verify. The SoftHSM key tier is not written — only `file`, and it refuses without an explicit opt-in |
 | 0028 | Built-in CA topology: single or two-tier | **done** | Chain validates in both; `pathlen` asserted so the reversal cannot return |
-| 0022 | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | EKUs, UPN SAN and the SID extension are issued and asserted. The profile model still lives in code rather than in the database |
+| 0022 | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | EKUs, UPN SAN and the SID extension are issued and asserted, and `smartcard-logon` refuses to issue without a resolved SID — proved by a 422 on the first live enrolment. A `client-auth` profile exists for use before a directory does. The profile model still lives in code rather than in the database |
 | 0023 | Key generation, on-card CSR signing, attestation-gated submission | **done** | Proved on two tokens: management key authenticated mutually (AES-192 and 3DES), key generated, attestation verified, card signed its own request |
-| 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **done, unverified** | 1019 bytes written and read back identical, which also ran outbound chaining for the first time. The certificate does **not** reach the Windows store on this machine: ActivClient owns the minidriver binding |
+| 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **done** | Written, read back, thumbprint compared, `Credential` in `Installed` and the slot in `Provisioned` — end to end through the job engine, twice. The certificate still does **not** reach the Windows store on this machine: ActivClient owns the minidriver binding |
 | 0025 | Personalisation: management key, PUK escrow, PIN policy | **open** |
 | 0026 | Job engine: leases, watchdog, `AwaitingUser` | **done, unverified** | An operator creates a job, the agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog. `AwaitingUser` has its own longer lease but nothing raises it until 0018 |
 | 0027 | Biometric user verification during enrolment | **open** |
+| 0018 | Agent UI: PIN and touch prompts across the session boundary | **done** | A PIN typed in the user's session reached the service over the named pipe and unlocked the card. The pipe is granted to `INTERACTIVE` and `LocalSystem` and to nothing else |
+| 0029 | Reconcile credentials with what the sweep actually finds | **open** | A token reset outside Blinky leaves `Credential` rows reading `Installed` for certificates that no longer exist. The sweep corrects the *slot* and says nothing about the credential — found by resetting a token after two successful issuances |
 
 ### Phases 3 to 6 — **open**
 
@@ -248,6 +260,7 @@ exercised against the thing it is really for.
 | That an issued certificate actually logs anybody in | Needs a domain | The Phase 2 gate, [09](09-lab.md) |
 | That a written certificate reaches the Windows certificate store | HID ActivClient owns the minidriver binding on this machine | A clean Windows client, [09](09-lab.md) |
 | Multi-machine deployment | The lab is being built; everything so far ran on one box | The lab, [09](09-lab.md) |
+| Enrolment on a token whose slot already holds a key | The guard refuses rather than destroying it, which is right — but it also means a job that failed after generating cannot simply be retried into the same slot | 0029, with the reconciliation |
 | ADCS, CES and the connector | No Windows AD lab yet | 0030–0034 |
 | Samba4 publication and PKINIT | No Samba4 provision yet | 0061, and the Phase 2 gate |
 
@@ -263,7 +276,7 @@ exercised against the thing it is really for.
 | `Blinky.Api` | **partial** | Enrolment, heartbeat, inventory. Issuance from 0023 |
 | `Blinky.Worker` | skeleton | Hosts and logs; the job engine is 0026 |
 | `Blinky.Agent.Service` | **partial** | Enrols, watches readers, reports. Executes jobs from 0026 |
-| `Blinky.Agent.Ui` | **deferred** | Patch 0018 |
+| `Blinky.Agent.Ui` | **done** | Prompts for a PIN across the session boundary; used in a real issuance |
 | `Blinky.Pki` — built-in CA | **partial** | Issues, revokes, publishes a CRL, both topologies. SoftHSM tier outstanding |
 | `Blinky.Pki` — ADCS | open | 0030–0033 |
 | `Blinky.AdcsConnector` | skeleton | 0032 |
@@ -285,7 +298,8 @@ exercised against the thing it is really for.
 | Management-key algorithm differs across firmware (3DES before 5.7, AES-192 after) | Personalisation fails on part of the fleet | Read `GET METADATA`, fall back once, record `Unknown` rather than guessing |
 | ADCS template supplies the subject in the request, so no SID extension is emitted | Certificates issue cleanly and then fail to log anybody in | Backend registration refuses the combination up front (patch 0033) |
 | CDP or AIA unreachable from domain controllers | Smart-card logon fails with an error that names nothing useful | Called out in doc 04; verified as part of the Phase 2 gate |
-| Retrying key generation destroys the previous key | Silent orphaning of an issued certificate | Guard inside the agent step, not only in the server's retry policy |
+| Retrying key generation destroys the previous key | Silent orphaning of an issued certificate | Guard inside the agent step, not only in the server's retry policy. Observed working: a failed enrolment left a key in slot 9D and the retry was refused rather than overwriting it |
+| An agent's own inventory sweep competes with its jobs for the reader | A job fails instantly with `SCARD_E_SHARING_VIOLATION` and no prompt, blaming nothing | Seen at a 5-second poll interval. Not yet fixed; the poll interval is the mitigation, [03 § One reader](03-piv-layer.md) |
 | Windows minidriver contends for the card | Intermittent, unreproducible APDU failures | Shared connections inside PC/SC transactions; never exclusive |
 | Token can never be unblocked — no PUK | A blocked PIN costs every key on the token | Detected at inventory. `NotApplicable` on a Bio (accepted, console shows it as unrecoverable); `Disabled` elsewhere (refused by default, patch 0025) |
 | Biometric verification path is exercised only on one device | The Bio flow is the least-travelled corner of the applet | Patch 0016 reads it, 0027 uses it; the temporary-PIN encoding is explicitly marked unverified in doc 03 |

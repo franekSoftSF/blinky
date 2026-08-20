@@ -26,6 +26,19 @@ server {
     # include here duplicates every rule id and nginx refuses to start.
     modsecurity on;
 
+    # CRS 930120 (LFI) checks argument NAMES against lfi-os-files.data, and
+    # that list contains the Unix dotfile `.profile`. A JSON field called
+    # `profileName` arrives as ARGS_NAMES:json.profileName, the match is a
+    # substring, and every certificate-profile request is a 403 - a rule about
+    # reading /etc/passwd firing on a field name.
+    #
+    # One target removed from one rule, not the rule and not the endpoint:
+    # ARGS (the values) stay inspected, so a profile name that really does try
+    # to traverse a path is still caught.
+    modsecurity_rules '
+        SecRule REQUEST_URI "@rx ^/api/(jobs/enrol|credentials/issue)"             "id:9000200,phase:1,pass,nolog,             ctl:ruleRemoveTargetById=930120;ARGS_NAMES:json.profileName"
+    ';
+
     add_header Strict-Transport-Security "max-age=31536000" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;

@@ -30,7 +30,13 @@ public sealed class BackendClient : IDisposable
 
         if (!string.IsNullOrWhiteSpace(serverCertificateAuthorityPath))
         {
-            pinnedRoots.Add(X509Certificate2.CreateFromPemFile(serverCertificateAuthorityPath));
+            // CreateFromPem, not CreateFromPemFile: the File overload wants a
+            // private key in the same file and fails with "the key does not
+            // match the certificate" when handed a plain CA certificate, which
+            // is the only thing anyone would ever pin. Nothing here needs a
+            // key - this certificate is a trust anchor, not an identity.
+            pinnedRoots.Add(X509Certificate2.CreateFromPem(
+                File.ReadAllText(serverCertificateAuthorityPath)));
         }
     }
 
@@ -139,6 +145,32 @@ public sealed class BackendClient : IDisposable
         throw new InvalidOperationException(
             $"The backend refused the {what} for job {jobId}: {(int)response.StatusCode} "
             + await response.Content.ReadAsStringAsync(ct));
+    }
+
+    public async Task<IssuedCredential> IssueCredentialAsync(IssueCredentialRequest request,
+        CancellationToken ct)
+    {
+        var response = await Authenticated().PostAsJsonAsync("/api/credentials/issue", request, ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // 422 is a refusal with a reason in it, and the reason is the whole
+            // point - it says which rule the request broke.
+            throw new InvalidOperationException(
+                $"Issuance refused: {(int)response.StatusCode} "
+                + await response.Content.ReadAsStringAsync(ct));
+        }
+
+        return await response.Content.ReadFromJsonAsync<IssuedCredential>(ct)
+               ?? throw new InvalidOperationException("Issuance returned no certificate.");
+    }
+
+    public async Task ConfirmInstalledAsync(CredentialInstalled confirmation, CancellationToken ct)
+    {
+        var response = await Authenticated().PostAsJsonAsync(
+            $"/api/credentials/{confirmation.CredentialId}/installed", confirmation, ct);
+
+        await ThrowIfRefused(response, "installation", confirmation.CredentialId, ct);
     }
 
     public async Task<InventoryAccepted?> ReportInventoryAsync(TokenInventoryReport report,

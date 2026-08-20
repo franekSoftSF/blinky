@@ -205,6 +205,29 @@ attestation". Read off a 5.7.1:
 If any of that fails, no request reaches the CA. A CMS that signs first and
 verifies later is a CMS that will eventually certify a software key.
 
+## One reader, several things that want it
+
+Two findings from the first end-to-end enrolment, both about the fact that a
+card is a single-threaded device that one process holds at a time.
+
+**A sweep and a job collide.** `SCardConnect` takes the card exclusively. An
+inventory sweep on a short poll interval and a job that wants the same reader
+produce `0x8010000B SCARD_E_SHARING_VIOLATION`, and the job fails instantly
+with nothing on screen — no prompt, no APDU, no clue that the cause was the
+agent's own housekeeping. The interval is not a tuning knob for how responsive
+the agent feels; it is how often the agent competes with itself.
+
+**A sweep taken before a job must not be reported after it.** The agent read
+the cards at the top of the poll, ran the enrolment, and then posted the sweep
+it already had. Fifty milliseconds after the server recorded slot 9E as
+provisioned, that stale picture recorded it as empty — the certificate was on
+the card the whole time, and every screen said the slot was free. The fix is to
+re-read when a job ran, because a job is exactly the thing that invalidates the
+reading.
+
+The general shape: **state read before an action, reported after it, is worse
+than no report at all**, because it looks authoritative.
+
 ## Cards that are not YubiKeys
 
 PIV is a standard, so other vendors' cards select the applet and answer the

@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using Blinky.Agent.Service;
 using Serilog;
 
@@ -17,7 +18,18 @@ builder.Services.AddSingleton(options.IdentityDirectory is { Length: > 0 } direc
     : AgentIdentity.Default());
 
 builder.Services.AddSingleton<InventoryCollector>();
-builder.Services.AddSingleton<JobExecutor>();
+// Prompts and enrolment both need Windows: one draws in a user session, the
+// other holds a reader. Registered only where they can work, and the executor
+// refuses the step rather than pretending otherwise.
+if (OperatingSystem.IsWindows())
+{
+    AddWindowsOnlyServices(builder.Services);
+}
+
+builder.Services.AddSingleton(services => new JobExecutor(
+    services.GetRequiredService<InventoryCollector>(),
+    services.GetService<ICardEnrolment>(),
+    services.GetRequiredService<ILogger<JobExecutor>>()));
 
 // LocalSystem, session 0. It owns the reader and executes jobs; it cannot draw
 // a PIN prompt and cannot prove who is at the keyboard - that is Agent.Ui,
@@ -26,3 +38,10 @@ builder.Services.AddWindowsService(o => o.ServiceName = "BlinkyAgent");
 builder.Services.AddHostedService<AgentWorker>();
 
 builder.Build().Run();
+
+[SupportedOSPlatform("windows")]
+static void AddWindowsOnlyServices(IServiceCollection services)
+{
+    services.AddSingleton<UserPrompts>();
+    services.AddSingleton<ICardEnrolment, CardEnrolment>();
+}

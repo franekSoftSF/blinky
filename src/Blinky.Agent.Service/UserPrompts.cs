@@ -27,6 +27,12 @@ namespace Blinky.Agent.Service;
 public sealed class UserPrompts(ILogger<UserPrompts> logger, TimeSpan timeout,
     string? pipeName = null)
 {
+    /// <summary>The registered constructor: the timeout comes from configuration.</summary>
+    public UserPrompts(ILogger<UserPrompts> logger, AgentOptions options)
+        : this(logger, TimeSpan.FromSeconds(options.PromptTimeoutSeconds))
+    {
+    }
+
     private readonly string pipeName = pipeName ?? AgentPipe.Name;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

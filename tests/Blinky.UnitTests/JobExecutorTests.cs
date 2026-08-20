@@ -70,6 +70,7 @@ public sealed class JobExecutorTests
 
     private static JobExecutor Executor() =>
         new(new InventoryCollector(NullLogger<InventoryCollector>.Instance),
+            enrolment: null,
             NullLogger<JobExecutor>.Instance);
 
     /// <summary>

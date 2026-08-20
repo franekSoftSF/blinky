@@ -36,3 +36,6 @@ certs/
 
 # Certificate authority material
 ca/
+
+# Lab agent identity: a private key, never in the repo.
+.lab/

@@ -82,6 +82,35 @@ Stated plainly, because a security section that claims completeness is lying:
   raises the bar to physical presence per operation; it does not change the
   model.
 
+## What the WAF costs, measured
+
+The console listener runs CRS in blocking mode, and that is worth what it costs
+— but the cost is real and shows up in ordinary places, not in attacks.
+
+**CRS 930120 (LFI, "OS File Access Attempt") matches on argument *names*.** The
+rule tests each name against `lfi-os-files.data`, which lists Unix dotfiles —
+including `.profile`. A JSON body with a field called `profileName` arrives as
+`ARGS_NAMES:json.profileName`, `PmFromFile` matches on substring, and the
+anomaly score crosses the threshold: every certificate-profile request is a
+403, from a rule about reading `/etc/passwd`.
+
+Renaming does not escape it. `profile`, `profileName`, `certProfile` — anything
+where `profile` follows a dot in the JSON path matches equally.
+
+What is in the repo is one target removed from one rule on two endpoints:
+
+    ctl:ruleRemoveTargetById=930120;ARGS_NAMES:json.profileName
+
+The rule stays on for those endpoints, and `ARGS` — the values, where a real
+path traversal would live — stays inspected. The alternatives were worse: turn
+the rule off, drop the endpoint out of the WAF, or rename a field in the public
+API to dodge a pattern that would still match the next name someone picked.
+
+The general lesson is the one worth carrying: **a blocking WAF in front of a
+JSON API will eventually 403 something legitimate, and the first symptom is an
+error the application never logged, because the request never reached it.**
+Check the edge before debugging the API.
+
 ## Hardening not in v1
 
 Tracked, not built, and named here so nobody assumes otherwise:
