@@ -12,6 +12,7 @@
     <PackageVersion Include="Serilog.Extensions.Hosting" Version="9.0.0" />
     <PackageVersion Include="Serilog.Settings.Configuration" Version="9.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="6.0.0" />
   </ItemGroup>
   <ItemGroup Label="Tests">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />

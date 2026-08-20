@@ -42,7 +42,17 @@ public sealed class AgentIdentity(string directory)
 
     public void Store(Guid agentId, string certificatePem, RSA key)
     {
-        Directory.CreateDirectory(directory);
+        // Not Directory.CreateDirectory: under %ProgramData% that inherits
+        // BUILTIN\\Users:(RX), and the next line writes a private key
+        // into it. See AgentPaths.
+        if (OperatingSystem.IsWindows())
+        {
+            AgentPaths.Secure(directory);
+        }
+        else
+        {
+            Directory.CreateDirectory(directory);
+        }
 
         File.WriteAllText(IdPath, agentId.ToString());
         File.WriteAllText(CertificatePath, certificatePem);

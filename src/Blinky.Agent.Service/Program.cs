@@ -2,12 +2,41 @@ using System.Runtime.Versioning;
 using Blinky.Agent.Service;
 using Serilog;
 
+// Before anything opens a file in it. Serilog creates a missing log directory
+// itself, with whatever %ProgramData% hands down - which is Users:(RX), in a
+// directory that also holds the agent's private key. See AgentPaths.
+if (OperatingSystem.IsWindows())
+{
+    AgentPaths.Secure(AgentPaths.Root);
+    AgentPaths.Secure(AgentPaths.Logs);
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSerilog((services, configuration) => configuration
-    .ReadFrom.Configuration(builder.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.FromLogContext());
+builder.Services.AddSerilog((services, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(builder.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext();
+
+    // The path is set here rather than in appsettings.json because a
+    // configured "%PROGRAMDATA%/..." is taken literally: the sink writes to a
+    // directory named after the variable, or to nothing, and the first symptom
+    // is a service that looks healthy and logs nowhere. Built from
+    // AgentPaths so there is one answer to where the log lives.
+    if (OperatingSystem.IsWindows())
+    {
+        configuration.WriteTo.File(
+            Path.Combine(AgentPaths.Logs, "agent-.log"),
+            rollingInterval: Serilog.RollingInterval.Day,
+            retainedFileCountLimit: 14,
+            fileSizeLimitBytes: 32L * 1024 * 1024,
+            rollOnFileSizeLimit: true,
+            outputTemplate:
+            "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}");
+    }
+});
 
 var options = new AgentOptions();
 builder.Configuration.GetSection("Agent").Bind(options);
