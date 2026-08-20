@@ -33,3 +33,6 @@ TestResults/
 # Local edge material
 certs/
 .env
+
+# Certificate authority material
+ca/

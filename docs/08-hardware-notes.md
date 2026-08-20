@@ -33,6 +33,7 @@ virtual reader — with HID ActivClient installed alongside.
 
 | Finding | Evidence | Where it lives |
 |---|---|---|
+| **`pathlen` counts what follows, so a two-tier root needs `pathlen:1`**, not `0` | Doc 04 said the opposite. A root with `pathlen:0` rejected every chain through its own issuing CA, reporting "basic constraints not satisfied" — which points at the leaf | [04 § Path length](04-pki-backends.md), `scripts/new-ca.sh` |
 | **`jsonb` needs a typed parameter**, not just a column type | The schema validated and the first insert failed with `42804: column "payload" is of type jsonb but expression is of type text` | `JsonbType`, `tools/SchemaTool --roundtrip` |
 | **A CRS in blocking mode eats our own protocol** | The same SQL injection returns 403 on the console listener and is logged with `is_interrupted:false` on the agent listener | [01 § The edge](01-architecture.md), [06](06-security.md) |
 | **`ssl_verify_client on` refuses enrolment before it can happen** | The one endpoint an agent must reach without a certificate never got past the handshake | [05 § Agent enrolment](05-agent-protocol.md#agent-enrolment) |

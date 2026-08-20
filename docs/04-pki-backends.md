@@ -120,12 +120,20 @@ prompt, not something you get by not reading the documentation.
 
 ### Things that differ between the topologies and will bite
 
-**Path length.** In `two-tier` the root carries
-`basicConstraints = critical, CA:TRUE, pathlen:0` — it may sign the issuing CA
-and the issuing CA may sign nothing but end entities. Omitting `pathlen` is
-harmless until somebody quietly signs a third tier; setting it to `0` on the
-*issuing* CA instead is a chain that fails validation on some clients and not
-others, which is worse than failing everywhere.
+**Path length, and it is easy to get backwards.** `pathLenConstraint` counts
+the intermediate CAs that may **follow** a certificate in a path:
+
+| | `single` | `two-tier` |
+|---|---|---|
+| Root / anchor | `pathlen:0` — signs only end entities | **`pathlen:1`** — one intermediate follows it |
+| Issuing CA | — | **`pathlen:0`** — signs only end entities |
+
+An earlier version of this document had it the other way round, and said so
+confidently. A root with `pathlen:0` in a two-tier hierarchy rejects every
+chain built through its own issuing CA, and the error is *"basic constraints
+not satisfied"* — which reads as a problem with the leaf certificate, several
+steps from the cause. Caught by a chain-building test rather than by
+inspection.
 
 **What goes into NTAuth.** This is the one that produces "smart-card logon just
 does not work" with no useful error:

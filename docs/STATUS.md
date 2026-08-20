@@ -213,19 +213,19 @@ write it.
 | 0018 | `Agent.Ui`, the session 0 split and the named pipe | **deferred** | To just before 0023, the first workflow that needs a prompt |
 | 0019 | Cards that are not YubiKeys are recognised, not ignored | **done** | An HID Crescendo and a C4000 named and skipped, not dropped |
 
-### Phase 2 — Issue something — **next**
+### Phase 2 — Issue something — **in progress**
 
-| # | Patch | State |
-|---|---|---|
-| 0020 | `ICertificateAuthority`, `CaCapabilities`, profiles | **open** |
-| 0021 | Built-in CA: generation script, key tiers | **open** |
-| 0022 | Certificate profiles, smart-card logon extensions, SID extension | **open** |
+| # | Patch | State | Proof |
+|---|---|---|---|
+| 0020 | `ICertificateAuthority`, `CaCapabilities`, profiles | **done** | Both topologies issue through one interface; capabilities describe the difference |
+| 0021 | Built-in CA: generation script, key tiers | **done, unverified** | `scripts/new-ca.sh` builds both shapes and the chains verify. The SoftHSM key tier is not written — only `file`, and it refuses without an explicit opt-in |
+| 0028 | Built-in CA topology: single or two-tier | **done** | Chain validates in both; `pathlen` asserted so the reversal cannot return |
+| 0022 | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | EKUs, UPN SAN and the SID extension are issued and asserted. The profile model still lives in code rather than in the database |
 | 0023 | Key generation, on-card CSR signing, attestation-gated submission | **open** |
 | 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **open** |
 | 0025 | Personalisation: management key, PUK escrow, PIN policy | **open** |
 | 0026 | Job engine: leases, watchdog, `AwaitingUser` | **open** |
 | 0027 | Biometric user verification during enrolment | **open** |
-| 0028 | Built-in CA topology: single or two-tier | **open** |
 
 ### Phases 3 to 6 — **open**
 
@@ -245,6 +245,8 @@ exercised against the thing it is really for.
 | Attestation rejection paths | Forgeries, wrong roots and serial mismatches are synthetic — a real one would mean a counterfeit token | Stays synthetic; the genuine path is proved on hardware |
 | The Linux transport | No Linux machine with a reader | 0017 |
 | Bio temporary PIN | Requesting one consumes a match attempt and needs a finger | 0027 |
+| The SoftHSM key tier | Needs Pkcs11Interop and a container; the `file` tier proves the rest | The other half of 0021 |
+| That an issued certificate actually logs anybody in | Needs a domain | The Phase 2 gate, [09](09-lab.md) |
 | Multi-machine deployment | The lab is being built; everything so far ran on one box | The lab, [09](09-lab.md) |
 | ADCS, CES and the connector | No Windows AD lab yet | 0030–0034 |
 | Samba4 publication and PKINIT | No Samba4 provision yet | 0061, and the Phase 2 gate |
@@ -262,7 +264,7 @@ exercised against the thing it is really for.
 | `Blinky.Worker` | skeleton | Hosts and logs; the job engine is 0026 |
 | `Blinky.Agent.Service` | **partial** | Enrols, watches readers, reports. Executes jobs from 0026 |
 | `Blinky.Agent.Ui` | **deferred** | Patch 0018 |
-| `Blinky.Pki` — built-in CA | open | 0021 and 0028 |
+| `Blinky.Pki` — built-in CA | **partial** | Issues, revokes, publishes a CRL, both topologies. SoftHSM tier outstanding |
 | `Blinky.Pki` — ADCS | open | 0030–0033 |
 | `Blinky.AdcsConnector` | skeleton | 0032 |
 | Angular console | open | Phase 5 |

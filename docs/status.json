@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "gate-met",
-    "summary": "Blinky reads tokens correctly and reports them. An agent enrols itself over mTLS, watches the readers and reports what it finds; the backend classifies and stores it. Nothing is issued yet - that is phase 2, starting with 0020 and 0021.",
+    "summary": "Phase 1 gate met. Phase 2 started: the built-in CA issues certificates in both topologies through ICertificateAuthority, with the smart-card logon extensions and the SID extension, and revokes onto a CRL. Not yet proved: that such a certificate logs anybody in, which needs the lab.",
     "nothingIssuedYet": true
   },
   "phases": [
@@ -41,7 +41,7 @@
     {
       "id": 2,
       "title": "Issue something",
-      "state": "next",
+      "state": "in-progress",
       "done": "docker compose up, enrol a factory YubiKey from the console, and log into a Samba4 domain with it. No ADCS involved."
     },
     {
@@ -542,19 +542,24 @@
       "id": "0020",
       "phase": 2,
       "title": "ICertificateAuthority, CaCapabilities, profiles",
-      "state": "open"
+      "state": "done",
+      "proof": "Both topologies issue through one interface; capabilities describe the difference"
     },
     {
       "id": "0021",
       "phase": 2,
       "title": "Built-in CA: generation script, key tiers",
-      "state": "open"
+      "state": "done-unverified",
+      "proof": "scripts/new-ca.sh builds both shapes and the chains verify",
+      "gap": "The SoftHSM key tier is not written - only file, which refuses without an explicit opt-in"
     },
     {
       "id": "0022",
       "phase": 2,
       "title": "Certificate profiles, logon extensions, SID extension",
-      "state": "open"
+      "state": "done-unverified",
+      "proof": "EKUs, UPN SAN and the SID extension are issued and asserted",
+      "gap": "The profile model lives in code rather than in the database"
     },
     {
       "id": "0023",
@@ -590,7 +595,8 @@
       "id": "0028",
       "phase": 2,
       "title": "Built-in CA topology: single or two-tier",
-      "state": "open"
+      "state": "done",
+      "proof": "Chain validates in both topologies; pathlen asserted so the reversal cannot return"
     },
     {
       "id": "0030",
@@ -753,6 +759,16 @@
       "what": "Samba4 publication and PKINIT",
       "why": "No Samba4 provision yet",
       "when": "0061 and the phase 2 gate"
+    },
+    {
+      "what": "The SoftHSM key tier",
+      "why": "Needs Pkcs11Interop and a container; the file tier proves the rest",
+      "when": "The other half of 0021"
+    },
+    {
+      "what": "That an issued certificate logs anybody in",
+      "why": "Needs a domain",
+      "when": "The phase 2 gate, docs/09-lab.md"
     }
   ],
   "lab": {
