@@ -132,7 +132,7 @@ it:
 
 ```
 Agent__BackendUrl=https://blinky.lab:9443
-Agent__Domain=corp.example
+Agent__Domain=blinky.lab
 Agent__BootstrapToken=<from .env>
 Agent__ServerCertificateAuthorityPath=C:\ProgramData\Blinky\dev-ca.crt
 ```

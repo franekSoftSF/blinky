@@ -64,5 +64,5 @@ echo "  $out/blinky-agent-$version.msi"
 echo
 echo "Install unattended:"
 echo "  msiexec /i blinky-agent-$version.msi /qn \\"
-echo "          BACKEND=https://blinky.example:9443 DOMAIN=corp.example \\"
+echo "          BACKEND=https://blinky.lab:9443 DOMAIN=blinky.lab \\"
 echo "          BOOTSTRAPTOKEN=... SERVERCA=C:\\certs\\backend-ca.crt"

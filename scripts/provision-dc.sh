@@ -14,8 +14,8 @@
 
 set -euo pipefail
 
-REALM="${REALM:-CORP.EXAMPLE}"
-DOMAIN="${DOMAIN:-CORP}"
+REALM="${REALM:-BLINKY.LAB}"
+DOMAIN="${DOMAIN:-BLINKY}"
 
 # Where the DC forwards anything that is not the realm. Whatever the machine is
 # using now, before this script points it at itself.

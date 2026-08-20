@@ -30,14 +30,19 @@ that look like something else.
 
 ### 1. blinky — the Docker host
 
-Name the host in the certificate, or nothing else will connect to it:
-
 ```bash
-./scripts/dev-certs.sh --force --host blinky.lab --host 10.0.0.5
-cp .env.example .env          # set BOOTSTRAP_TOKEN and the database password
-docker compose up -d --build
-BLINKY_HOST=blinky.lab ./smoke-test.sh
+sudo bash scripts/provision-cms.sh
 ```
+
+Docker, the repository, the certificates, the secrets, the CA and the stack.
+The certificate carries the machine's name **and its address**, because until
+the DC is serving the realm the name does not resolve and the address is the
+only way in — a name missing from that list surfaces much later as an agent
+that will not connect, complaining about trust rather than about a name.
+
+The secrets are generated rather than copied from an example, and `.env` is
+written root-only: it holds the database password, the bootstrap token, the
+operator token, and the key protecting every escrowed PUK.
 
 Ports the other machines need: **8443** console, **9443** agents. PostgreSQL on
 5432 is published for inspection and does not need to leave the host.
@@ -52,9 +57,13 @@ sudo bash scripts/provision-dc.sh
 
 One command, and it refuses to run on a machine that is already a DC —
 provisioning over an existing directory produces something that half works and
-fails later in ways that point everywhere except at the cause. The realm
-defaults to `CORP.EXAMPLE` because that is what the agents in this lab already
-enrolled with; override with `REALM=` and `DOMAIN=`.
+fails later in ways that point everywhere except at the cause. The realm is
+`BLINKY.LAB`; override with `REALM=` and `DOMAIN=`.
+
+**Pick it before the first run.** It ends up inside the directory and inside
+every certificate as a UPN suffix, and changing it afterwards means tearing the
+domain down and provisioning again — which is what happened here once already,
+because the script shipped with a default instead of asking.
 
 The domain administrator's password is generated and written to
 `/root/blinky-lab-dc.txt`, readable by root alone, rather than left in a
@@ -95,7 +104,7 @@ A VMware guest, joined to the domain, with the YubiKey passed through to it.
 
 ```
 Agent__BackendUrl=https://blinky.lab:9443
-Agent__Domain=corp.example
+Agent__Domain=blinky.lab
 Agent__BootstrapToken=<from blinky's .env>
 Agent__ServerCertificateAuthorityPath=C:\ProgramData\Blinky\dev-ca.crt
 ```

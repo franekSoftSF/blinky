@@ -9,7 +9,7 @@
 
       msiexec /i blinky-agent.msi /qn ^
               BACKEND=https://blinky.example:9443 ^
-              DOMAIN=corp.example ^
+              DOMAIN=blinky.lab ^
               BOOTSTRAPTOKEN=... ^
               SERVERCA=C:\certs\backend-ca.crt
 

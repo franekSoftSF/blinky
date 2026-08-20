@@ -63,7 +63,7 @@ start() {
     fi
     export Agent__BackendUrl="${AGENT_BACKEND:-https://localhost:9443}"
     export Agent__Hostname="${AGENT_HOSTNAME:-devbox}"
-    export Agent__Domain="${AGENT_DOMAIN:-corp.example}"
+    export Agent__Domain="${AGENT_DOMAIN:-blinky.lab}"
     export Agent__ServerCertificateAuthorityPath="${AGENT_SERVER_CA:-$root/certs/dev-ca.crt}"
     # Twenty seconds on a bench, where two minutes between creating a job
     # and seeing it run makes every test a coffee break. Not five: the

@@ -22,7 +22,7 @@
 set -euo pipefail
 
 DC_IP="${1:-}"
-REALM="${REALM:-CORP.EXAMPLE}"
+REALM="${REALM:-BLINKY.LAB}"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
