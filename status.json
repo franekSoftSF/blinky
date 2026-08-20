@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "building",
-    "summary": "Patches 0010-0015 and 0019 done. The agent enrols itself, reports four YubiKeys correctly, and names an HID Crescendo as an unsupported card rather than dropping it. 141 tests. Left in phase 1: 0016 (Bio) and 0018 (agent UI)."
+    "summary": "Phase 1 gate met on 2026-08-20: factory, ykman-provisioned and blocked-PIN tokens all read correctly, with no write from Blinky to any card. 0016 is mostly done as a side effect, 0017 is blocked with no Linux reader on the bench, 0018 is deferred to just before 0023. Next is phase 2, starting with 0020 and 0021."
   },
   "phases": [
     {
@@ -34,13 +34,13 @@
     {
       "id": 1,
       "title": "See the token",
-      "state": "in-progress",
+      "state": "gate-met",
       "done": "Three different YubiKeys - factory, ykman-provisioned, blocked PIN - each report correct state in the database, with no write to any card."
     },
     {
       "id": 2,
       "title": "Issue something",
-      "state": "not-started",
+      "state": "next",
       "done": "docker compose up, enrol a factory YubiKey from the console, and log into a Samba4 domain with it. No ADCS involved."
     },
     {

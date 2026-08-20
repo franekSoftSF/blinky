@@ -196,7 +196,8 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Phase | Title | State |
 |---|---|---|
 | 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token | **in progress** — 0010 to 0015 and 0019 done; 0016 and 0018 left |
+| 1 | See the token | **gate met** — 0010 to 0015 and 0019 done. 0016 mostly done as a side effect, 0017 blocked on hardware, 0018 deferred to just before 0023 |
+| 2 | Issue something | next — 0020 and 0021 |
 
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |

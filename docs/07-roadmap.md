@@ -33,11 +33,26 @@ YubiKey and tell the truth about it.
 | 0019 | Cards that are not YubiKeys are recognised, not ignored | A PIV card from another vendor is reported as unsupported with a reason, never mistaken for a broken YubiKey and never silently dropped; `6D00` is treated as absence throughout |
 | 0018 | `Agent.Ui`, the session 0 split and the named pipe | A PIN prompt is drawn in the user's session and answered over a pipe the service accepts only from the interactive user. Split out of 0015: inventory needs no prompt, and a window built three patches before the first one would be a shell nobody could test |
 | 0016 | Bio Multi-protocol: detect slot `96`, read enrolment state and match attempts, confirm the temporary-PIN encoding | A Bio token reports `bio_state=Enrolled` with its attempt count; a non-Bio token reports `NotSupported` from the card's answer, not from its model name |
-| 0017 | pcsc-lite interop, so the agent runs on Linux | The same `IApduTransport` over `libpcsclite`, with the register-width `DWORD` marshalling handled; the transcript replay tests pass on Linux and a reader test is run on one |
+| 0017 | pcsc-lite interop, so the agent runs on Linux — **blocked**, no Linux machine with a reader on this bench; building it would mean shipping untested marshalling under everything else | The same `IApduTransport` over `libpcsclite`, with the register-width `DWORD` marshalling handled; the transcript replay tests pass on Linux and a reader test is run on one |
 
-**Phase gate:** insert three different YubiKeys — factory, `ykman`-provisioned,
-and one with a blocked PIN — and the console shows the correct state for all
-three without a single write to any card.
+**Phase gate — met on 2026-08-20.** Factory, `ykman`-provisioned and
+blocked-PIN tokens all read correctly, with no write from Blinky to any card.
+
+The gate used to say "the console shows", which was unreachable by
+construction: the console is Phase 5. It reads **the database** — that is what
+the agent fills and what the console will later display.
+
+| State | How it was produced | What the database said |
+|---|---|---|
+| Factory | untouched 5.4.3 and 5.7.1 | `Default`, 3/3 |
+| Provisioned | `ykman` wrote an ECC P-256 key and certificate into 9A | slot `9A` **`Stale`** — Blinky did not put it there |
+| Blocked PIN | three deliberate wrong attempts on the spare 5.4.3 | `Blocked`, 0 retries, **`puk_state=Default`** |
+| Recovered | unblocked with the factory PUK | back to `Default`, 3/3 |
+
+The blocked row is the one worth reading twice: blocked *and recoverable* is a
+different operational situation from blocked with no PUK, and the two are
+distinct states rather than one flag. The token was restored afterwards and is
+back at its factory state.
 
 ## Phase 2 — Issue something
 

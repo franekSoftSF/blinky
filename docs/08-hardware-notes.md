@@ -25,6 +25,7 @@ virtual reader — with HID ActivClient installed alongside.
 | **`6D00` means absence, not failure** | `ATTEST` on a card from another vendor returned it and threw, wrecking an inventory pass over four unrelated tokens | [03 § Cards that are not YubiKeys](03-piv-layer.md), `PivSession.Attest` |
 | The **form factor exists only inside an attestation** | Blank on three of four tokens, present on the one holding a key. Reading it from a model name would have filled the column with a guess | `InventoryCollector` |
 | A PIV card with no serial **vanished silently** from the agent's view | An HID Crescendo produced no report at all; an operator cannot tell that from a dead agent | [03](03-piv-layer.md), `UnsupportedCardReport` |
+| **A blocked PIN and a token with no PUK are different situations**, not one "cannot get in" flag | Three deliberate wrong attempts left `Blocked`, 0 retries and `puk_state=Default`; the factory PUK restored it to 3/3 | `TokenClassification`, [07 § Phase gate](07-roadmap.md) |
 | The installed **minidriver does not contend** for the card | `SCARD_SHARE_SHARED` plus a transaction acquired cleanly with HID ActivClient present | [03 § Transport](03-piv-layer.md#transport) |
 | **Virtual readers appear in the list** and answer `SELECT PIV` with `6A82` | Windows Hello for Business, on every machine that has it enabled | `PivSession.Select` |
 
