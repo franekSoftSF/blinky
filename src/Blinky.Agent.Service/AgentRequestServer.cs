@@ -29,6 +29,7 @@ namespace Blinky.Agent.Service;
 [SupportedOSPlatform("windows")]
 public sealed class AgentRequestServer(
     CardOperations cards,
+    PukUnblock unblock,
     AgentOptions options,
     ILogger<AgentRequestServer> logger) : BackgroundService
 {
@@ -111,15 +112,11 @@ public sealed class AgentRequestServer(
                     cards.ChangePin(token, envelope.Secrets?.CurrentPin,
                         envelope.Secrets?.NewPin, options.PinPolicy),
 
-                AgentRequest.ChangePuk when request.TokenSerial is { } token =>
-                    cards.ChangePuk(token, envelope.Secrets?.CurrentPin,
-                        envelope.Secrets?.NewPin, options.PinPolicy),
-
                 AgentRequest.UnblockPin when request.TokenSerial is { } token =>
-                    cards.UnblockPin(token, envelope.Secrets?.Puk,
-                        envelope.Secrets?.NewPin, options.PinPolicy),
+                    await unblock.UnblockAsync(token, envelope.Secrets?.NewPin ?? string.Empty,
+                        options.PinPolicy, ct),
 
-                AgentRequest.ChangePin or AgentRequest.ChangePuk or AgentRequest.UnblockPin =>
+                AgentRequest.ChangePin or AgentRequest.UnblockPin =>
                     AgentResponse.Failed("That request has to name a token."),
 
                 _ => AgentResponse.Failed($"This agent does not know the request {request.Op}."),

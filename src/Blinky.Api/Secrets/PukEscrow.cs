@@ -1,0 +1,267 @@
+using System.Security.Cryptography;
+using System.Text;
+using Blinky.Api.Persistence;
+using Blinky.Domain;
+using Blinky.Domain.Entities;
+using NHibernate.Linq;
+
+namespace Blinky.Api.Secrets;
+
+/// <summary>
+/// Holds the PUK so that nobody has to.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A PUK a person knows is a PUK that is written down, shared, and the same on
+/// every token in a drawer. The way out is not to let people choose a better
+/// one — it is to make the value something no person ever sees: random per
+/// token, encrypted at rest, released to a workstation for the seconds an
+/// unblock takes, and replaced immediately afterwards.
+/// </para>
+/// <para>
+/// What that gives is challenge and response in the sense that matters here:
+/// the card presents an identity, the server decides and returns the value that
+/// answers it, and the value is spent on use. It is <b>not</b> a
+/// challenge-response exchange with the card, and it cannot be — PIV has one
+/// unblock command, <c>RESET RETRY COUNTER</c>, and it takes a PUK in its data
+/// field. There is no APDU to build the other thing on. See docs/10-agent-ui.md.
+/// </para>
+/// <para>
+/// The KEK protecting these is one of the three secrets in docs/06-security.md
+/// whose loss means every escrowed PUK.
+/// </para>
+/// </remarks>
+public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> logger)
+{
+    /// <summary>
+    /// Eight digits, which is the PIV maximum and what every token ships with.
+    /// </summary>
+    private const int PukLength = 8;
+
+    /// <summary>The value PIV tokens leave the factory with.</summary>
+    public const string FactoryPuk = "12345678";
+
+    /// <summary>
+    /// Hands out the PUK currently on the card and the one that will replace
+    /// it.
+    /// </summary>
+    /// <remarks>
+    /// Both at once, in one call, because the agent needs the second before it
+    /// can spend the first: unblock with the current value, then change the PUK
+    /// to the next one, inside the same transaction with the card. Two round
+    /// trips would put a network between two APDUs that must not be separated.
+    /// </remarks>
+    public PukCheckout? Checkout(long serial, string actor)
+    {
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var token = session.Query<Token>().SingleOrDefault(t => t.Serial == serial);
+        if (token is null)
+        {
+            return null;
+        }
+
+        if (token.PukState is CredentialSecretState.NotApplicable
+            or CredentialSecretState.Disabled)
+        {
+            // A Bio has no PUK at all and a disabled one cannot be used. Both
+            // are refusals rather than failures, and the caller must be able to
+            // say which.
+            throw new PukUnavailableException(
+                $"Token {serial} has no usable PUK ({token.PukState}).");
+        }
+
+        var current = Current(session, token);
+
+        var next = Generate();
+        var pending = Wrap(token, next, SecretKind.PukPending);
+
+        session.Save(pending);
+
+        session.Save(new AuditEvent
+        {
+            OccurredAt = DateTime.UtcNow,
+            EventType = "puk.disclosed",
+            Actor = actor,
+            SubjectType = nameof(Token),
+            SubjectId = token.Id,
+            TokenSerial = serial,
+
+            // The disclosure is the event, never the value. This row is exempt
+            // from retention precisely because it is the record that somebody
+            // took a PUK out of escrow.
+            Detail = $$"""{"reason":"unblock","pending":"{{pending.Id}}"}""",
+        });
+
+        transaction.Commit();
+
+        logger.LogWarning("The PUK for token {Serial} was disclosed to {Actor}", serial, actor);
+
+        return new PukCheckout(pending.Id, current, next);
+    }
+
+    /// <summary>
+    /// Promotes the replacement once the card has taken it.
+    /// </summary>
+    /// <remarks>
+    /// Only on the agent's word that the card accepted the change. Until then
+    /// both values exist here and the previous one stays usable, because an
+    /// unblock that died between the two APDUs leaves the card holding the old
+    /// PUK and nothing else knows which.
+    /// </remarks>
+    public bool Commit(long serial, Guid checkoutId)
+    {
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var token = session.Query<Token>().SingleOrDefault(t => t.Serial == serial);
+        if (token is null)
+        {
+            return false;
+        }
+
+        var pending = session.Get<SecretEnvelope>(checkoutId);
+        if (pending is null || pending.Token.Id != token.Id
+            || pending.Kind != SecretKind.PukPending)
+        {
+            return false;
+        }
+
+        foreach (var superseded in session.Query<SecretEnvelope>()
+                     .Where(e => e.Token.Id == token.Id && e.Kind == SecretKind.Puk)
+                     .ToList())
+        {
+            session.Delete(superseded);
+        }
+
+        pending.Kind = SecretKind.Puk;
+        session.Update(pending);
+
+        // Set, not Default: whatever the card shipped with, it is now holding
+        // a value only this escrow knows.
+        token.PukState = CredentialSecretState.Set;
+        token.UpdatedAt = DateTime.UtcNow;
+        session.Update(token);
+
+        session.Save(new AuditEvent
+        {
+            OccurredAt = DateTime.UtcNow,
+            EventType = "puk.rotated",
+            SubjectType = nameof(Token),
+            SubjectId = token.Id,
+            TokenSerial = serial,
+            Detail = $$"""{"checkout":"{{checkoutId}}"}""",
+        });
+
+        transaction.Commit();
+
+        return true;
+    }
+
+    /// <summary>
+    /// The PUK the card is believed to hold.
+    /// </summary>
+    /// <remarks>
+    /// Nothing escrowed and a card still reporting the factory value means the
+    /// factory value: that is not a secret Blinky is keeping, it is one the
+    /// vendor published, and pretending otherwise would make the first unblock
+    /// of every new token fail.
+    /// </remarks>
+    private string Current(NHibernate.ISession session, Token token)
+    {
+        var escrowed = session.Query<SecretEnvelope>()
+            .Where(e => e.Token.Id == token.Id && e.Kind == SecretKind.Puk)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefault();
+
+        if (escrowed is not null)
+        {
+            return Unwrap(escrowed);
+        }
+
+        if (token.PukState == CredentialSecretState.Default)
+        {
+            return FactoryPuk;
+        }
+
+        throw new PukUnavailableException(
+            $"Token {token.Serial} has a PUK that Blinky did not set and does not hold. "
+            + "It cannot be unblocked from here.");
+    }
+
+    /// <summary>
+    /// Eight digits from a cryptographic source, sampled without modulo bias.
+    /// </summary>
+    /// <remarks>
+    /// Digits rather than the full byte range because the card is told this
+    /// value as ASCII and other software reads PIV secrets back assuming
+    /// numerals.
+    /// </remarks>
+    private static string Generate()
+    {
+        var digits = new char[PukLength];
+
+        for (var i = 0; i < PukLength; i++)
+        {
+            digits[i] = (char)('0' + RandomNumberGenerator.GetInt32(0, 10));
+        }
+
+        return new string(digits);
+    }
+
+    private SecretEnvelope Wrap(Token token, string puk, SecretKind kind)
+    {
+        var nonce = RandomNumberGenerator.GetBytes(AesGcm.NonceByteSizes.MaxSize);
+        var plaintext = Encoding.ASCII.GetBytes(puk);
+        var ciphertext = new byte[plaintext.Length];
+        var tag = new byte[AesGcm.TagByteSizes.MaxSize];
+
+        // The serial is authenticated but not encrypted, so a ciphertext moved
+        // to another token's row fails to open rather than opening as somebody
+        // else's PUK.
+        var associated = $"puk|{token.Serial}";
+
+        using var aes = new AesGcm(kek, tag.Length);
+        aes.Encrypt(nonce, plaintext, ciphertext, tag, Encoding.ASCII.GetBytes(associated));
+
+        CryptographicOperations.ZeroMemory(plaintext);
+
+        return new SecretEnvelope
+        {
+            Token = token,
+            Kind = kind,
+            KeyVersion = 1,
+            Ciphertext = ciphertext,
+            Nonce = nonce,
+            Tag = tag,
+            AssociatedData = associated,
+            CreatedAt = DateTime.UtcNow,
+        };
+    }
+
+    private string Unwrap(SecretEnvelope envelope)
+    {
+        var plaintext = new byte[envelope.Ciphertext.Length];
+
+        using var aes = new AesGcm(kek, envelope.Tag.Length);
+
+        aes.Decrypt(envelope.Nonce, envelope.Ciphertext, envelope.Tag, plaintext,
+            Encoding.ASCII.GetBytes(envelope.AssociatedData));
+
+        return Encoding.ASCII.GetString(plaintext);
+    }
+}
+
+/// <summary>The current PUK, its replacement, and the row that tracks the swap.</summary>
+public sealed record PukCheckout(Guid CheckoutId, string CurrentPuk, string NextPuk);
+
+/// <summary>
+/// The token cannot be unblocked, and the reason belongs in the answer.
+/// </summary>
+/// <remarks>
+/// A refusal, not a fault: a Bio has no PUK by design and a token somebody else
+/// personalised has one Blinky never held. Both are things an operator needs
+/// told, not a 500.
+/// </remarks>
+public sealed class PukUnavailableException(string message) : Exception(message);

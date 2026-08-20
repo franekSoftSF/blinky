@@ -212,6 +212,46 @@ public sealed class BackendClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Asks for the PUK this token holds and the one to replace it with.
+    /// </summary>
+    /// <returns>Null when the backend refused or could not be reached.</returns>
+    public async Task<PukMaterial?> CheckoutPukAsync(long serial, CancellationToken ct)
+    {
+        try
+        {
+            var response = await Authenticated()
+                .PostAsync($"/api/tokens/{serial}/puk/checkout", content: null, ct);
+
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<PukMaterial>(ct)
+                : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException
+                                      or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Says the card took the replacement, so escrow may promote it.</summary>
+    public async Task<bool> ConfirmPukRotatedAsync(long serial, Guid checkoutId,
+        CancellationToken ct)
+    {
+        try
+        {
+            var response = await Authenticated().PostAsJsonAsync(
+                $"/api/tokens/{serial}/puk/rotated", new PukRotated(checkoutId), ct);
+
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException
+                                      or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     private HttpClient Authenticated() => authenticated
         ?? throw new InvalidOperationException("The agent has no identity yet.");
 

@@ -43,3 +43,23 @@ public sealed record IssuedCredential(
 /// that leak. See docs/02-data-model.md.
 /// </remarks>
 public sealed record CredentialInstalled(Guid CredentialId, string Thumbprint);
+
+/// <summary>
+/// The PUK a card is holding and the one that will replace it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Both in one answer because the agent needs the second before it can spend
+/// the first: unblock with the current value, then change the PUK to the next,
+/// inside a single transaction with the card. A second round trip would put a
+/// network between two APDUs that must not be separated.
+/// </para>
+/// <para>
+/// This never reaches a window and is never written down. It exists for the
+/// length of one card operation in the service. See docs/10-agent-ui.md.
+/// </para>
+/// </remarks>
+public sealed record PukMaterial(Guid CheckoutId, string CurrentPuk, string NextPuk);
+
+/// <summary>The card took the replacement; escrow may promote it.</summary>
+public sealed record PukRotated(Guid CheckoutId);

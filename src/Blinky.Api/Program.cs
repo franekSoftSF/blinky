@@ -1,6 +1,7 @@
 using Blinky.Api.Agents;
 using Blinky.Api.Persistence;
 using Blinky.Api.Credentials;
+using Blinky.Api.Secrets;
 using Blinky.Api.Jobs;
 using Blinky.Api.Security;
 using Blinky.Api.Tokens;
@@ -37,6 +38,15 @@ builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
         TimeSpan.FromHours(6)));
 
 builder.Services.AddSingleton<CredentialIssuanceService>();
+
+// The key that protects every escrowed PUK. Refused rather than generated when
+// absent: a KEK invented at startup would encrypt this run's PUKs with a value
+// that dies with the process, and the tokens would be unrecoverable without
+// anything having looked wrong.
+builder.Services.AddSingleton(services => new PukEscrow(
+    services.GetRequiredService<Database>(),
+    PukKek(builder.Configuration),
+    services.GetRequiredService<ILogger<PukEscrow>>()));
 
 builder.Services.AddSingleton(services => new AgentEnrolmentService(
     services.GetRequiredService<Database>(),
@@ -242,6 +252,39 @@ app.MapPost("/api/credentials/issue",
         }
     });
 
+// Unblocking, in the only shape PIV allows. The card takes a PUK and nothing
+// else - there is no challenge-response unblock APDU to build on - so the value
+// stops being a secret people know and becomes one only this server holds:
+// random per token, released for the seconds an unblock takes, replaced
+// immediately. See docs/10-agent-ui.md.
+app.MapPost("/api/tokens/{serial:long}/puk/checkout",
+    (long serial, HttpContext context, PukEscrow escrow) =>
+    {
+        var agent = (Agent)context.Items["agent"]!;
+
+        try
+        {
+            var checkout = escrow.Checkout(serial, $"agent:{agent.Hostname}");
+
+            return checkout is null
+                ? Results.NotFound(new { error = "no such token" })
+                : Results.Ok(new PukMaterial(checkout.CheckoutId, checkout.CurrentPuk,
+                    checkout.NextPuk));
+        }
+        catch (PukUnavailableException ex)
+        {
+            // A refusal, not a fault: a Bio has no PUK by design and a token
+            // somebody else personalised has one this server never held.
+            return Results.Json(new { error = ex.Message }, statusCode: 422);
+        }
+    });
+
+app.MapPost("/api/tokens/{serial:long}/puk/rotated",
+    (long serial, PukRotated confirmation, PukEscrow escrow) =>
+        escrow.Commit(serial, confirmation.CheckoutId)
+            ? Results.NoContent()
+            : Results.NotFound(new { error = "no such checkout" }));
+
 // What the backend believes is on a token, so an agent can compare it with
 // what the card actually holds. The disagreement is the point: a credential the
 // server thinks is installed and the card does not have is the leak that
@@ -331,6 +374,33 @@ app.Run();
 /// the first wrong byte would leak the prefix to anything that can time a
 /// request.
 /// </summary>
+/// <summary>
+/// Thirty-two bytes of base64 from configuration, and nothing else will do.
+/// </summary>
+/// <remarks>
+/// Deliberately not optional and deliberately not generated. Escrow that
+/// silently starts working with a throwaway key looks identical to escrow that
+/// works, right up to the first unblock after a restart.
+/// </remarks>
+static byte[] PukKek(IConfiguration configuration)
+{
+    var configured = configuration["Blinky:Puk:Kek"];
+
+    if (string.IsNullOrWhiteSpace(configured))
+    {
+        throw new InvalidOperationException(
+            "Blinky:Puk:Kek is not set. PUK escrow needs a 32-byte key, base64 encoded; "
+            + "generate one with: openssl rand -base64 32");
+    }
+
+    var kek = Convert.FromBase64String(configured);
+
+    return kek.Length == 32
+        ? kek
+        : throw new InvalidOperationException(
+            $"Blinky:Puk:Kek decodes to {kek.Length} bytes; AES-256 needs 32.");
+}
+
 static bool IsOperator(HttpContext context, string expected)
 {
     if (string.IsNullOrEmpty(expected))

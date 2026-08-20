@@ -97,4 +97,14 @@ public enum SecretKind
 {
     Puk,
     ManagementKey,
+
+    /// <summary>
+    /// A PUK handed out but not yet confirmed on the card.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="Puk"/> so that an unblock which died between
+    /// the reset and the rotation does not lose the value the card is still
+    /// holding. Both exist until an agent says the card took the new one.
+    /// </remarks>
+    PukPending,
 }

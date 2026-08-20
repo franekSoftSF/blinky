@@ -57,6 +57,7 @@ static void AddWindowsOnlyServices(IServiceCollection services)
     services.AddSingleton<UserPrompts>();
     services.AddSingleton<ICardEnrolment, CardEnrolment>();
     services.AddSingleton<CardOperations>();
+    services.AddSingleton<PukUnblock>();
 
     // The tray's half of the conversation. Windows-only for the same reason
     // everything else here is: it ends at a reader.

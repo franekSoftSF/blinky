@@ -10,7 +10,15 @@ namespace Blinky.Agent.Ui;
 public enum PinDialogKind
 {
     ChangePin,
-    ChangePuk,
+
+    /// <summary>
+    /// Sets a new PIN on a blocked token.
+    /// </summary>
+    /// <remarks>
+    /// Asks for the new PIN and nothing else. The PUK is fetched, spent and
+    /// replaced by the service without ever reaching this process — see
+    /// <c>PukUnblock</c> and docs/10-agent-ui.md.
+    /// </remarks>
     Unblock,
 }
 
@@ -39,7 +47,6 @@ public partial class PinDialog : Window
     /// them is worth a warning.
     /// </summary>
     private const string FactoryPin = "123456";
-    private const string FactoryPuk = "12345678";
 
     private readonly RequestClient client;
     private readonly TokenView token;
@@ -58,34 +65,32 @@ public partial class PinDialog : Window
 
         var strings = Strings.Current;
 
-        Title = strings[kind switch
-        {
-            PinDialogKind.ChangePuk => "Puk.ChangeTitle",
-            PinDialogKind.Unblock => "Pin.UnblockTitle",
-            _ => "Pin.ChangeTitle",
-        }];
+        var unblocking = kind == PinDialogKind.Unblock;
 
+        Title = strings[unblocking ? "Pin.UnblockTitle" : "Pin.ChangeTitle"];
         TitleText.Text = Title;
-        RulesText.Text = strings["Pin.Rules"] + " " + strings["Pin.RulesCaveat"];
 
-        FirstLabel.Text = strings[kind switch
-        {
-            PinDialogKind.ChangePuk => "Puk.Current",
-            PinDialogKind.Unblock => "Pin.Puk",
-            _ => "Pin.Current",
-        }];
+        RulesText.Text = (unblocking ? strings["Pin.UnblockExplained"] + "  " : string.Empty)
+                         + strings["Pin.Rules"] + " " + strings["Pin.RulesCaveat"];
 
-        var changingPuk = kind == PinDialogKind.ChangePuk;
-        NewLabel.Text = strings[changingPuk ? "Puk.New" : "Pin.New"];
-        RepeatLabel.Text = strings[changingPuk ? "Puk.Repeat" : "Pin.Repeat"];
+        // An unblock asks for one thing: the new PIN. There is no first field
+        // because there is nothing for the person to supply - the PUK is not
+        // theirs to know.
+        FirstLabel.Visibility = unblocking ? Visibility.Collapsed : Visibility.Visible;
+        FirstBox.Visibility = FirstLabel.Visibility;
+
+        FirstLabel.Text = strings["Pin.Current"];
+        NewLabel.Text = strings["Pin.New"];
+        RepeatLabel.Text = strings["Pin.Repeat"];
 
         Prefill();
 
         Loaded += (_, _) =>
         {
-            // Focus goes to the first empty box. Landing in a field that is
-            // already filled in means the first keystroke silently replaces it.
-            if (FirstBox.Password.Length > 0)
+            // Focus goes to the first box a person has to fill. Landing in a
+            // field that is already filled in means the first keystroke
+            // silently replaces it.
+            if (unblocking || FirstBox.Password.Length > 0)
             {
                 NewBox.Focus();
             }
@@ -113,13 +118,9 @@ public partial class PinDialog : Window
     /// </remarks>
     private void Prefill()
     {
-        var prefilled = kind switch
-        {
-            PinDialogKind.ChangePin when token.PinIsDefault => FactoryPin,
-            PinDialogKind.ChangePuk when token.PukIsDefault => FactoryPuk,
-            PinDialogKind.Unblock when token.PukIsDefault => FactoryPuk,
-            _ => null,
-        };
+        var prefilled = kind == PinDialogKind.ChangePin && token.PinIsDefault
+            ? FactoryPin
+            : null;
 
         if (prefilled is null)
         {
@@ -190,16 +191,9 @@ public partial class PinDialog : Window
         MessageText.Foreground = (Brush?)TryFindResource("TextMuted") ?? Brushes.Gray;
         MessageText.Text = Strings.Current["Pin.Working"];
 
-        var (op, secrets) = kind switch
-        {
-            PinDialogKind.ChangePuk => (AgentRequest.ChangePuk,
-                new AgentSecrets(CurrentPin: first, NewPin: value)),
-
-            PinDialogKind.Unblock => (AgentRequest.UnblockPin,
-                new AgentSecrets(Puk: first, NewPin: value)),
-
-            _ => (AgentRequest.ChangePin, new AgentSecrets(CurrentPin: first, NewPin: value)),
-        };
+        var (op, secrets) = kind == PinDialogKind.Unblock
+            ? (AgentRequest.UnblockPin, new AgentSecrets(NewPin: value))
+            : (AgentRequest.ChangePin, new AgentSecrets(CurrentPin: first, NewPin: value));
 
         var response = await client.SendAsync(new AgentRequest(op, token.Serial), secrets);
 
@@ -213,12 +207,7 @@ public partial class PinDialog : Window
         if (response.Succeeded)
         {
             MessageBox.Show(
-                Strings.Current[kind switch
-                {
-                    PinDialogKind.ChangePuk => "Puk.Changed",
-                    PinDialogKind.Unblock => "Pin.Unblocked",
-                    _ => "Pin.Changed",
-                }],
+                Strings.Current[kind == PinDialogKind.Unblock ? "Pin.Unblocked" : "Pin.Changed"],
                 Strings.Current["App.Name"], MessageBoxButton.OK, MessageBoxImage.Information);
 
             DialogResult = true;

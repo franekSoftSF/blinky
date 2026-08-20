@@ -163,62 +163,6 @@ public sealed class CardOperations(
         });
     }
 
-    /// <summary>Changes the PUK, given the current one.</summary>
-    /// <remarks>
-    /// The same complexity rules as a PIN. A PUK is the thing that rescues a
-    /// PIN, so a guessable one makes the PIN's rules decorative.
-    /// </remarks>
-    public AgentResponse ChangePuk(long serial, string? currentPuk, string? newPuk,
-        PinComplexityPolicy policy)
-    {
-        var verdict = PinRules.Check(newPuk, policy, serial);
-        if (!verdict.IsAcceptable)
-        {
-            return AgentResponse.Failed(verdict.Explanation);
-        }
-
-        if (string.IsNullOrEmpty(currentPuk))
-        {
-            return AgentResponse.Failed("The current PUK is required.");
-        }
-
-        return OnToken(serial, session =>
-        {
-            session.ChangePuk(currentPuk, newPuk!);
-
-            logger.LogInformation("The PUK on token {Serial} was changed", serial);
-
-            return new AgentResponse(true);
-        });
-    }
-
-    /// <summary>
-    /// Sets a new PIN using the PUK, which is the only way back from a blocked
-    /// one.
-    /// </summary>
-    public AgentResponse UnblockPin(long serial, string? puk, string? newPin, PinComplexityPolicy policy)
-    {
-        var verdict = PinRules.Check(newPin, policy, serial, puk);
-        if (!verdict.IsAcceptable)
-        {
-            return AgentResponse.Failed(verdict.Explanation);
-        }
-
-        if (string.IsNullOrEmpty(puk))
-        {
-            return AgentResponse.Failed("The PUK is required.");
-        }
-
-        return OnToken(serial, session =>
-        {
-            session.UnblockPin(puk, newPin!);
-
-            logger.LogInformation("The PIN on token {Serial} was unblocked", serial);
-
-            return new AgentResponse(true);
-        });
-    }
-
     /// <summary>
     /// Finds the token by serial and runs one operation inside a single
     /// transaction, translating whatever the card said into something a person

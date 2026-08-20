@@ -101,7 +101,6 @@ public sealed class Strings : INotifyPropertyChanged
         ["Pin.ChangeTitle"] = "Change the PIN",
         ["Pin.UnblockTitle"] = "Unblock the PIN",
         ["Pin.Current"] = "Current PIN",
-        ["Pin.Puk"] = "PUK",
         ["Pin.New"] = "New PIN",
         ["Pin.Repeat"] = "New PIN again",
         ["Pin.Mismatch"] = "The two entries do not match.",
@@ -117,13 +116,14 @@ public sealed class Strings : INotifyPropertyChanged
                               + "whether yours is a good one.",
 
         ["Manage.Title"] = "MANAGE",
-        ["Manage.ChangePuk"] = "Change PUK",
-        ["Manage.UnblockHint"] = "Sets a new PIN using the PUK.",
+        ["Manage.UnblockHint"] = "Sets a new PIN. Needs the backend.",
+        ["Pin.UnblockExplained"] = "You are not asked for a PUK: Blinky holds it, spends it "
+                                   + "on this unblock and replaces it straight afterwards. "
+                                   + "This needs the backend to be reachable.",
         ["Manage.Unknown"] = "not reported by this firmware",
 
         ["Default.Banner"] = "Still at the factory value:",
         ["Default.Pin"] = "PIN",
-        ["Default.Puk"] = "PUK",
         ["Default.Warning"] = "factory value",
         ["Default.Prefilled"] = "Filled in with the factory value, which is what this card "
                                 + "reports it still has.",
@@ -141,11 +141,6 @@ public sealed class Strings : INotifyPropertyChanged
         ["Badge.Unmanaged"] = "not managed",
         ["Badge.Unknown"] = "unknown",
 
-        ["Puk.ChangeTitle"] = "Change the PUK",
-        ["Puk.Current"] = "Current PUK",
-        ["Puk.New"] = "New PUK",
-        ["Puk.Repeat"] = "New PUK again",
-        ["Puk.Changed"] = "The PUK was changed.",
 
         ["Tray.Theme"] = "Motyw / Theme",
         ["Tray.ThemeSystem"] = "System",
@@ -190,7 +185,6 @@ public sealed class Strings : INotifyPropertyChanged
         ["Pin.ChangeTitle"] = "Zmiana PIN-u",
         ["Pin.UnblockTitle"] = "Odblokowanie PIN-u",
         ["Pin.Current"] = "Obecny PIN",
-        ["Pin.Puk"] = "PUK",
         ["Pin.New"] = "Nowy PIN",
         ["Pin.Repeat"] = "Nowy PIN ponownie",
         ["Pin.Mismatch"] = "Oba wpisy się różnią.",
@@ -206,13 +200,14 @@ public sealed class Strings : INotifyPropertyChanged
                               + "czy Twój jest dobry.",
 
         ["Manage.Title"] = "ZARZĄDZANIE",
-        ["Manage.ChangePuk"] = "Zmień PUK",
-        ["Manage.UnblockHint"] = "Ustawia nowy PIN przy użyciu PUK-u.",
+        ["Manage.UnblockHint"] = "Ustawia nowy PIN. Wymaga połączenia z serwerem.",
+        ["Pin.UnblockExplained"] = "Nie pytamy o PUK: Blinky go przechowuje, zużywa na to "
+                                   + "odblokowanie i zaraz potem wymienia. Wymaga to "
+                                   + "połączenia z serwerem.",
         ["Manage.Unknown"] = "ten firmware tego nie podaje",
 
         ["Default.Banner"] = "Nadal wartość fabryczna:",
         ["Default.Pin"] = "PIN",
-        ["Default.Puk"] = "PUK",
         ["Default.Warning"] = "wartość fabryczna",
         ["Default.Prefilled"] = "Wpisane wartością fabryczną, bo karta sama zgłasza, że wciąż ją ma.",
 
@@ -229,11 +224,6 @@ public sealed class Strings : INotifyPropertyChanged
         ["Badge.Unmanaged"] = "niezarządzany",
         ["Badge.Unknown"] = "nieznany",
 
-        ["Puk.ChangeTitle"] = "Zmiana PUK-u",
-        ["Puk.Current"] = "Obecny PUK",
-        ["Puk.New"] = "Nowy PUK",
-        ["Puk.Repeat"] = "Nowy PUK ponownie",
-        ["Puk.Changed"] = "PUK został zmieniony.",
 
         ["Tray.Theme"] = "Motyw / Theme",
         ["Tray.ThemeSystem"] = "Systemowy",

@@ -145,11 +145,6 @@ public partial class TokensWindow : Window
             atFactory.Add(strings["Default.Pin"]);
         }
 
-        if (token.PukIsDefault)
-        {
-            atFactory.Add(strings["Default.Puk"]);
-        }
-
         if (atFactory.Count == 0)
         {
             DefaultsBanner.Visibility = Visibility.Collapsed;
@@ -170,13 +165,7 @@ public partial class TokensWindow : Window
         // A token with no PUK is not a token with a PUK we cannot see. The Bio
         // has none by design, and offering an action that would certainly fail
         // teaches people that this window guesses.
-        ChangePukButton.IsEnabled = token.HasPuk;
         UnblockButton.IsEnabled = token.HasPuk;
-
-        PukStateText.Text = token.HasPuk
-            ? Attempts(token.PukAttemptsRemaining)
-              + (token.PukIsDefault ? "  •  " + strings["Default.Warning"] : string.Empty)
-            : strings["Tokens.NoPuk"];
 
         UnblockStateText.Text = token.HasPuk
             ? strings["Manage.UnblockHint"]
@@ -192,9 +181,6 @@ public partial class TokensWindow : Window
 
     private async void ChangePin_Click(object sender, RoutedEventArgs e) =>
         await OpenAsync(PinDialogKind.ChangePin);
-
-    private async void ChangePuk_Click(object sender, RoutedEventArgs e) =>
-        await OpenAsync(PinDialogKind.ChangePuk);
 
     private async void Unblock_Click(object sender, RoutedEventArgs e) =>
         await OpenAsync(PinDialogKind.Unblock);

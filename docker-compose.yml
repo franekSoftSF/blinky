@@ -42,6 +42,11 @@ services:
       # Development material. A file-backed CA key refuses to load without this
       # said out loud, because nobody ever decides to use one - they inherit it.
       Blinky__Ca__AllowFileKeys: "true"
+      # Escrowed PUKs are encrypted with this. The API refuses to start without
+      # it rather than inventing one: a key generated at startup would encrypt
+      # this run's PUKs with a value that dies with the process, and every token
+      # unblocked today would be unrecoverable tomorrow.
+      Blinky__Puk__Kek: ${PUK_KEK}
     volumes:
       # The agent CA signs the certificates agents authenticate with. Dev
       # material from scripts/dev-certs.sh; in production this is the one thing

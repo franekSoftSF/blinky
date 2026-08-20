@@ -35,11 +35,15 @@ public sealed record AgentRequest(
     /// <summary>Change the PIN, given the current one.</summary>
     public const string ChangePin = "ChangePin";
 
-    /// <summary>Set a new PIN using the PUK.</summary>
+    /// <summary>
+    /// Unblock a PIN.
+    /// </summary>
+    /// <remarks>
+    /// Carries a new PIN and no PUK. The PUK is not the user's to know: the
+    /// service fetches it, spends it and replaces it, all without it reaching
+    /// this side of the pipe. See docs/10-agent-ui.md.
+    /// </remarks>
     public const string UnblockPin = "UnblockPin";
-
-    /// <summary>Change the PUK, given the current one.</summary>
-    public const string ChangePuk = "ChangePuk";
 
     /// <summary>The rules a new PIN has to satisfy on this deployment.</summary>
     public const string GetPinPolicy = "GetPinPolicy";
@@ -55,8 +59,7 @@ public sealed record AgentRequest(
 /// </remarks>
 public sealed record AgentSecrets(
     string? CurrentPin = null,
-    string? NewPin = null,
-    string? Puk = null);
+    string? NewPin = null);
 
 /// <summary>A request and its secrets, as one line on the pipe.</summary>
 public sealed record AgentRequestEnvelope(AgentRequest Request, AgentSecrets? Secrets = null);
