@@ -42,3 +42,7 @@ ca/
 
 # Build output: a 67 MB MSI does not belong in git history.
 artifacts/
+
+# Worktrees for parallel work. A worktree is not content: committed, it lands
+# as an embedded repository that no clone can resolve.
+.worktrees/
