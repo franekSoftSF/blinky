@@ -6,6 +6,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+
+    <!-- Directory.Build.props turns globalization-invariant mode on for every
+         project, which is right for a container and fatal here: WPF asks for
+         the current input language the moment a text control takes focus, and
+         invariant mode rejects any real culture. The crash therefore happens
+         exactly when somebody clicks into the PIN box. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>

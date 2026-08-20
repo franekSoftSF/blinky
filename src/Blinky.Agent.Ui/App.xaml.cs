@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Windows;
+using System.Windows.Threading;
 using Blinky.Contracts;
 
 namespace Blinky.Agent.Ui;
@@ -31,11 +32,21 @@ public partial class App : Application
 
         window = new MainWindow();
 
+        Trace($"started with {e.Args.Length} args: {string.Join(" ", e.Args)}");
+
         if (Array.Exists(e.Args, a => a == "--prompt-once"))
         {
-            RunOnce();
+            Trace("self test requested");
+
+            // Deferred until the message loop is pumping. Showing a window
+            // from OnStartup runs before Application.Run(), and the window
+            // never acquires a handle - the process sits there alive with
+            // nothing on screen, which is a miserable thing to diagnose.
+            Dispatcher.InvokeAsync(RunOnce, DispatcherPriority.ApplicationIdle);
             return;
         }
+
+        Trace("waiting for the service on the pipe");
 
         var client = new PromptClient(request => window.ShowPromptAsync(request));
 
@@ -45,6 +56,10 @@ public partial class App : Application
     /// <summary>Shows one PIN prompt locally, prints the outcome, and exits.</summary>
     private async void RunOnce()
     {
+        Trace("showing the prompt");
+
+        Trace($"window handle before showing: {new System.Windows.Interop.WindowInteropHelper(window!).Handle}");
+
         var response = await window!.ShowPromptAsync(
             PromptRequest.ForPin(29177301, 3, "Self test - nothing is sent anywhere."));
 
@@ -55,6 +70,26 @@ public partial class App : Application
             "Blinky self test");
 
         Shutdown();
+    }
+
+    /// <summary>
+    /// A window-less process has nowhere to print. Diagnosing why nothing
+    /// appeared needs somewhere to look, and this is it.
+    /// </summary>
+    private static void Trace(string message)
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "blinky-agent-ui.log");
+
+            System.IO.File.AppendAllText(path,
+                $"{DateTime.Now:HH:mm:ss} {message}{System.Environment.NewLine}");
+        }
+        catch
+        {
+            // Diagnostics must never be the reason something fails.
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

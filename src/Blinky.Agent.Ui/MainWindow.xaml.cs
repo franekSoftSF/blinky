@@ -50,6 +50,7 @@ public partial class MainWindow : Window
 
             Show();
             Activate();
+            Topmost = true;
             PinBox.Focus();
         });
 

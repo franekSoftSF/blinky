@@ -210,7 +210,7 @@ write it.
 | 0015 | Agent service and the inventory job | **done** | Four tokens in the database within one poll |
 | 0016 | Bio Multi-protocol | **done, unverified** | State reads correctly on a real Bio. The temporary-PIN encoding is unconfirmed — asking for one consumes a match attempt, and nothing needs it until 0027 |
 | 0017 | pcsc-lite interop, so the agent runs on Linux | **blocked** | No Linux machine with a reader here. Writing marshalling nothing can test would put untested code under everything else |
-| 0018 | `Agent.Ui`, the session 0 split and the named pipe | **done, unverified** | The pipe is driven from both ends in tests: a PIN typed in the user session reaches the service, cancelling yields no PIN, and nobody listening times out. The window itself has only been shown by hand |
+| 0018 | `Agent.Ui`, the session 0 split and the named pipe | **done** | The pipe is driven from both ends in tests, and the window was run and typed into: a seven-character PIN accepted, range-checked and discarded. Two bugs found by running it that no test could have caught |
 | 0019 | Cards that are not YubiKeys are recognised, not ignored | **done** | An HID Crescendo and a C4000 named and skipped, not dropped |
 
 ### Phase 2 — Issue something — **in progress**

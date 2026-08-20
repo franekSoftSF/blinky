@@ -42,6 +42,17 @@ virtual reader — with HID ActivClient installed alongside.
 | **A job's envelope and its row must carry the same identifier** | They did not: the endpoint generated one and NHibernate assigned another. The agent reported progress against a job that did not exist, the server refused it, the agent ignored the refusal — so the work ran, nothing was recorded, and the watchdog reclaimed the job | `JobService.Create`, `BackendClient` |
 | A **bootstrap token cannot be single-use** if it ships in an MSI to a fleet | Design review against the actual deployment path | [05](05-agent-protocol.md#agent-enrolment) |
 
+## The desktop, which behaves like neither
+
+| Finding | Evidence | Where it lives |
+|---|---|---|
+| **`InvariantGlobalization` is right for a container and fatal for WPF** | Set for every project in `Directory.Build.props`. A text control asks for the current input language the moment it takes focus, and invariant mode rejects any real culture — so the crash lands exactly when somebody clicks into the PIN box | `Blinky.Agent.Ui.csproj` |
+| **A window shown from `OnStartup` never gets a handle** | `Show()` runs before `Application.Run()` starts the message loop. The process stays alive with nothing on screen and no error anywhere — the worst shape a failure can take | `App.OnStartup`, deferred to `ApplicationIdle` |
+
+Neither of these could fail a unit test: no test creates a window, so 184 green
+tests said nothing about whether anything could be typed into one. Both were
+found by running it and looking.
+
 ## Windows, for anyone contributing from one
 
 Neither of these is about Blinky, and both cost an afternoon.
