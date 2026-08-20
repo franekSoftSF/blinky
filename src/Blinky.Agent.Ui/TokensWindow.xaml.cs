@@ -125,9 +125,14 @@ public partial class TokensWindow : Window
     /// One banner for everything still at its factory value.
     /// </summary>
     /// <remarks>
-    /// Three separate warnings for the PIN, the PUK and the management key
-    /// would be three things to dismiss and the same single fact: nobody has
-    /// personalised this token yet.
+    /// Two separate warnings for the PIN and the PUK would be two things to
+    /// dismiss and the same single fact: nobody has personalised this token.
+    /// <para>
+    /// The management key is left out on purpose even when it is still at the
+    /// factory value. It is an operator's secret, this window cannot change
+    /// it, and a warning nobody reading it can act on is how people are taught
+    /// to dismiss warnings.
+    /// </para>
     /// </remarks>
     private void ShowDefaults(TokenView token)
     {
@@ -143,11 +148,6 @@ public partial class TokensWindow : Window
         if (token.PukIsDefault)
         {
             atFactory.Add(strings["Default.Puk"]);
-        }
-
-        if (token.ManagementKeyIsDefault)
-        {
-            atFactory.Add(strings["Default.ManagementKey"]);
         }
 
         if (atFactory.Count == 0)
@@ -182,11 +182,6 @@ public partial class TokensWindow : Window
             ? strings["Manage.UnblockHint"]
             : strings["Tokens.NoPuk"];
 
-        ManagementKeyText.Text = token.ManagementKeyAlgorithm is { } algorithm
-            ? algorithm + (token.ManagementKeyIsDefault
-                ? "  •  " + strings["Default.Warning"]
-                : string.Empty)
-            : strings["Manage.Unknown"];
     }
 
     private static string Attempts(int? remaining) => remaining is { } left

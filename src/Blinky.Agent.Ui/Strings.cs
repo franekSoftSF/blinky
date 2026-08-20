@@ -118,14 +118,12 @@ public sealed class Strings : INotifyPropertyChanged
 
         ["Manage.Title"] = "MANAGE",
         ["Manage.ChangePuk"] = "Change PUK",
-        ["Manage.ManagementKey"] = "Management key",
         ["Manage.UnblockHint"] = "Sets a new PIN using the PUK.",
         ["Manage.Unknown"] = "not reported by this firmware",
 
         ["Default.Banner"] = "Still at the factory value:",
         ["Default.Pin"] = "PIN",
         ["Default.Puk"] = "PUK",
-        ["Default.ManagementKey"] = "management key",
         ["Default.Warning"] = "factory value",
         ["Default.Prefilled"] = "Filled in with the factory value, which is what this card "
                                 + "reports it still has.",
@@ -209,14 +207,12 @@ public sealed class Strings : INotifyPropertyChanged
 
         ["Manage.Title"] = "ZARZĄDZANIE",
         ["Manage.ChangePuk"] = "Zmień PUK",
-        ["Manage.ManagementKey"] = "Klucz zarządzania",
         ["Manage.UnblockHint"] = "Ustawia nowy PIN przy użyciu PUK-u.",
         ["Manage.Unknown"] = "ten firmware tego nie podaje",
 
         ["Default.Banner"] = "Nadal wartość fabryczna:",
         ["Default.Pin"] = "PIN",
         ["Default.Puk"] = "PUK",
-        ["Default.ManagementKey"] = "klucz zarządzania",
         ["Default.Warning"] = "wartość fabryczna",
         ["Default.Prefilled"] = "Wpisane wartością fabryczną, bo karta sama zgłasza, że wciąż ją ma.",
 
