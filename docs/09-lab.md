@@ -46,8 +46,22 @@ Copy `certs/dev-ca.crt` off the machine — every client needs it.
 
 ### 2. dc — Samba4
 
-Provision an AD DC in the usual way, then three things that are not optional
-and are easy to get wrong:
+```bash
+sudo bash scripts/provision-dc.sh
+```
+
+One command, and it refuses to run on a machine that is already a DC —
+provisioning over an existing directory produces something that half works and
+fails later in ways that point everywhere except at the cause. The realm
+defaults to `CORP.EXAMPLE` because that is what the agents in this lab already
+enrolled with; override with `REALM=` and `DOMAIN=`.
+
+The domain administrator's password is generated and written to
+`/root/blinky-lab-dc.txt`, readable by root alone, rather than left in a
+terminal scrollback nobody clears.
+
+What the script does beyond the provision, and why each one is in it rather
+than in a list of things to remember:
 
 - **Time.** Kerberos rejects a skew over five minutes, and the failure says
   nothing about clocks. Every machine in the lab syncs to the same source, the
