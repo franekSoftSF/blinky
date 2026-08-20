@@ -22,12 +22,21 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
     /// </summary>
     public const string EnrolmentPath = "/api/agents/enroll";
 
+    /// <summary>
+    /// Paths an operator reaches rather than an agent. They are exempt from
+    /// mTLS because the caller is a person at a console, not a machine - and
+    /// they carry their own check, because an unauthenticated write endpoint
+    /// is not a smaller problem than the wrong kind of authentication.
+    /// </summary>
+    public static readonly string[] OperatorPaths = ["/api/jobs/inventory"];
+
     public async Task InvokeAsync(HttpContext context, Database database)
     {
         var path = context.Request.Path;
 
         if (!path.StartsWithSegments("/api")
-            || path.Equals(EnrolmentPath, StringComparison.OrdinalIgnoreCase))
+            || path.Equals(EnrolmentPath, StringComparison.OrdinalIgnoreCase)
+            || OperatorPaths.Any(p => path.Equals(p, StringComparison.OrdinalIgnoreCase)))
         {
             await next(context);
             return;

@@ -11,6 +11,7 @@ public sealed class AgentWorker(
     AgentOptions options,
     AgentIdentity identity,
     InventoryCollector collector,
+    JobExecutor executor,
     ILogger<AgentWorker> logger) : BackgroundService
 {
     private readonly HashSet<string> reportedUnsupported = new(StringComparer.OrdinalIgnoreCase);
@@ -69,6 +70,47 @@ public sealed class AgentWorker(
         }
     }
 
+    /// <summary>
+    /// Drains whatever work is waiting. The doorbell is an optimisation, never
+    /// a correctness requirement - a poll finds the same work a second later.
+    /// </summary>
+    private async Task RunClaimedJobsAsync(BackendClient backend, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var claim = await backend.ClaimJobAsync(ct);
+            if (claim is null)
+            {
+                return;
+            }
+
+            logger.LogInformation("Claimed job {JobId} ({Type}), attempt {Attempt}, "
+                                  + "lease until {Lease:HH:mm:ss}",
+                claim.Job.JobId, claim.Job.Type, claim.Attempt, claim.LeaseExpiresAt);
+
+            var result = await executor.ExecuteAsync(claim.Job, backend, claim.Attempt, ct);
+
+            try
+            {
+                await backend.CompleteJobAsync(result, ct);
+            }
+            catch (Exception ex)
+            {
+                // Work that the server did not record is work that will be
+                // done again. Saying so is the difference between a retry and
+                // a mystery.
+                logger.LogError("Job {JobId} ran but the backend did not record the outcome: "
+                                + "{Message}", claim.Job.JobId, ex.Message);
+
+                return;
+            }
+
+            logger.LogInformation("Job {JobId} {Outcome}{Step}", claim.Job.JobId,
+                result.Succeeded ? "succeeded" : "failed",
+                result.FailedStep is null ? string.Empty : $" at {result.FailedStep}");
+        }
+    }
+
     private async Task<Guid> EnsureIdentityAsync(BackendClient backend, CancellationToken ct)
     {
         if (identity.Exists)
@@ -121,6 +163,8 @@ public sealed class AgentWorker(
                     logger.LogWarning("Reader {Reader}: {Reason}", card.ReaderName, card.Reason);
                 }
             }
+
+            await RunClaimedJobsAsync(backend, ct);
 
             foreach (var report in sweep.Tokens)
             {

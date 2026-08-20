@@ -17,6 +17,7 @@ builder.Services.AddSingleton(options.IdentityDirectory is { Length: > 0 } direc
     : AgentIdentity.Default());
 
 builder.Services.AddSingleton<InventoryCollector>();
+builder.Services.AddSingleton<JobExecutor>();
 
 // LocalSystem, session 0. It owns the reader and executes jobs; it cannot draw
 // a PIN prompt and cannot prove who is at the keyboard - that is Agent.Ui,

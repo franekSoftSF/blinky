@@ -90,6 +90,57 @@ public sealed class BackendClient : IDisposable
         return response.IsSuccessStatusCode;
     }
 
+    /// <summary>
+    /// Asks for work. Null means there is none, which is the normal answer.
+    /// </summary>
+    public async Task<JobClaim?> ClaimJobAsync(CancellationToken ct)
+    {
+        var response = await Authenticated().GetAsync("/api/jobs/next", ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent
+            || !response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        return await response.Content.ReadFromJsonAsync<JobClaim>(ct);
+    }
+
+    /// <summary>
+    /// Reports a state change. Throws when the server will not take it: a
+    /// report the server rejects means the agent's idea of the job and the
+    /// server's have diverged, and carrying on would produce work nobody
+    /// recorded.
+    /// </summary>
+    public async Task ReportProgressAsync(JobProgress progress, CancellationToken ct)
+    {
+        var response = await Authenticated().PostAsJsonAsync(
+            $"/api/jobs/{progress.JobId}/progress", progress, ct);
+
+        await ThrowIfRefused(response, "progress", progress.JobId, ct);
+    }
+
+    public async Task CompleteJobAsync(JobResult result, CancellationToken ct)
+    {
+        var response = await Authenticated().PostAsJsonAsync(
+            $"/api/jobs/{result.JobId}/result", result, ct);
+
+        await ThrowIfRefused(response, "result", result.JobId, ct);
+    }
+
+    private static async Task ThrowIfRefused(HttpResponseMessage response, string what,
+        Guid jobId, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"The backend refused the {what} for job {jobId}: {(int)response.StatusCode} "
+            + await response.Content.ReadAsStringAsync(ct));
+    }
+
     public async Task<InventoryAccepted?> ReportInventoryAsync(TokenInventoryReport report,
         CancellationToken ct)
     {

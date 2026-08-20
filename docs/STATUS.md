@@ -224,7 +224,7 @@ write it.
 | 0023 | Key generation, on-card CSR signing, attestation-gated submission | **done** | Proved on two tokens: management key authenticated mutually (AES-192 and 3DES), key generated, attestation verified, card signed its own request |
 | 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **done, unverified** | 1019 bytes written and read back identical, which also ran outbound chaining for the first time. The certificate does **not** reach the Windows store on this machine: ActivClient owns the minidriver binding |
 | 0025 | Personalisation: management key, PUK escrow, PIN policy | **open** |
-| 0026 | Job engine: leases, watchdog, `AwaitingUser` | **open** |
+| 0026 | Job engine: leases, watchdog, `AwaitingUser` | **done, unverified** | An operator creates a job, the agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog. `AwaitingUser` has its own longer lease but nothing raises it until 0018 |
 | 0027 | Biometric user verification during enrolment | **open** |
 
 ### Phases 3 to 6 — **open**

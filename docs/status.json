@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "gate-met",
-    "summary": "Phase 2 in progress. Blinky now generates a key on a token, has the card sign its own certificate request, verifies the attestation, issues from the built-in CA and writes the certificate back - proved end to end on two tokens covering both management-key algorithms. Not yet proved: that such a certificate reaches the Windows store, or logs anybody in.",
+    "summary": "Phase 2 in progress. The issuance path is proved on hardware and the job engine now carries work from an operator to an agent and back: claim on a lease, per-step progress, results, and a watchdog that returns abandoned work to the queue. Still open: personalisation (0025, waiting on a decision), the agent UI (0018) and biometric verification (0027).",
     "nothingIssuedYet": true
   },
   "phases": [
@@ -586,7 +586,9 @@
       "id": "0026",
       "phase": 2,
       "title": "Job engine: leases, watchdog, AwaitingUser",
-      "state": "open"
+      "state": "done-unverified",
+      "proof": "Operator creates a job, agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog",
+      "gap": "AwaitingUser has its own longer lease but nothing raises it until 0018"
     },
     {
       "id": "0027",

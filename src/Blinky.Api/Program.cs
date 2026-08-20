@@ -1,5 +1,6 @@
 using Blinky.Api.Agents;
 using Blinky.Api.Persistence;
+using Blinky.Api.Jobs;
 using Blinky.Api.Security;
 using Blinky.Api.Tokens;
 using Blinky.Contracts;
@@ -23,6 +24,7 @@ builder.Services.AddSingleton(_ => AgentCertificateAuthority.Load(
     TimeSpan.FromDays(builder.Configuration.GetValue("Blinky:AgentCa:LifetimeDays", 90))));
 
 builder.Services.AddSingleton<TokenInventoryService>();
+builder.Services.AddSingleton<JobService>();
 
 builder.Services.AddSingleton(services => new AgentEnrolmentService(
     services.GetRequiredService<Database>(),
@@ -120,6 +122,63 @@ app.MapPost("/api/tokens/inventory",
         return Results.Ok(inventory.Accept(report));
     });
 
+// An agent asking for work. Returns 204 when there is none, which is the
+// normal answer most of the time.
+app.MapGet("/api/jobs/next", (HttpContext context, JobService jobs) =>
+{
+    var agent = (Agent)context.Items["agent"]!;
+    var claim = jobs.Claim(agent.Id);
+
+    return claim is null ? Results.NoContent() : Results.Ok(claim);
+});
+
+app.MapPost("/api/jobs/{id:guid}/progress",
+    (Guid id, JobProgress progress, HttpContext context, JobService jobs) =>
+    {
+        var agent = (Agent)context.Items["agent"]!;
+
+        return jobs.Report(agent.Id, progress with { JobId = id })
+            ? Results.NoContent()
+            : Results.Json(new { error = "this job is not yours to report on" },
+                statusCode: 403);
+    });
+
+app.MapPost("/api/jobs/{id:guid}/result",
+    (Guid id, JobResult result, HttpContext context, JobService jobs) =>
+    {
+        var agent = (Agent)context.Items["agent"]!;
+
+        return jobs.Complete(agent.Id, result with { JobId = id })
+            ? Results.NoContent()
+            : Results.Json(new { error = "this job is not yours to finish" }, statusCode: 403);
+    });
+
+// Creating work belongs to an operator, never to an agent: the API creates
+// jobs on request and never decides on its own that work exists.
+//
+// Until RBAC arrives in 0053 the operator proves themselves with a shared
+// token. That is a stop-gap and is named as one - but an unauthenticated write
+// endpoint would not have been the smaller compromise.
+var operatorToken = builder.Configuration["Blinky:Operator:Token"] ?? string.Empty;
+
+app.MapPost("/api/jobs/inventory",
+    (InventoryJobRequest request, HttpContext context, JobService jobs) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        var key = $"inventory:{request.AgentId}:{request.Reason ?? "manual"}";
+
+        var (job, created) = jobs.Create(JobType.Inventory, key,
+            id => JobEnvelope.Inventory(id, key, DateTimeOffset.UtcNow.AddHours(1)),
+            request.AgentId);
+
+        return Results.Ok(new { job.Id, created, state = job.State.ToString() });
+    });
+
 app.MapPost("/api/agents/{id:guid}/heartbeat",
     (Guid id, HeartbeatRequest request, HttpContext context, Database database) =>
     {
@@ -166,7 +225,30 @@ app.MapPost("/api/agents/{id:guid}/heartbeat",
 
 app.Run();
 
+/// <summary>
+/// Constant-time comparison of the stand-in operator token. Returning early on
+/// the first wrong byte would leak the prefix to anything that can time a
+/// request.
+/// </summary>
+static bool IsOperator(HttpContext context, string expected)
+{
+    if (string.IsNullOrEmpty(expected))
+    {
+        return false;
+    }
+
+    var presented = context.Request.Headers["X-Blinky-Operator"].ToString();
+
+    return !string.IsNullOrEmpty(presented)
+           && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+               System.Text.Encoding.UTF8.GetBytes(presented),
+               System.Text.Encoding.UTF8.GetBytes(expected));
+}
+
 /// <summary>What an agent reports when it checks in.</summary>
+/// <summary>Asks for one token inventory pass on one agent.</summary>
+internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
+
 internal sealed record HeartbeatRequest(
     string? Version,
     string[]? Readers,

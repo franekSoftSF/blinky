@@ -57,7 +57,7 @@ public sealed class SchemaMappingTests
         Assert.Contains(typeof(CertificateProfile), mapped);
         Assert.Contains(typeof(IssuancePolicy), mapped);
         Assert.Contains(typeof(CaInstance), mapped);
-        Assert.Contains(typeof(Agent), mapped);
+        Assert.Contains(typeof(Blinky.Domain.Entities.Agent), mapped);
         Assert.Contains(typeof(Job), mapped);
         Assert.Contains(typeof(SecretEnvelope), mapped);
         Assert.Contains(typeof(AuditEvent), mapped);

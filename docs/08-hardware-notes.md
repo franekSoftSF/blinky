@@ -39,6 +39,7 @@ virtual reader — with HID ActivClient installed alongside.
 | **`jsonb` needs a typed parameter**, not just a column type | The schema validated and the first insert failed with `42804: column "payload" is of type jsonb but expression is of type text` | `JsonbType`, `tools/SchemaTool --roundtrip` |
 | **A CRS in blocking mode eats our own protocol** | The same SQL injection returns 403 on the console listener and is logged with `is_interrupted:false` on the agent listener | [01 § The edge](01-architecture.md), [06](06-security.md) |
 | **`ssl_verify_client on` refuses enrolment before it can happen** | The one endpoint an agent must reach without a certificate never got past the handshake | [05 § Agent enrolment](05-agent-protocol.md#agent-enrolment) |
+| **A job's envelope and its row must carry the same identifier** | They did not: the endpoint generated one and NHibernate assigned another. The agent reported progress against a job that did not exist, the server refused it, the agent ignored the refusal — so the work ran, nothing was recorded, and the watchdog reclaimed the job | `JobService.Create`, `BackendClient` |
 | A **bootstrap token cannot be single-use** if it ships in an MSI to a fleet | Design review against the actual deployment path | [05](05-agent-protocol.md#agent-enrolment) |
 
 ## Windows, for anyone contributing from one
