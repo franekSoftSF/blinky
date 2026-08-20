@@ -65,7 +65,11 @@ start() {
     export Agent__Hostname="${AGENT_HOSTNAME:-devbox}"
     export Agent__Domain="${AGENT_DOMAIN:-corp.example}"
     export Agent__ServerCertificateAuthorityPath="${AGENT_SERVER_CA:-$root/certs/dev-ca.crt}"
-    export Agent__PollIntervalSeconds="${AGENT_POLL:-120}"
+    # Twenty seconds on a bench, where two minutes between creating a job
+    # and seeing it run makes every test a coffee break. Not five: the
+    # agent competes with itself for the reader at that rate, and the card
+    # gate turns the collision into a queue rather than removing it.
+    export Agent__PollIntervalSeconds="${AGENT_POLL:-20}"
 
     echo "starting the service and the tray ..."
 

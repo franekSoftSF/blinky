@@ -208,10 +208,22 @@ public partial class PivSession
     /// Needs the management key, and there is no undo.
     /// </para>
     /// </remarks>
-    public void DeleteKey(PivSlot slot)
+    /// <returns>
+    /// False when there was no key to begin with. Not an error: this is a
+    /// desired-state operation, and a job retried after a dropped connection
+    /// must not fail the second time for having succeeded the first.
+    /// </returns>
+    public bool DeleteKey(PivSlot slot)
     {
         // P1 is the destination and FF means nowhere; P2 is the slot to move.
         var response = Connection.Send(new ApduCommand(InsMoveKey, p1: 0xFF, p2: slot.Id));
+
+        // 6A88: no such reference data. The slot is already empty, which is
+        // where this was trying to get to.
+        if (response.Status.Value == 0x6A88)
+        {
+            return false;
+        }
 
         if (response.Status.Value is 0x6D00 or 0x6A81)
         {
@@ -221,6 +233,8 @@ public partial class PivSession
         }
 
         PivStatus.ThrowIfFailed(response.Status, $"DELETE KEY ({slot})");
+
+        return true;
     }
 
     /// <summary>

@@ -249,10 +249,16 @@ public sealed class CardOperations(
                 // Firmware 5.7 and later. Older tokens throw, and the message
                 // says why rather than leaving somebody to wonder whether the
                 // slot is empty: on a 5.4 a key can only be overwritten.
-                session.DeleteKey(slot);
-
-                logger.LogWarning("The key in slot {Slot} of token {Serial} was destroyed",
-                    slot, serial);
+                if (session.DeleteKey(slot))
+                {
+                    logger.LogWarning("The key in slot {Slot} of token {Serial} was destroyed",
+                        slot, serial);
+                }
+                else
+                {
+                    logger.LogInformation("Slot {Slot} of token {Serial} already held no key",
+                        slot, serial);
+                }
             }
 
             return new AgentResponse(true);
