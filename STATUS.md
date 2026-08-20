@@ -119,6 +119,8 @@ Two things the hardware settled that reading a specification would not have:
 | Agent shape | LocalSystem service + per-session UI process | Session 0 cannot draw a PIN prompt, and LocalSystem cannot prove who is at the keyboard |
 | Identity | Agent = mTLS, user = Kerberos from the user's own session | No authorisation decision is made on the workstation |
 | Store | PostgreSQL + NHibernate | Same as FAG, including the SQL schema script and `SchemaValidator` |
+| Schema authorship | Generated from the mappings by `tools/SchemaTool`, never hand-written | Otherwise `SchemaValidator` compares two things that drift apart on the first change. A CI test fails when the committed file stops matching |
+| `jsonb` binding | A `JsonbType` user type, not just a column type | Measured: declaring the column alone produces a schema that validates and an insert that fails with `42804` |
 | Console | Angular 22 behind nginx, `/api` proxied | One origin, no CORS, same bundle in every environment |
 | Docs language | English | Open source, matches CredLoop and NanitorBridge |
 | Licence | Apache-2.0 | Patent grant; NHibernate stays a dynamically linked NuGet dependency |
@@ -146,8 +148,8 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | `tools/PivProbe` | **done** | Read-only hardware spike; see *Validated on hardware* |
 | `Blinky.Piv` | **transport, read path, attestation** | Patches 0010, 0011 and 0012. 108 tests. `tools/PivProbe` is now only printing, and verifies a live token against the pinned root |
 | `Blinky.Contracts` | skeleton | Protocol version, `JobType`, `JobState`. Envelope in patch 0015 |
-| `Blinky.Domain` | skeleton | `TokenState`, `CredentialState`. Entities and mappings in patch 0013 |
-| `Blinky.Infrastructure` | not started | Phase 1 |
+| `Blinky.Domain` | **done** | Patch 0013: eleven entities from doc 02, with the states the hardware turned up |
+| `Blinky.Infrastructure` | **done** | Patch 0013: NHibernate mappings, generated schema, `SchemaValidator` reporting clean in both services |
 | `Blinky.Api` | skeleton | Serilog and `/health`. Agent enrolment in patch 0014 |
 | `Blinky.Worker` | skeleton | Host and Serilog, no scanners. Job engine in patch 0026 |
 | `Blinky.Pki` — built-in CA | not started | Phase 2, patches 0021 and 0028 (topology) |
@@ -163,7 +165,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Phase | Title | State |
 |---|---|---|
 | 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token | **in progress** — 0010, 0011 and 0012 done and validated on hardware; 0013 next |
+| 1 | See the token | **in progress** — 0010 to 0013 done; 0014 next |
 
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |

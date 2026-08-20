@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -22,10 +22,15 @@
     <ProjectReference Include="..\..\src\Blinky.Contracts\Blinky.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Domain\Blinky.Domain.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Piv\Blinky.Piv.csproj" />
+    <ProjectReference Include="..\..\src\Blinky.Infrastructure\Blinky.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\docker\postgres\001-schema.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

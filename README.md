@@ -94,12 +94,23 @@ docker compose up -d --build
 |---|---|
 | Console (browser traffic, WAF blocking) | https://localhost:8443 |
 | Agent API (mTLS, WAF in detection mode) | https://localhost:9443 |
-| PostgreSQL | localhost:5432, not published by default |
+| PostgreSQL | localhost:5432 |
 
 The certificates are self-signed development material and `certs/` is ignored
-by git. `api` is deliberately not published: the edge forwards the verified
+by git. `api` is deliberately **not** published: the edge forwards the verified
 client certificate as a header, which is only trustworthy because nothing else
-can reach the API.
+can reach the API. PostgreSQL is published, because inspecting the database is
+half of debugging.
+
+The schema is generated from the NHibernate mappings rather than written by
+hand, and both services compare the two at startup:
+
+```bash
+dotnet run --project tools/SchemaTool -- docker/postgres/001-schema.sql
+```
+
+It runs only against an empty data directory, so changing the schema means
+`docker compose down -v` or a hand-written `ALTER`.
 
 ## Building
 

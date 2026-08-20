@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "building",
-    "summary": "Patches 0010-0012 done and validated on hardware: transport, chaining, typed error map, the read path, and attestation verified against a pinned Yubico root on a live token. 108 tests. Next is 0013, the domain and schema."
+    "summary": "Patches 0010-0013 done. Blinky.Piv carries transport, read path and attestation, all validated on hardware. The domain, NHibernate mappings and a generated schema are in, with SchemaValidator reporting clean in both containers and a jsonb round trip proven against PostgreSQL. 114 tests. Next is 0014, agent enrolment."
   },
   "phases": [
     {
@@ -109,13 +109,13 @@
       "name": "Blinky.Domain",
       "type": "library",
       "phase": 1,
-      "state": "skeleton"
+      "state": "done"
     },
     {
       "name": "Blinky.Infrastructure",
       "type": "library",
       "phase": 1,
-      "state": "not-started"
+      "state": "done"
     },
     {
       "name": "Blinky.Api",
@@ -170,6 +170,12 @@
       "type": "cli",
       "phase": 6,
       "state": "not-started"
+    },
+    {
+      "name": "tools/SchemaTool",
+      "type": "cli",
+      "phase": 1,
+      "state": "done"
     }
   ],
   "decisions": [
@@ -287,6 +293,11 @@
       "id": "attestation-trust",
       "choice": "Pin only the Yubico root, embedded with its SHA-256 checked at load; the per-device intermediate is read from the card and verified",
       "state": "locked-validated"
+    },
+    {
+      "id": "schema-authorship",
+      "choice": "The schema is generated from the mappings by tools/SchemaTool; a CI test fails when the committed file stops matching",
+      "state": "locked"
     }
   ],
   "openQuestions": [

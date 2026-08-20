@@ -72,6 +72,12 @@ check "a PKCS#10 body reaches the API, not the rule set" 404 \
         --data-binary @/certs/test-agent.crt "$AGENT/api/credentials/issue")"
 
 echo
+echo "api"
+check "the schema validates against the database" '"valid":true' \
+    "$(MSYS_NO_PATHCONV=1 docker run --rm --network "$NETWORK" "$CURL_IMAGE" \
+        -sk "$CONSOLE/health" 2>/dev/null | grep -o '"valid":true' || echo missing)"
+
+echo
 echo "host"
 check "console port is published" 200 \
     "$(curl -sk -o /dev/null -w '%{http_code}' \

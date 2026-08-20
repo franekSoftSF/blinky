@@ -1,4 +1,5 @@
 using System.Security.Cryptography.X509Certificates;
+using Blinky.Infrastructure;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +11,24 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
 
 var app = builder.Build();
 
+// Compare the mappings against the live schema once, at start. This logs and
+// continues on purpose: a missing column should produce one readable line while
+// the container comes up, not a restart loop with no explanation. See
+// docs/02-data-model.md.
+var connectionString = builder.Configuration.GetConnectionString("Blinky");
+var schema = string.IsNullOrWhiteSpace(connectionString)
+    ? new SchemaValidationResult(false, "no connection string configured")
+    : SchemaValidator.Validate(BlinkySessionFactory.BuildConfiguration(connectionString));
+
+if (schema.IsValid)
+{
+    app.Logger.LogInformation("Schema validation: {Summary}", schema.Summary);
+}
+else
+{
+    app.Logger.LogError("Schema validation FAILED: {Summary}", schema.Summary);
+}
+
 app.UseSerilogRequestLogging();
 
 // Skeleton only. Endpoints arrive with the patches that need them:
@@ -19,6 +38,7 @@ app.MapGet("/health", () => Results.Ok(new
     status = "ok",
     service = "Blinky.Api",
     protocol = Blinky.Contracts.Protocol.SchemaVersion,
+    schema = new { valid = schema.IsValid, detail = schema.Summary },
 }));
 
 // Who is calling, according to the edge. The client certificate is verified by

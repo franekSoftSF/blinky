@@ -10,4 +10,9 @@
     <ProjectReference Include="..\Blinky.Domain\Blinky.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="NHibernate" />
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
 </Project>

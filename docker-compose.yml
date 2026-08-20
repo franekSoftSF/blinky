@@ -3,12 +3,20 @@ name: blinky
 services:
   postgres:
     image: postgres:17-alpine
+    ports:
+      # Published so the schema tool and psql can reach it from the host. The
+      # API is deliberately not published; the database is, because inspecting
+      # it is half of debugging.
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-blinky}
       POSTGRES_USER: ${POSTGRES_USER:-blinky}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-blinky}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # Runs only against an empty data directory. Changing the schema means
+      # `docker compose down -v` or a hand-written ALTER.
+      - ./docker/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-blinky}"]
       interval: 5s
