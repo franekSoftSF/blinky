@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Blinky.Contracts;
 
 namespace Blinky.Agent.Ui;
@@ -25,11 +26,44 @@ public partial class TokensWindow : Window
     private PinComplexityPolicy policy = PinComplexityPolicy.Default;
     private IReadOnlyList<TokenView> tokens = [];
 
+    /// <summary>
+    /// True while a read is in flight, so ticks do not pile up behind a slow
+    /// one. A refresh is a full sweep of every reader on the machine and takes
+    /// about a second; four of those queued behind each other would hold the
+    /// card gate against the service's own work.
+    /// </summary>
+    private bool loading;
+
+    private readonly DispatcherTimer refresh = new()
+    {
+        // Long enough not to fight the poll loop for the reader, short enough
+        // that pulling a token out and looking at the window shows the truth
+        // rather than a list of what used to be there.
+        Interval = TimeSpan.FromSeconds(4),
+    };
+
     public TokensWindow()
     {
         InitializeComponent();
 
+        refresh.Tick += async (_, _) => await LoadAsync();
+
         Loaded += async (_, _) => await LoadAsync();
+
+        // Only while somebody is looking. A hidden window sweeping readers
+        // every four seconds is the agent competing with itself for a card,
+        // which is the failure this project has already had twice.
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible)
+            {
+                refresh.Start();
+            }
+            else
+            {
+                refresh.Stop();
+            }
+        };
     }
 
     private TokenView? Selected => DeviceList.SelectedIndex >= 0
@@ -39,7 +73,19 @@ public partial class TokensWindow : Window
 
     public async Task LoadAsync()
     {
-        StatusText.Text = Strings.Current["Pin.Working"];
+        if (loading)
+        {
+            return;
+        }
+
+        loading = true;
+
+        // Only on the first read. A spinner appearing every four seconds is
+        // worse than no spinner: it makes a window that is working look busy.
+        if (tokens.Count == 0)
+        {
+            StatusText.Text = Strings.Current["Pin.Working"];
+        }
 
         // From the service rather than assumed here, so that what this window
         // explains and what the service enforces are the same rules.
@@ -54,6 +100,7 @@ public partial class TokensWindow : Window
         var response = await client.SendAsync(new AgentRequest(AgentRequest.ListTokens));
 
         StatusText.Text = string.Empty;
+        loading = false;
 
         if (!response.Succeeded)
         {
@@ -375,6 +422,7 @@ public sealed record SlotRow(
     string Protection,
     Brush ProtectionColour,
     Visibility ActionsVisibility,
+    Visibility DeleteVisibility,
     string BadgeText,
     Visibility BadgeVisibility,
     Brush BadgeBackground,
@@ -414,6 +462,14 @@ public sealed record SlotRow(
 
             // Nothing to export, install or delete without a certificate.
             slot.Subject is null ? Visibility.Collapsed : Visibility.Visible,
+
+            // Delete is offered only for something Blinky did not issue.
+            // Managed is the server's to withdraw, and Unknown is not
+            // permission: a backend that cannot be reached is not evidence
+            // that a credential is foreign.
+            slot.Management == SlotManagement.Unmanaged && slot.Subject is not null
+                ? Visibility.Visible
+                : Visibility.Collapsed,
             text,
             slot.Management == SlotManagement.Empty ? Visibility.Collapsed : Visibility.Visible,
             background, foreground);

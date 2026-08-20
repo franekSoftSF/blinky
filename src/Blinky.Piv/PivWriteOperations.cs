@@ -184,6 +184,46 @@ public partial class PivSession
     /// real. Requires the management key to have been authenticated.
     /// </remarks>
     /// <summary>
+    /// Yubico's MOVE KEY, which with a destination of <c>FF</c> is a delete.
+    /// </summary>
+    private const byte InsMoveKey = 0xF6;
+
+    /// <summary>
+    /// Destroys the private key in a slot.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// PIV has no such command. Standard PIV only lets a key be replaced by
+    /// generating over it, which leaves a key there — just a different one —
+    /// and that is not the same as an empty slot when somebody is asking
+    /// whether a token has been cleared.
+    /// </para>
+    /// <para>
+    /// Yubico added one in firmware 5.7. Older tokens throw here rather than
+    /// pretending: the honest answer for a 5.4 is that the key cannot be
+    /// deleted, only overwritten, and a caller that wants an empty slot has to
+    /// know the difference.
+    /// </para>
+    /// <para>
+    /// Needs the management key, and there is no undo.
+    /// </para>
+    /// </remarks>
+    public void DeleteKey(PivSlot slot)
+    {
+        // P1 is the destination and FF means nowhere; P2 is the slot to move.
+        var response = Connection.Send(new ApduCommand(InsMoveKey, p1: 0xFF, p2: slot.Id));
+
+        if (response.Status.Value is 0x6D00 or 0x6A81)
+        {
+            throw new PivException(response.Status, $"DELETE KEY ({slot})",
+                "this firmware cannot delete a key - the instruction arrived in 5.7. "
+                + "The only way to remove it is to generate over it.");
+        }
+
+        PivStatus.ThrowIfFailed(response.Status, $"DELETE KEY ({slot})");
+    }
+
+    /// <summary>
     /// Removes the certificate from a slot, leaving the key where it is.
     /// </summary>
     /// <remarks>

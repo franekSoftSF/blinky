@@ -184,24 +184,70 @@ public sealed class CardOperations(
     /// why a fresh enrolment into that slot is refused rather than quietly
     /// destroying what is there.
     /// </remarks>
-    public AgentResponse DeleteCertificate(long serial, string? slotId)
+    public async Task<AgentResponse> DeleteCertificateAsync(long serial, string? slotId,
+        bool alsoTheKey, CancellationToken ct)
     {
         if (Slot(slotId) is not { } slot)
         {
             return AgentResponse.Failed($"{slotId} is not a credential slot.");
         }
 
+        // Asked before anything is touched, because the answer decides whether
+        // this is allowed at all.
+        var known = await backend.GetKnownCredentialsAsync(serial, ct);
+
+        var management = known is null
+            ? SlotManagement.Unknown
+            : known.Any(c => string.Equals(c.SlotId, slot.Name, StringComparison.OrdinalIgnoreCase))
+                ? SlotManagement.Managed
+                : SlotManagement.Unmanaged;
+
+        if (management == SlotManagement.Managed)
+        {
+            // Blinky issued this. Taking it off the card from a tray leaves the
+            // backend holding a credential it believes is installed - the exact
+            // divergence that Issued and Installed exist to make visible,
+            // created deliberately by the tool meant to prevent it. Removing a
+            // credential Blinky issued is a revocation, and revocation is the
+            // server's decision.
+            return AgentResponse.Failed(
+                $"Slot {slot} holds a credential Blinky issued. Revoke it from the console "
+                + "instead - deleting it here would leave the backend believing it is still "
+                + "on the token.");
+        }
+
+        if (management == SlotManagement.Unknown)
+        {
+            // Not unmanaged. The backend could not be asked, so there is no way
+            // to tell whether this is somebody else's certificate or one of
+            // ours, and the destructive reading of a shrug is the wrong one.
+            return AgentResponse.Failed(
+                "The backend cannot be reached, so there is no way to tell whether this "
+                + "credential is one Blinky issued. Nothing was deleted.");
+        }
+
         return OnToken(serial, session =>
         {
-            var management = session.GetManagementKeyMetadata()
+            var key = session.GetManagementKeyMetadata()
                 ?? throw new InvalidOperationException(
                     "This firmware will not say which management key algorithm it holds.");
 
-            session.AuthenticateManagementKey(ManagementKey.Default(management.Algorithm));
+            session.AuthenticateManagementKey(ManagementKey.Default(key.Algorithm));
             session.DeleteCertificate(slot);
 
-            logger.LogWarning("The certificate in slot {Slot} of token {Serial} was deleted",
-                slot, serial);
+            logger.LogWarning("The certificate in slot {Slot} of token {Serial} was deleted "
+                              + "(it was not one Blinky issued)", slot, serial);
+
+            if (alsoTheKey)
+            {
+                // Firmware 5.7 and later. Older tokens throw, and the message
+                // says why rather than leaving somebody to wonder whether the
+                // slot is empty: on a 5.4 a key can only be overwritten.
+                session.DeleteKey(slot);
+
+                logger.LogWarning("The key in slot {Slot} of token {Serial} was destroyed",
+                    slot, serial);
+            }
 
             return new AgentResponse(true);
         });

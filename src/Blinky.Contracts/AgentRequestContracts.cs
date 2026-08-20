@@ -68,9 +68,18 @@ public sealed record AgentRequest(
     public const string ReadCertificate = "ReadCertificate";
 
     /// <summary>
-    /// Remove a slot's certificate. The key stays where it is.
+    /// Remove a slot's certificate, and optionally the key with it.
     /// </summary>
+    /// <remarks>
+    /// Refused on a slot Blinky issued into. Taking that off the card from a
+    /// tray would leave the backend holding a credential it believes is
+    /// installed — which is a revocation done badly, and revocation is the
+    /// server's decision.
+    /// </remarks>
     public const string DeleteCertificate = "DeleteCertificate";
+
+    /// <summary>The same, and destroy the private key as well.</summary>
+    public const string RecycleSlot = "RecycleSlot";
 
     /// <summary>The rules a new PIN has to satisfy on this deployment.</summary>
     public const string GetPinPolicy = "GetPinPolicy";
