@@ -36,7 +36,7 @@ for the user whose Kerberos ticket it can produce.
 | 2 | Token substituted mid-workflow | Management-key authentication is mutual; every job step re-asserts the serial via `RequireToken` |
 | 3 | Enrolment on behalf of someone else | The user's own Kerberos ticket, obtained in their own session, must resolve to the cardholder on the job. Operator override is a distinct, audited path |
 | 4 | Compromised workstation issuing to itself | Machine identity (mTLS) proves the machine only. It cannot substitute for the user token |
-| 5 | Stolen agent certificate | 90-day lifetime, automatic rotation, revocable from the console. Grants only the ability to ask for work, never to authorise it |
+| 5 | Stolen agent certificate | 90-day lifetime and revocable from the console. Grants only the ability to ask for work, never to authorise it. **Automatic rotation is not built** — see *Claimed and not built* below |
 | 6 | Stolen bootstrap token | Single-use, rate-limited, per-deployment, revocable. Buys one agent certificate |
 | 7 | Management key extracted from one token | Keys are per-token derived from an HSM-resident master. One token's key opens one token |
 | 8 | Database stolen | No PINs anywhere, no management keys (derived, not stored), PUKs encrypted under an HSM-held KEK with the serial as AAD |
@@ -81,6 +81,26 @@ Stated plainly, because a security section that claims completeness is lying:
 - **Physical possession plus a known PIN is authentication.** Touch policy
   raises the bar to physical presence per operation; it does not change the
   model.
+
+## Claimed and not built
+
+One entry, kept here rather than quietly fixed in the table above, because a
+security document that describes a mitigation nobody wrote is worse than one
+that admits the gap.
+
+**The agent's certificate does not rotate itself.** The threat table said
+"automatic rotation", [05](05-agent-protocol.md) lists
+`POST /api/agents/{id}/renew-certificate`, and the edge already exempts that
+path from request-body inspection. Neither end exists: not the endpoint, not
+the agent-side check.
+
+What happens without it: the certificate expires ninety days after enrolment
+and the agent stops authenticating. Recovery is re-enrolment with the bootstrap
+token, by hand, on every workstation — and the bootstrap token is the thing the
+short certificate lifetime exists to stop people from needing.
+
+Found on 20 August 2026 by looking at an expiry date in `certmgr.msc` and
+asking what renews it.
 
 ## Where the agent's own key lives
 
