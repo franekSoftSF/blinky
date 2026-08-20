@@ -64,12 +64,7 @@ public sealed class Tray : IDisposable
         menu.Items.Add(new ToolStripMenuItem(Strings.Current["Tray.Exit"], null,
             (_, _) => ExitRequested?.Invoke()));
 
-        using var executableIcon = Environment.ProcessPath is { } processPath
-            ? Icon.ExtractAssociatedIcon(processPath)
-            : null;
-        trayIcon = executableIcon is null
-            ? (Icon)SystemIcons.Shield.Clone()
-            : (Icon)executableIcon.Clone();
+        trayIcon = LoadTrayIcon();
 
         icon = new NotifyIcon
         {
@@ -83,6 +78,48 @@ public sealed class Tray : IDisposable
         icon.DoubleClick += (_, _) => OpenRequested?.Invoke();
 
         Mark();
+    }
+
+    /// <summary>
+    /// The icon at the size the notification area actually draws.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asked for by size, from the packaged .ico, so Windows picks the 16px
+    /// drawing that is in the file rather than shrinking the 256px one.
+    /// <c>Icon.ExtractAssociatedIcon</c> — the obvious call, and what this used
+    /// to do — returns whatever the shell considers the large icon, which the
+    /// tray then squeezes down; the result is a smudge beside crisp system
+    /// icons, at the one size this icon is seen at most.
+    /// </para>
+    /// <para>
+    /// <c>SystemInformation.SmallIconSize</c> rather than a hard 16: it is 20
+    /// at 125% scaling and 24 at 150%, and the .ico carries both.
+    /// </para>
+    /// </remarks>
+    private static Icon LoadTrayIcon()
+    {
+        try
+        {
+            var packaged = System.Windows.Application.GetResourceStream(
+                new Uri("Assets/blinky-agent.ico", UriKind.Relative));
+
+            if (packaged is not null)
+            {
+                using var stream = packaged.Stream;
+
+                return new Icon(stream, SystemInformation.SmallIconSize);
+            }
+        }
+        catch (Exception)
+        {
+            // Falls through. A missing or unreadable icon is a cosmetic
+            // problem, and a tray that refuses to appear over one would turn it
+            // into an outage: without the tray there is no way to answer a PIN
+            // prompt.
+        }
+
+        return (Icon)SystemIcons.Shield.Clone();
     }
 
     /// <summary>
