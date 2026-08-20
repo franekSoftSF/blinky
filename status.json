@@ -19,10 +19,10 @@
   },
   "status": {
     "updated": "2026-08-19",
-    "phase": 0,
-    "phaseTitle": "Design",
-    "state": "design",
-    "summary": "Design documented and validated on hardware. Solution skeleton builds with CI green, and the stack runs behind nginx + ModSecurity + CRS with mTLS on a separate listener. Next milestone is Blinky.Piv against recorded APDU transcripts (patch 0010)."
+    "phase": 1,
+    "phaseTitle": "See the token",
+    "state": "building",
+    "summary": "Phase 0 complete. Patch 0010 done: Blinky.Piv carries the PC/SC transport, transactions, chaining both ways, 6Cxx and a typed error map, with 46 tests including replay of a real three-token capture. tools/PivProbe runs on it and produces byte-identical output against hardware. Next is 0011, the read path."
   },
   "phases": [
     {
@@ -34,7 +34,7 @@
     {
       "id": 1,
       "title": "See the token",
-      "state": "not-started",
+      "state": "in-progress",
       "done": "Three different YubiKeys - factory, ykman-provisioned, blocked PIN - each report correct state in the database, with no write to any card."
     },
     {
@@ -97,7 +97,7 @@
       "name": "Blinky.Piv",
       "type": "library",
       "phase": 1,
-      "state": "skeleton"
+      "state": "transport-done"
     },
     {
       "name": "Blinky.Contracts",
@@ -277,6 +277,11 @@
       "id": "ca-topology",
       "choice": "Built-in CA runs as single or two-tier, chosen per CA instance, default two-tier; topology is immutable once set",
       "state": "locked"
+    },
+    {
+      "id": "pcsc-interop",
+      "choice": "Own LibraryImport into winscard.dll rather than a NuGet wrapper; Windows-only until pcsc-lite marshalling can be tested (patch 0017)",
+      "state": "locked"
     }
   ],
   "openQuestions": [
@@ -361,6 +366,16 @@
       "id": "bio-path-single-device",
       "impact": "medium",
       "handling": "Patch 0016 reads it, 0027 uses it; the temporary-PIN encoding is marked unverified in doc 03"
+    },
+    {
+      "id": "chaining-untested-on-hardware",
+      "impact": "medium",
+      "handling": "Hand-built 61xx and 6Cxx cases; the first real chained read lands in 0011"
+    },
+    {
+      "id": "windows-only-transport",
+      "impact": "medium",
+      "handling": "PcscContext.IsSupported plus an explicit PlatformNotSupportedException; patch 0017"
     }
   ]
 }

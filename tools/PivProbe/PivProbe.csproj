@@ -10,4 +10,8 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Blinky.Piv\Blinky.Piv.csproj" />
+  </ItemGroup>
+
 </Project>

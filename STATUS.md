@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-08-19
 **Phase:** 0 — Design
-**Overall:** design complete, stack runs behind a WAF, no product code yet
+**Overall:** phase 1 started - the PIV transport layer is real and driving hardware
 
 The machine-readable version of this file is [status.json](status.json). Keep
 both in sync; `status.json` is the one a build or dashboard should read.
@@ -108,7 +108,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Compose stack | **done** | postgres, api, worker, edge. `docker compose up -d` works |
 | Edge and WAF | **done** | nginx + ModSecurity 3 + CRS v4, two listeners, mTLS forwarded to the API. 9 smoke checks green |
 | `tools/PivProbe` | **done** | Read-only hardware spike; see *Validated on hardware* |
-| `Blinky.Piv` | skeleton | `StatusWord` only, with tests. Transport and APDUs in patch 0010 — the risk lives here |
+| `Blinky.Piv` | **transport done** | Patch 0010: PC/SC, transactions, chaining both ways, `6Cxx`, typed error map. 46 tests. Drives `tools/PivProbe` against real tokens. Read path is 0011 |
 | `Blinky.Contracts` | skeleton | Protocol version, `JobType`, `JobState`. Envelope in patch 0015 |
 | `Blinky.Domain` | skeleton | `TokenState`, `CredentialState`. Entities and mappings in patch 0013 |
 | `Blinky.Infrastructure` | not started | Phase 1 |
@@ -127,7 +127,8 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Phase | Title | State |
 |---|---|---|
 | 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token (PIV read path, attestation, inventory) | not started |
+| 1 | See the token | **in progress** — 0010 done; 0011 next |
+
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |
 | 4 | The boring lifecycle (renew, revoke, CRL, unblock) | not started |
@@ -138,7 +139,9 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 
 | Risk | Impact | Current handling |
 |---|---|---|
-| PIV APDU layer misbehaves on real firmware in ways no emulator shows | Phase 1 redesign; everything downstream is blocked | Hardware test suite from patch 0011; `yubico-piv-tool` as an independent oracle |
+| PIV APDU layer misbehaves on real firmware in ways no emulator shows | Phase 1 redesign; everything downstream is blocked | Reduced by 0010: the probe runs on `Blinky.Piv` and produced byte-identical output on all three tokens. Hardware suite from 0011; `yubico-piv-tool` as an independent oracle |
+| `61xx` chaining is untested on hardware | The first certificate read could fail in the field | No capture contains it — every response so far fitted one APDU. Covered by hand-built cases; the first real chained read happens in 0011 |
+| The agent cannot run on Linux | Narrows deployment to Windows | Named, not hidden: `PcscContext.IsSupported`, an explicit exception, and patch 0017 |
 | Management-key algorithm differs across firmware (3DES before 5.7, AES-192 after) | Personalisation fails on part of the fleet | Read `GET METADATA`, fall back once, record `Unknown` rather than guessing |
 | ADCS template supplies the subject in the request, so no SID extension is emitted | Certificates issue cleanly and then fail to log anybody in | Backend registration refuses the combination up front (patch 0033) |
 | CDP or AIA unreachable from domain controllers | Smart-card logon fails with an error that names nothing useful | Called out in doc 04; verified as part of the Phase 2 gate |
@@ -158,8 +161,8 @@ Ordered, each item small enough to finish in one sitting.
 3. ~~Scaffold the solution~~ — done, patch 0002. Builds, 11 tests green, CI on
    windows-latest.
    ~~Stand up the stack behind a WAF~~ — done, patch 0003. 9 smoke checks green.
-4. **Write `Blinky.Piv` against recorded transcripts** — transport, chaining,
-   error map — with a real YubiKey used only to capture the transcripts.
+4. ~~Write `Blinky.Piv` against recorded transcripts~~ — done, patch 0010.
+   Transport, chaining, error map, 46 tests, and the probe now runs on it.
 5. **Run patch 0011 against three tokens**: factory, `ykman`-provisioned, and one
    with a blocked PIN. This is the go/no-go for the PC/SC-and-APDUs decision.
 6. **Stand up the lab**: a Samba4 AD DC for the built-in CA path, and a Windows

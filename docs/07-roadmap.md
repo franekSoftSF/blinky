@@ -31,6 +31,7 @@ YubiKey and tell the truth about it.
 | 0014 | `Blinky.Api` skeleton + agent enrolment (mTLS, bootstrap token) | An agent installed from a dev build appears in the database with the correct `(hostname, domain)`; re-running the installer does not create a second row |
 | 0015 | Agent service + UI split, named pipe, inventory job | A token inserted on a workstation appears in the database within one poll interval, with firmware, form factor and slot states correct |
 | 0016 | Bio Multi-protocol: detect slot `96`, read enrolment state and match attempts, confirm the temporary-PIN encoding | A Bio token reports `bio_state=Enrolled` with its attempt count; a non-Bio token reports `NotSupported` from the card's answer, not from its model name |
+| 0017 | pcsc-lite interop, so the agent runs on Linux | The same `IApduTransport` over `libpcsclite`, with the register-width `DWORD` marshalling handled; the transcript replay tests pass on Linux and a reader test is run on one |
 
 **Phase gate:** insert three different YubiKeys — factory, `ykman`-provisioned,
 and one with a blocked PIN — and the console shows the correct state for all

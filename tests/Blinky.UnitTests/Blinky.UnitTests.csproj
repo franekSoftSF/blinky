@@ -24,4 +24,8 @@
     <ProjectReference Include="..\..\src\Blinky.Piv\Blinky.Piv.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

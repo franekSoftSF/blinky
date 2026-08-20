@@ -34,6 +34,14 @@ public readonly record struct StatusWord(ushort Value)
     /// </summary>
     public int? RetriesLeft => (Value & 0xFFF0) == 0x63C0 ? Value & 0x000F : null;
 
+    /// <summary>
+    /// For 6Cxx, the length the card wants the command resent with. Null
+    /// otherwise. T=0 readers produce this where T=1 readers do not, so it has
+    /// to be handled even though it never appears in a transcript captured over
+    /// T=1.
+    /// </summary>
+    public int? ExpectedLength => (Value & 0xFF00) == 0x6C00 ? Value & 0x00FF : null;
+
     /// <summary>True when the slot is simply empty, which is not an error.</summary>
     public bool IsEmptySlot => Value is FileNotFound or ReferencedDataNotFound;
 

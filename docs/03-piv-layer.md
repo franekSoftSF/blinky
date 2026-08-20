@@ -9,7 +9,7 @@ The three realistic options, and why this one:
 
 | Approach | Verdict |
 |---|---|
-| **PC/SC + PIV APDUs** | Chosen. One NuGet dependency for the transport, everything else is our code. Works on Windows and Linux from the same binary. Full access to key generation, attestation, metadata, management-key rotation and PIN retry counters — the operations a CMS exists to perform. |
+| **PC/SC + PIV APDUs** | Chosen. No dependency at all — the P/Invoke is ours. Full access to key generation, attestation, metadata, management-key rotation and PIN retry counters, which are the operations a CMS exists to perform. |
 | **PKCS#11 (`ykcs11`)** | Rejected. Requires shipping and versioning a native library to every workstation, and the interesting administrative operations sit outside the PKCS#11 model anyway, so half the code would be APDUs regardless. |
 | **`ykman` / `yubico-piv-tool`** | Rejected. Parsing another tool's console output, a hard dependency on its version and install path, and PINs in `argv` where any user on the box can read them. Useful as a test oracle, never in the product path. |
 
@@ -18,9 +18,21 @@ document exists because that cost has to be paid in knowledge somewhere.
 
 ## Transport
 
-`PCSC-sharp` for `SCardEstablishContext` / `SCardConnect` / `SCardTransmit`
-(P/Invoke to `winscard.dll` on Windows, `libpcsclite` on Linux). Everything
-above it is ours.
+Direct `LibraryImport` into `winscard.dll`: `SCardEstablishContext`,
+`SCardListReaders`, `SCardConnect`, `SCardBeginTransaction`, `SCardTransmit`.
+A NuGet wrapper turned out to buy nothing — the interesting part is the layer
+above, and that is ours either way.
+
+**Windows only, for now.** pcsc-lite is not the same entry points under another
+library name: its `DWORD` is register-width, so `SCARD_IO_REQUEST` and every
+length parameter marshal differently. There is no Linux machine with a reader
+on this bench to test that against, and untested marshalling in the layer
+everything else stands on is worse than a named gap. `PcscContext.IsSupported`
+answers the question and `Establish()` throws a `PlatformNotSupportedException`
+that says so. Patch 0017.
+
+Everything above the transport — chaining, GET RESPONSE, `6Cxx`, the error map
+— is platform-independent and already covered by tests.
 
 Three rules the transport layer enforces:
 

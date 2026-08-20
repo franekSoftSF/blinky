@@ -1,150 +1,157 @@
-// Blinky — PIV probe.
+// Blinky - PIV probe.
 //
 // READ-ONLY. This tool never writes to a token: no VERIFY with a real PIN, no
 // key generation, no PUT DATA, no management-key authentication. It exists to
-// answer one question before any production code is written — does PC/SC with
-// hand-rolled PIV APDUs work on real hardware, next to whatever minidriver the
-// machine already has installed?
+// exercise Blinky.Piv against real hardware and to report what is on a card.
 //
-// It also records an APDU transcript, which is what the Blinky.Piv unit tests
-// replay (patch 0010). Pass an output path to write one:
+// The transport, command chaining and error mapping all come from Blinky.Piv,
+// so running this probe is a live test of the same code the agent uses. What
+// stays here is the parsing and the printing - the read path proper is patch
+// 0011.
+//
+// Pass an output path to record an APDU transcript:
 //
 //     PivProbe.exe C:\path\to\transcript.json
 //
-// The transcript contains certificate data and the token serial. Do not commit
-// it to a public repository.
+// The transcript contains the token serial and any certificate on the card.
+// Do not commit it to a public repository - the fixture under
+// tests/Blinky.UnitTests/Fixtures is a redacted copy.
 
 using System.Formats.Asn1;
 using System.Globalization;
 using System.IO.Compression;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using Blinky.Piv;
+using Blinky.Piv.Pcsc;
 
 namespace Blinky.Tools.PivProbe;
 
 internal static class Program
 {
     private static readonly List<TranscriptEntry> Transcript = [];
+    private static string currentLabel = "?";
 
     private static int Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
-        Console.WriteLine("Blinky PIV probe — read-only\n");
+        Console.WriteLine("Blinky PIV probe - read-only\n");
 
-        var rc = NativeMethods.SCardEstablishContext(NativeMethods.ScardScopeSystem,
-            IntPtr.Zero, IntPtr.Zero, out var context);
-        if (rc != 0)
+        if (!PcscContext.IsSupported)
         {
-            Console.Error.WriteLine($"SCardEstablishContext failed: 0x{rc:X8}");
-            return 1;
+            Console.Error.WriteLine("Blinky.Piv talks to readers through winscard.dll; "
+                                    + "this build is Windows-only.");
+            return 4;
         }
 
-        try
+        using var context = PcscContext.Establish();
+
+        var readers = context.ListReaders();
+        if (readers.Count == 0)
         {
-            var readers = ListReaders(context);
-            if (readers.Count == 0)
-            {
-                Console.Error.WriteLine("No PC/SC readers found.");
-                return 2;
-            }
-
-            Console.WriteLine($"Readers ({readers.Count}):");
-            foreach (var r in readers) Console.WriteLine($"  · {r}");
-            Console.WriteLine();
-
-            var probed = 0;
-            foreach (var reader in readers)
-            {
-                if (ProbeReader(context, reader)) probed++;
-            }
-
-            if (probed == 0)
-            {
-                Console.WriteLine("No reader presented a card with a PIV applet.");
-                return 3;
-            }
-
-            if (args.Length > 0)
-            {
-                var path = args[0];
-                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-                File.WriteAllText(path, JsonSerializer.Serialize(Transcript,
-                    new JsonSerializerOptions { WriteIndented = true }));
-                Console.WriteLine($"\nTranscript: {path} ({Transcript.Count} exchanges)");
-            }
-
-            return 0;
+            Console.Error.WriteLine("No PC/SC readers found.");
+            return 2;
         }
-        finally
+
+        Console.WriteLine($"Readers ({readers.Count}):");
+        foreach (var reader in readers)
         {
-            NativeMethods.SCardReleaseContext(context);
+            Console.WriteLine($"  - {reader}");
         }
+
+        Console.WriteLine();
+
+        var probed = 0;
+        foreach (var reader in readers)
+        {
+            if (ProbeReader(context, reader))
+            {
+                probed++;
+            }
+        }
+
+        if (probed == 0)
+        {
+            Console.WriteLine("No reader presented a card with a PIV applet.");
+            return 3;
+        }
+
+        if (args.Length > 0)
+        {
+            var path = args[0];
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            File.WriteAllText(path, JsonSerializer.Serialize(Transcript,
+                new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"\nTranscript: {path} ({Transcript.Count} exchanges)");
+        }
+
+        return 0;
     }
 
-    private static bool ProbeReader(IntPtr context, string reader)
+    private static bool ProbeReader(PcscContext context, string reader)
     {
-        var rc = NativeMethods.SCardConnect(context, reader, NativeMethods.ScardShareShared,
-            NativeMethods.ScardProtocolT0 | NativeMethods.ScardProtocolT1,
-            out var card, out var protocol);
-
-        if (rc != 0)
+        PcscTransport? card;
+        try
         {
-            // No card present is the normal state of most readers on a desk.
-            // Windows reports it as either NO_SMARTCARD or REMOVED_CARD.
-            if ((uint)rc is not (0x8010000C or 0x80100069))
-                Console.WriteLine($"[{reader}] connect failed: 0x{rc:X8} ({Describe(rc)})");
+            card = context.Connect(reader);
+        }
+        catch (PcscException ex)
+        {
+            Console.WriteLine($"[{reader}] {ex.Message}");
             return false;
         }
 
+        // An empty reader is the usual state of most readers on a desk.
+        if (card is null)
+        {
+            return false;
+        }
+
+        // Record at the transport, not above it: a transcript of the raw
+        // exchanges is what the replay tests need, including any GET RESPONSE
+        // the chaining logic issues on its own.
+        using var recorder = new RecordingTransport(card, Transcript, () => currentLabel);
+        using var connection = new PivConnection(recorder);
+
+        Console.WriteLine($"[{reader}]");
+
         try
         {
-            var inTransaction = NativeMethods.SCardBeginTransaction(card) == 0;
-            Console.WriteLine($"[{reader}]");
-            Console.WriteLine($"  protocol      T={(protocol == 1 ? "0" : "1")}"
-                              + $"   transaction {(inTransaction ? "acquired" : "REFUSED")}");
+            using var transaction = connection.BeginTransaction();
+            Console.WriteLine($"  protocol      {card.Protocol}   transaction acquired");
 
-            try
+            currentLabel = "SELECT PIV";
+            if (!connection.SelectPiv())
             {
-                var (_, sw) = Send(card, protocol, "SELECT PIV",
-                    [0x00, 0xA4, 0x04, 0x00, 0x05, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00]);
-
-                if (sw != 0x9000)
-                {
-                    Console.WriteLine($"  no PIV applet (SELECT → {sw:X4})\n");
-                    return false;
-                }
-
-                ReadIdentity(card, protocol);
-                ReadPinState(card, protocol);
-                ReadManagementKeyState(card, protocol);
-                ReadBiometricState(card, protocol);
-                ReadSlots(card, protocol);
-                ReadAttestation(card, protocol);
-                Console.WriteLine();
-                return true;
+                Console.WriteLine("  no PIV applet\n");
+                return false;
             }
-            finally
-            {
-                if (inTransaction)
-                    NativeMethods.SCardEndTransaction(card, NativeMethods.ScardLeaveCard);
-            }
+
+            ReadIdentity(connection);
+            ReadPinState(connection);
+            ReadManagementKeyState(connection);
+            ReadBiometricState(connection);
+            ReadSlots(connection);
+            ReadAttestation(connection);
+            Console.WriteLine();
+            return true;
         }
-        finally
+        catch (PcscException ex)
         {
-            NativeMethods.SCardDisconnect(card, NativeMethods.ScardLeaveCard);
+            Console.WriteLine($"  {ex.Message}\n");
+            return false;
         }
     }
 
-    private static void ReadIdentity(IntPtr card, uint protocol)
+    private static void ReadIdentity(PivConnection connection)
     {
-        var (version, vsw) = Send(card, protocol, "GET VERSION", [0x00, 0xFD, 0x00, 0x00, 0x00]);
+        var (version, vsw) = Send(connection, "GET VERSION", [0x00, 0xFD, 0x00, 0x00, 0x00]);
         var firmware = vsw == 0x9000 && version.Length == 3
             ? $"{version[0]}.{version[1]}.{version[2]}"
             : $"unavailable (SW {vsw:X4})";
 
-        var (serialBytes, ssw) = Send(card, protocol, "GET SERIAL", [0x00, 0xF8, 0x00, 0x00, 0x00]);
+        var (serialBytes, ssw) = Send(connection, "GET SERIAL", [0x00, 0xF8, 0x00, 0x00, 0x00]);
         var serial = ssw == 0x9000 && serialBytes.Length == 4
             ? ((uint)((serialBytes[0] << 24) | (serialBytes[1] << 16)
                       | (serialBytes[2] << 8) | serialBytes[3])).ToString(CultureInfo.InvariantCulture)
@@ -154,11 +161,11 @@ internal static class Program
         Console.WriteLine($"  serial        {serial}");
     }
 
-    private static void ReadPinState(IntPtr card, uint protocol)
+    private static void ReadPinState(PivConnection connection)
     {
         // VERIFY with no data returns the remaining retry count without
         // consuming one. This is the only read-only way to ask.
-        var (_, sw) = Send(card, protocol, "VERIFY (empty, retry probe)", [0x00, 0x20, 0x00, 0x80]);
+        var (_, sw) = Send(connection, "VERIFY (empty, retry probe)", [0x00, 0x20, 0x00, 0x80]);
 
         var pin = (sw & 0xFFF0) == 0x63C0 ? $"{sw & 0x0F} retries left"
             : sw == 0x6983 ? "BLOCKED"
@@ -169,7 +176,7 @@ internal static class Program
 
         foreach (var (name, slot) in new[] { ("PIN", (byte)0x80), ("PUK", (byte)0x81) })
         {
-            var (meta, msw) = Send(card, protocol, $"GET METADATA {slot:X2} ({name})",
+            var (meta, msw) = Send(connection, $"GET METADATA {slot:X2} ({name})",
                 [0x00, 0xF7, 0x00, slot, 0x00]);
             if (msw != 0x9000)
             {
@@ -197,9 +204,9 @@ internal static class Program
         }
     }
 
-    private static void ReadManagementKeyState(IntPtr card, uint protocol)
+    private static void ReadManagementKeyState(PivConnection connection)
     {
-        var (meta, sw) = Send(card, protocol, "GET METADATA 9B (management key)",
+        var (meta, sw) = Send(connection, "GET METADATA 9B (management key)",
             [0x00, 0xF7, 0x00, 0x9B, 0x00]);
 
         if (sw != 0x9000)
@@ -223,12 +230,12 @@ internal static class Program
         Console.WriteLine($"  mgmt key      {alg}   default={isDefault}   touch={touch}");
     }
 
-    private static void ReadBiometricState(IntPtr card, uint protocol)
+    private static void ReadBiometricState(PivConnection connection)
     {
         // Slot 96 is on-card biometric comparison (SP 800-73-4 OCC). Present
         // only on the Bio Multi-protocol Edition; everything else answers with
         // an error, which is the detection.
-        var (meta, sw) = Send(card, protocol, "GET METADATA 96 (biometric)",
+        var (meta, sw) = Send(connection, "GET METADATA 96 (biometric)",
             [0x00, 0xF7, 0x00, 0x96, 0x00]);
 
         if (sw != 0x9000)
@@ -258,7 +265,7 @@ internal static class Program
             Console.WriteLine($"    {label,-22} {decoded}");
         }
 
-        var (_, vsw) = Send(card, protocol, "VERIFY 96 (empty, bio attempt probe)",
+        var (_, vsw) = Send(connection, "VERIFY 96 (empty, bio attempt probe)",
             [0x00, 0x20, 0x00, 0x96]);
         var attempts = (vsw & 0xFFF0) == 0x63C0 ? $"{vsw & 0x0F} match attempts left"
             : vsw == 0x6983 ? "BLOCKED - falls back to PIN"
@@ -266,7 +273,7 @@ internal static class Program
         Console.WriteLine($"    attempts   {attempts}");
     }
 
-    private static void ReadSlots(IntPtr card, uint protocol)
+    private static void ReadSlots(PivConnection connection)
     {
         (string Slot, byte[] Oid)[] slots =
         [
@@ -280,7 +287,7 @@ internal static class Program
         foreach (var (slot, oid) in slots)
         {
             var apdu = new byte[] { 0x00, 0xCB, 0x3F, 0xFF, 0x05, 0x5C, 0x03, oid[0], oid[1], oid[2], 0x00 };
-            var (data, sw) = Send(card, protocol, $"GET DATA {slot}", apdu);
+            var (data, sw) = Send(connection, $"GET DATA {slot}", apdu);
 
             if (sw == 0x6A82 || sw == 0x6A88)
             {
@@ -309,7 +316,7 @@ internal static class Program
         // Slot metadata says what the card thinks, independently of any certificate.
         foreach (var slot in new byte[] { 0x9A, 0x9C, 0x9D, 0x9E })
         {
-            var (meta, sw) = Send(card, protocol, $"GET METADATA {slot:X2}",
+            var (meta, sw) = Send(connection, $"GET METADATA {slot:X2}",
                 [0x00, 0xF7, 0x00, slot, 0x00]);
             if (sw != 0x9000) continue;
 
@@ -328,9 +335,9 @@ internal static class Program
         }
     }
 
-    private static void ReadAttestation(IntPtr card, uint protocol)
+    private static void ReadAttestation(PivConnection connection)
     {
-        var (data, sw) = Send(card, protocol, "ATTEST 9A", [0x00, 0xF9, 0x9A, 0x00, 0x00]);
+        var (data, sw) = Send(connection, "ATTEST 9A", [0x00, 0xF9, 0x9A, 0x00, 0x00]);
         if (sw != 0x9000)
         {
             Console.WriteLine($"  attestation   unavailable (SW {sw:X4})"
@@ -465,123 +472,70 @@ internal static class Program
 
     // ---- transport ---------------------------------------------------------
 
-    private static (byte[] Data, ushort Sw) Send(IntPtr card, uint protocol, string label, byte[] apdu)
+    /// <summary>
+    /// Sends a literal APDU and returns its data and status word, keeping the
+    /// call sites below readable as the raw commands they are. Chaining, GET
+    /// RESPONSE and 6Cxx are handled inside Blinky.Piv.
+    /// </summary>
+    private static (byte[] Data, ushort Sw) Send(PivConnection connection, string label, byte[] apdu)
     {
-        var (data, sw) = Transmit(card, protocol, apdu);
-        var collected = new List<byte>(data);
+        currentLabel = label;
+        var response = connection.Send(Decode(apdu));
+        return (response.Data, response.Status.Value);
+    }
 
-        // 61xx — more data available.
-        while ((sw & 0xFF00) == 0x6100)
+    private static ApduCommand Decode(byte[] apdu)
+    {
+        var (cla, ins, p1, p2) = (apdu[0], apdu[1], apdu[2], apdu[3]);
+
+        if (apdu.Length == 4)
         {
-            var le = (byte)(sw & 0xFF);
-            var (more, nextSw) = Transmit(card, protocol, [0x00, 0xC0, 0x00, 0x00, le]);
-            collected.AddRange(more);
-            sw = nextSw;
+            return new ApduCommand(ins, p1, p2, cla: cla);
         }
 
-        Transcript.Add(new TranscriptEntry(label, Hex(apdu), Hex([.. collected]), $"{sw:X4}"));
-        return ([.. collected], sw);
-    }
-
-    private static (byte[] Data, ushort Sw) Transmit(IntPtr card, uint protocol, byte[] apdu)
-    {
-        var pci = new NativeMethods.ScardIoRequest
+        if (apdu.Length == 5)
         {
-            Protocol = protocol,
-            PciLength = (uint)Marshal.SizeOf<NativeMethods.ScardIoRequest>()
-        };
+            return new ApduCommand(ins, p1, p2, le: apdu[4], cla: cla);
+        }
 
-        var buffer = new byte[4096];
-        var received = buffer.Length;
+        var lc = apdu[4];
+        var hasLe = apdu.Length == 5 + lc + 1;
 
-        var rc = NativeMethods.SCardTransmit(card, ref pci, apdu, apdu.Length,
-            IntPtr.Zero, buffer, ref received);
-
-        if (rc != 0)
-            throw new InvalidOperationException(
-                $"SCardTransmit failed: 0x{rc:X8} ({Describe(rc)}) for {Hex(apdu)}");
-
-        if (received < 2)
-            throw new InvalidOperationException($"Short response ({received} bytes) for {Hex(apdu)}");
-
-        var sw = (ushort)((buffer[received - 2] << 8) | buffer[received - 1]);
-        return (buffer[..(received - 2)], sw);
+        return new ApduCommand(ins, p1, p2, apdu.AsMemory(5, lc), hasLe ? apdu[^1] : null, cla);
     }
-
-    private static List<string> ListReaders(IntPtr context)
-    {
-        var length = 0;
-        var rc = NativeMethods.SCardListReaders(context, null, null, ref length);
-        if (rc != 0 || length == 0) return [];
-
-        var buffer = new byte[length];
-        rc = NativeMethods.SCardListReaders(context, null, buffer, ref length);
-        if (rc != 0) return [];
-
-        return Encoding.ASCII.GetString(buffer, 0, length)
-            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
-            .ToList();
-    }
-
-    private static string Describe(int rc) => (uint)rc switch
-    {
-        0x8010000C => "no card in reader",
-        0x8010000B => "reader in exclusive use by another process",
-        0x80100069 => "card removed",
-        0x8010002E => "no readers available",
-        0x80100017 => "reader unavailable",
-        _ => "see SCARD_ error codes"
-    };
 
     private static string Hex(byte[] data) => Convert.ToHexString(data);
 
     private static string Shorten(string dn) => dn.Length <= 76 ? dn : dn[..73] + "...";
 
-    private sealed record TranscriptEntry(string Label, string Command, string Response, string Sw);
 }
 
-internal static class NativeMethods
-{
-    public const uint ScardScopeSystem = 2;
-    public const uint ScardShareShared = 2;
-    public const uint ScardProtocolT0 = 1;
-    public const uint ScardProtocolT1 = 2;
-    public const uint ScardLeaveCard = 0;
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct ScardIoRequest
+/// <summary>
+/// Wraps a transport and writes down every exchange, so a probe run produces a
+/// fixture the unit tests can replay.
+/// </summary>
+internal sealed class RecordingTransport(
+    IApduTransport inner,
+    List<TranscriptEntry> transcript,
+    Func<string> label) : IApduTransport
+{
+    public string Description => inner.Description;
+
+    public ApduResponse Transmit(ReadOnlySpan<byte> apdu)
     {
-        public uint Protocol;
-        public uint PciLength;
+        var command = Convert.ToHexString(apdu);
+        var response = inner.Transmit(apdu);
+
+        transcript.Add(new TranscriptEntry(label(), command,
+            Convert.ToHexString(response.Data), response.Status.ToString()));
+
+        return response;
     }
 
-    [DllImport("winscard.dll", SetLastError = true)]
-    public static extern int SCardEstablishContext(uint scope, IntPtr reserved1, IntPtr reserved2,
-        out IntPtr context);
+    public IDisposable BeginTransaction() => inner.BeginTransaction();
 
-    [DllImport("winscard.dll", SetLastError = true)]
-    public static extern int SCardReleaseContext(IntPtr context);
-
-    [DllImport("winscard.dll", EntryPoint = "SCardListReadersA", CharSet = CharSet.Ansi,
-        SetLastError = true)]
-    public static extern int SCardListReaders(IntPtr context, byte[]? groups, byte[]? readers,
-        ref int readersLength);
-
-    [DllImport("winscard.dll", EntryPoint = "SCardConnectA", CharSet = CharSet.Ansi,
-        SetLastError = true)]
-    public static extern int SCardConnect(IntPtr context, string reader, uint shareMode,
-        uint preferredProtocols, out IntPtr card, out uint activeProtocol);
-
-    [DllImport("winscard.dll", SetLastError = true)]
-    public static extern int SCardDisconnect(IntPtr card, uint disposition);
-
-    [DllImport("winscard.dll", SetLastError = true)]
-    public static extern int SCardBeginTransaction(IntPtr card);
-
-    [DllImport("winscard.dll", SetLastError = true)]
-    public static extern int SCardEndTransaction(IntPtr card, uint disposition);
-
-    [DllImport("winscard.dll", SetLastError = true)]
-    public static extern int SCardTransmit(IntPtr card, ref ScardIoRequest sendPci,
-        byte[] sendBuffer, int sendLength, IntPtr recvPci, byte[] recvBuffer, ref int recvLength);
+    public void Dispose() => inner.Dispose();
 }
+
+internal sealed record TranscriptEntry(string Label, string Command, string Response, string Sw);
