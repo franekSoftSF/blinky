@@ -18,12 +18,12 @@
     ]
   },
   "status": {
-    "updated": "2026-08-20",
-    "phase": 1,
-    "phaseTitle": "See the token",
-    "state": "gate-met",
-    "summary": "Phase 2 in progress. Blinky issues: on 2026-08-20 an operator job produced a certificate on a YubiKey 5.7.1 end to end - key generated on card, attestation verified server-side, card signed its own request, certificate written back and read back, credential Installed and slot Provisioned - with the PIN typed by a person into the agent UI (0018, now done). A smartcard-logon profile is still correctly refused without a resolved objectSid, so the live run used a client-auth profile. Still open: personalisation (0025, waiting on a decision), biometric verification (0027), and reconciling credentials with what a sweep finds (0029).",
-    "nothingIssuedYet": true
+    "updated": "2026-08-21",
+    "phase": 2,
+    "phaseTitle": "Issue something",
+    "state": "in-progress",
+    "summary": "Phase 2, half the gate met. On 2026-08-21 a smartcard-logon certificate was issued onto a YubiKey 5.4.3 from a domain-joined Windows client in BLINKY.LAB - subject CN=Admin, UPN Admin@blinky.lab, and an objectSid read from the directory rather than typed - and Yubico Authenticator shows it in slot 9A with the serial the database recorded. Logging in with the card has not been tried; that is the rest of the gate. The lab of four machines from doc 09 is standing. Six defects surfaced during the run and are fixed with tests, two of them introduced by this project: a card reset mid-job, a PIN reaching the database inside a failure message, a half-done recovery that cleared the card security state, a CA directory the API container could not read, a per-minute warning about a missing reader, and a tray window that stopped refreshing and would not reopen. Still open: an orphaned Issued credential from the attempt that died between issuing and writing, the API gaps in doc 11 that block enrolment from the console, personalisation (0025) and reconciliation (0029).",
+    "nothingIssuedYet": false
   },
   "phases": [
     {

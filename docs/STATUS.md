@@ -1,9 +1,9 @@
 # Project status — Blinky
 
-**Last updated:** 2026-08-20
-**Phase:** 1 — See the token, gate met. Phase 2 next
-**Overall:** the agent reads tokens correctly and reports them; nothing is
-issued yet
+**Last updated:** 2026-08-21
+**Phase:** 2 — Issue something, in progress. The gate is half met
+**Overall:** a smart-card logon certificate is on a card in the lab domain;
+logging in with it has not been tried
 
 The machine-readable version of this file is [status.json](status.json). Keep
 both in sync; `status.json` is the one a build or dashboard should read. The
@@ -26,11 +26,43 @@ into a window that the service cannot draw and never sees the contents of. The
 run took thirteen seconds from claim to `Installed`, and `ykman piv info`
 confirms the certificate independently.
 
-What is still missing is the directory. A `smartcard-logon` certificate is
-refused without a resolved `objectSid`, which is correct and which is why the
-first issuance used a `client-auth` profile instead — a certificate that does
-not pretend to be a logon credential. Making that refusal stop mattering is
-what the lab in [09](09-lab.md) is for.
+The directory arrived. On 20–21 August 2026 the lab in [09](09-lab.md) was
+built — a Samba4 domain controller for `BLINKY.LAB`, a host carrying the CA and
+the CMS, a domain-joined Linux client and a domain-joined Windows client — and
+with it the thing that had been refused all along became issuable.
+
+On 21 August 2026 a `smartcard-logon` certificate was issued onto a YubiKey
+5.4.3 from the Windows client: profile `smartcard-logon`, subject `CN=Admin`,
+UPN `Admin@blinky.lab`, and a real `objectSid` read out of the directory rather
+than typed. Thirteen seconds from claim to `Installed`. Yubico Authenticator —
+which is not ours — shows the certificate in slot 9A with the serial number the
+database recorded.
+
+**Logging in with it has not been tried.** That is the other half of the Phase 2
+gate and the next thing to do.
+
+Getting there took six attempts, and every one of them failed differently and
+for a real reason. All six are fixed, and each is listed under *What the run
+found* below. The pattern is worth stating plainly: none of them were visible
+without a domain, a Windows client and a person typing a PIN, which is the
+argument for having built the lab rather than reasoning about it.
+
+### What the run found
+
+Six defects, in the order they surfaced. Each has a test.
+
+| Symptom | What it actually was |
+|---|---|
+| Job failed at the PIN with `SCARD_W_RESET_CARD` | Windows shares the card with the smart card service, minidrivers and the logon screen, and any of them can reset it between two commands. A transaction stops interleaving, not resetting. Recovery — reconnect, select the applet, send again — was defined by the standard and not implemented |
+| The PIN in the failure message, in the database | A failed transmit reported the whole command in hex. On a `VERIFY` those bytes are the PIN. It reached `jobs.result`, a column, a backup. Now redacted by instruction, header kept |
+| Retry refused with `6982` on the last step | The recovery above, half-done: selecting the applet is exactly what clears the management key authentication, so the retried write reached a card that no longer knew us. Restored explicitly now — the management key only, never the PIN |
+| `Issuance refused: 500` | The CA directory was `drwx------ root:root` and the API runs as uid 10001. It could not list it, and said "does not hold a CA" — which is a different sentence from "cannot read this" |
+| The agent warned about a missing reader every minute | Windows starts the smart card service from a reader-arrival trigger, so a machine with nothing plugged in answers `SCARD_E_NO_SERVICE` forever. Said once now |
+| The tray stopped refreshing, and would not reopen | `loading` was set without a `try/finally`, so one broken pipe silenced the window for good; and the window was closed rather than hidden, which WPF will not let you show again |
+
+Two of these — the PIN in the log and the half-done recovery — were introduced
+by this project rather than found in somebody else's. They are listed the same
+way as the rest.
 
 ## Validated on hardware
 
@@ -230,11 +262,11 @@ write it.
 | 0020 | `ICertificateAuthority`, `CaCapabilities`, profiles | **done** | Both topologies issue through one interface; capabilities describe the difference |
 | 0021 | Built-in CA: generation script, key tiers | **done, unverified** | `scripts/new-ca.sh` builds both shapes and the chains verify. The SoftHSM key tier is not written — only `file`, and it refuses without an explicit opt-in |
 | 0028 | Built-in CA topology: single or two-tier | **done** | Chain validates in both; `pathlen` asserted so the reversal cannot return |
-| 0022 | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | EKUs, UPN SAN and the SID extension are issued and asserted, and `smartcard-logon` refuses to issue without a resolved SID — proved by a 422 on the first live enrolment. A `client-auth` profile exists for use before a directory does. The profile model still lives in code rather than in the database |
+| 0022 | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | EKUs, UPN SAN and the SID extension are issued and asserted, and `smartcard-logon` refuses to issue without a resolved SID — proved by a 422 on the first live enrolment. On 2026-08-21 the profile issued for real against a directory: `CN=Admin`, UPN `Admin@blinky.lab`, SID read from `BLINKY.LAB`, certificate on the card and visible in Yubico Authenticator. A `client-auth` profile remains for use before a directory does. The profile model still lives in code rather than in the database, and is invisible to the console — see [11](11-console-enrolment.md) |
 | 0023 | Key generation, on-card CSR signing, attestation-gated submission | **done** | Proved on two tokens: management key authenticated mutually (AES-192 and 3DES), key generated, attestation verified, card signed its own request |
 | 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **done** | Written, read back, thumbprint compared, `Credential` in `Installed` and the slot in `Provisioned` — end to end through the job engine, twice. The certificate still does **not** reach the Windows store on this machine: ActivClient owns the minidriver binding |
 | 0025 | Personalisation: management key, PUK escrow, PIN policy | **open** |
-| 0026 | Job engine: leases, watchdog, `AwaitingUser` | **done, unverified** | An operator creates a job, the agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog. `AwaitingUser` has its own longer lease but nothing raises it until 0018 |
+| 0026 | Job engine: leases, watchdog, `AwaitingUser` | **done** | An operator creates a job, the agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog. `AwaitingUser` was watched live on 2026-08-21 — `Pending` → `Running` → `AwaitingUser` while a person typed a PIN, then `Succeeded` — which is what the row above was waiting for. The idempotency key is what stops a repeat, and a job that failed is only retried by naming a new `reason`: correct, and undiscoverable from the outside, since re-posting silently returns the dead job |
 | 0027 | Biometric user verification during enrolment | **done** | A fingerprint replaces the PIN when the card can do it, with the PIN as fallback. Proved on a Bio 5.7.2: claim to certificate in five seconds, no PIN typed. The finding that made it work — `MatchOnce` is chosen at key generation, and a match will not satisfy a key generated with `Once` — is in [03](03-piv-layer.md) |
 | 0018 | Agent UI: PIN and touch prompts across the session boundary | **done** | A PIN typed in the user's session reached the service over the named pipe and unlocked the card. The pipe is granted to `INTERACTIVE` and `LocalSystem` and to nothing else |
 | 0029 | Reconcile credentials with what the sweep actually finds | **open** | A token reset outside Blinky leaves `Credential` rows reading `Installed` for certificates that no longer exist. The sweep corrects the *slot* and says nothing about the credential — found by resetting a token after two successful issuances |
@@ -309,24 +341,23 @@ exercised against the thing it is really for.
 
 Ordered, each item small enough to finish in one sitting.
 
-1. **Issue onto the Bio, on the ordinary PIN path.** Nothing has ever been
-   written to the biometric token, and it differs from the others in exactly
-   the places that have already caused trouble: AES-192 management key, eight
-   PIN attempts rather than three, and no PUK at all. No new code — an
-   enrolment job and one PIN — and it closes the question of whether the Bio
-   behaves like any other token when a certificate is issued onto it.
-2. **0027 — verification by fingerprint instead of PIN.** Not a test, a patch:
-   the biometric `VERIFY` and the temporary-PIN encoding that doc 03 describes
-   and nothing has ever exercised, because checking costs a match attempt and
-   needs a finger. Worth doing before the lab for one reason only — it is the
-   single thing here that cannot be verified without a person at the keyboard,
-   and the lab can be built at any time.
-3. **Stand up the lab** — four machines, described in [09](09-lab.md). The
-   Phase 2 gate needs a domain to log into, and it is the only item here that
-   needs infrastructure rather than time. Reach the cheaper rung first: PKINIT
-   from Linux proves the certificate before a Windows client exists to blame.
-   This is also what makes `smartcard-logon` issuable at all, since it refuses
-   without a resolved `objectSid`.
+1. **Log in with the card.** The certificate is on a token, the domain exists,
+   and nobody has tried it. This is the Phase 2 gate and everything else here
+   is smaller. If Windows says no certificate was found, the two things to look
+   at are `certutil -viewstore -enterprise Root` and the same for `NTAuth` on
+   the client — the chain is published in the directory and a domain member
+   still has to pull it.
+2. **Revoke the orphaned credential.** The attempt that failed at the last step
+   left a `Credential` row reading `Issued` for a certificate that reached no
+   card. One slot now has two credentials and one of them exists nowhere. This
+   is 0029's problem arriving early, by a route 0029 does not cover: not a card
+   reset behind Blinky's back, but Blinky's own job dying between issuing and
+   writing.
+3. **The API gaps that block enrolment from the console** — profiles and
+   cardholders are invisible to it, and a failed job cannot say why. Written up
+   with endpoint shapes in [11](11-console-enrolment.md). Until these exist,
+   issuing means a JSON body typed by hand, and the console cannot be finished
+   against them.
 4. **0029 — reconcile credentials with what a sweep finds.** A token reset
    outside Blinky leaves `Credential` rows reading `Installed` for certificates
    that no longer exist. The sweep corrects the slot and says nothing about the
@@ -335,8 +366,12 @@ Ordered, each item small enough to finish in one sitting.
    and **0025** — personalisation, which is waiting on a decision about the
    management-key master rather than on work.
 
-Items 1, 2, 4 and 5 can start immediately. Item 3 is the long pole for the
-phase gate and is worth starting in parallel.
+Smaller, and each an hour: an interrupted enrolment leaves a key in a slot that
+nothing below firmware 5.7 can clear, so recovery means `ykman piv reset` from
+outside the product; the console's `MODEL` column shows the form factor because
+that is all the API sends it; and the number on the MSI and the version the
+console reports come from two different places, so telling whether a fix is
+actually installed means reading a commit hash.
 
 Not on this list, deliberately: 0017 is blocked for want of a Linux reader, and
 the temporary-PIN half of 0016 waits for 0027.
