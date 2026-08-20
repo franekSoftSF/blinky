@@ -1,6 +1,8 @@
 using Blinky.Api.Agents;
 using Blinky.Api.Persistence;
 using Blinky.Api.Security;
+using Blinky.Api.Tokens;
+using Blinky.Contracts;
 using Blinky.Domain.Entities;
 using Blinky.Infrastructure;
 using Serilog;
@@ -19,6 +21,8 @@ builder.Services.AddSingleton(_ => AgentCertificateAuthority.Load(
     builder.Configuration["Blinky:AgentCa:CertificatePath"] ?? "/etc/blinky/certs/agent-ca.crt",
     builder.Configuration["Blinky:AgentCa:KeyPath"] ?? "/etc/blinky/certs/agent-ca.key",
     TimeSpan.FromDays(builder.Configuration.GetValue("Blinky:AgentCa:LifetimeDays", 90))));
+
+builder.Services.AddSingleton<TokenInventoryService>();
 
 builder.Services.AddSingleton(services => new AgentEnrolmentService(
     services.GetRequiredService<Database>(),
@@ -94,6 +98,27 @@ app.MapGet("/api/agents/whoami", (HttpContext context) =>
         notAfter = certificate.NotAfter,
     });
 });
+
+// What an agent found in a reader. Facts in, judgement here - see
+// TokenInventoryService.
+app.MapPost("/api/tokens/inventory",
+    (TokenInventoryReport report, TokenInventoryService inventory) =>
+    {
+        if (!Protocol.IsSupported(report.SchemaVersion))
+        {
+            return Results.Json(new
+            {
+                error = $"schema version {report.SchemaVersion} is not supported",
+                supported = new
+                {
+                    minimum = Protocol.MinimumSupportedVersion,
+                    maximum = Protocol.MaximumSupportedVersion,
+                },
+            }, statusCode: 400);
+        }
+
+        return Results.Ok(inventory.Accept(report));
+    });
 
 app.MapPost("/api/agents/{id:guid}/heartbeat",
     (Guid id, HeartbeatRequest request, HttpContext context, Database database) =>

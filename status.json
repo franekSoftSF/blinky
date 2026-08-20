@@ -22,7 +22,7 @@
     "phase": 1,
     "phaseTitle": "See the token",
     "state": "building",
-    "summary": "Patches 0010-0014 done. Blinky.Piv reads tokens and verifies attestation on hardware; the domain and schema are in with SchemaValidator clean; and an agent now enrols over the mTLS channel, gets a certificate from the agent CA and uses it. 120 tests, 13 smoke checks. Next is 0015, the agent service itself."
+    "summary": "Patches 0010-0015 done. The agent enrols itself, watches readers and reports what it finds; four tokens land in the database with correct firmware, form factor and slot states, and a hand-provisioned slot comes back Stale. 135 tests, 13 smoke checks. Left in phase 1: 0016 (Bio) and 0018 (agent UI)."
   },
   "phases": [
     {
@@ -66,6 +66,12 @@
       "title": "Ship it",
       "state": "not-started",
       "done": "A stranger can go from clone to smart-card logon using only the repository."
+    },
+    {
+      "id": 18,
+      "title": "(patch) Agent UI and the named pipe",
+      "state": "not-started",
+      "done": "A PIN prompt drawn in the user session and answered over a pipe the service accepts only from the interactive user."
     }
   ],
   "components": [
@@ -151,13 +157,13 @@
       "name": "Blinky.Agent.Service",
       "type": "worker-service",
       "phase": 1,
-      "state": "skeleton"
+      "state": "inventory-done"
     },
     {
       "name": "Blinky.Agent.Ui",
       "type": "wpf",
       "phase": 1,
-      "state": "skeleton"
+      "state": "not-started"
     },
     {
       "name": "console",
@@ -314,6 +320,11 @@
       "id": "agent-ca",
       "choice": "A separate CA issues agent client certificates; short-lived and rotated",
       "state": "locked"
+    },
+    {
+      "id": "facts-not-conclusions",
+      "choice": "Agents report what the card said; the server decides what it means",
+      "state": "locked-validated"
     }
   ],
   "openQuestions": [

@@ -95,6 +95,28 @@ Two things the hardware settled that reading a specification would not have:
   rejected a genuine token as "not an attestation". The numbers within the arc
   are 3, 7, 8, 9 — not sequential, not guessable.
 
+On 2026-08-20 the agent ran against four tokens at once and the database
+agreed with the cards:
+
+| Serial | Firmware | Form factor | State | PUK | Slot 9A |
+|---|---|---|---|---|---|
+| 23673995 | 5.4.3 | — | Detected | Default | Empty |
+| 24031448 | 5.4.3 | — | Detected | Default | Empty |
+| 29177301 | 5.7.1 | UsbCKeychain | **Registered** | Default | **Stale** |
+| 32140892 | 5.7.2 | — | Detected | **NotApplicable** | Empty |
+
+Three things in that table are the design working rather than data:
+
+- Only 29177301 is `Registered`, because only it holds a key that can be
+  attested. Everything else stays `Detected` until it can prove it is genuine
+  hardware.
+- The form factor is blank on three of four, correctly: it exists only inside
+  an attestation, so a blank token simply has none. Reading it from a model
+  name would have filled the column with a guess.
+- The certificate `ykman` wrote is `Stale`, not `Provisioned`. Blinky did not
+  put it there, and every token that has ever been touched by hand looks like
+  this.
+
 ## Decisions locked
 
 | Decision | Choice | Why |
@@ -158,8 +180,8 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | `Blinky.Pki` — built-in CA | not started | Phase 2, patches 0021 and 0028 (topology) |
 | `Blinky.Pki` — ADCS | not started | Phase 3 |
 | `Blinky.AdcsConnector` | skeleton | Windows service host. `ICertRequest3` in patch 0032 |
-| `Blinky.Agent.Service` | skeleton | Windows service host. Reader watcher and jobs in patch 0015 |
-| `Blinky.Agent.Ui` | skeleton | Empty WPF shell. Prompts in patch 0015 |
+| `Blinky.Agent.Service` | **inventory done** | Patch 0015: enrols itself, watches readers, reports what it finds. Four tokens land in the database with correct firmware, form factor and slot states |
+| `Blinky.Agent.Ui` | not started | Split out as patch 0018, immediately before the first workflow that needs a prompt |
 | Angular console | not started | Phase 5 |
 | Samba4 setup command | not started | Phase 6 |
 
@@ -168,7 +190,7 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 | Phase | Title | State |
 |---|---|---|
 | 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token | **in progress** — 0010 to 0014 done; 0015 next |
+| 1 | See the token | **in progress** — 0010 to 0015 done; 0016 and 0018 left |
 
 | 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
 | 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |
