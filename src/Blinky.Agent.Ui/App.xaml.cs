@@ -64,7 +64,17 @@ public partial class App : Application
         // a tray that failed to appear must not stop a PIN prompt arriving.
         tray = new Tray();
         tray.OpenRequested += ShowTokens;
-        tray.ExitRequested += Shutdown;
+        tray.ExitRequested += () =>
+        {
+            // The token window refuses to close so the tray can show it again;
+            // this is the one time it should go.
+            if (tokens is { } window)
+            {
+                window.AllowClose = true;
+            }
+
+            Shutdown();
+        };
 
         Trace("tray icon shown");
     }

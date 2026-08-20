@@ -38,6 +38,13 @@ public partial class TokensWindow : Window
     // brought up to date once that read finishes. See LoadAsync.
     private bool loadWantedAgain;
 
+    /// <summary>
+    /// Lets the window actually close, for the one case that wants it: the
+    /// application exiting. Cancelling unconditionally would be a tray that
+    /// will not quit, which is worse than a tray that will not reopen.
+    /// </summary>
+    public bool AllowClose { get; set; }
+
     private readonly DispatcherTimer refresh = new()
     {
         // Long enough not to fight the poll loop for the reader, short enough
@@ -51,6 +58,22 @@ public partial class TokensWindow : Window
         InitializeComponent();
 
         refresh.Tick += async (_, _) => await LoadAsync();
+
+        // Hidden, not destroyed. WPF refuses to show a window that has been
+        // closed, and the tray keeps this one so its position survives - so
+        // closing it with the X used to leave the tray icon doing nothing at
+        // all, for the rest of the session, with the exception going only to
+        // the trace.
+        Closing += (_, e) =>
+        {
+            if (AllowClose)
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            Hide();
+        };
 
         Loaded += async (_, _) => await LoadAsync();
 
@@ -94,6 +117,32 @@ public partial class TokensWindow : Window
 
         loading = true;
 
+        try
+        {
+            await LoadCoreAsync();
+        }
+        finally
+        {
+            // In a finally, because it was not. A broken pipe or a service
+            // restarting threw out of here and left the flag set, and every
+            // refresh afterwards - the timer, the button, the one after a PIN
+            // change - returned at the guard above. The window went quiet for
+            // good and looked like it had hung.
+            loading = false;
+            StatusText.Text = string.Empty;
+        }
+
+        // Last, after the screen has been brought up to date. Run any earlier
+        // and this pass overwrites the newer data with its own, older, read.
+        if (loadWantedAgain)
+        {
+            loadWantedAgain = false;
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadCoreAsync()
+    {
         // Only on the first read. A spinner appearing every four seconds is
         // worse than no spinner: it makes a window that is working look busy.
         if (tokens.Count == 0)
@@ -112,18 +161,6 @@ public partial class TokensWindow : Window
         var remembered = Selected?.Serial;
 
         var response = await client.SendAsync(new AgentRequest(AgentRequest.ListTokens));
-
-        StatusText.Text = string.Empty;
-        loading = false;
-
-        // Whatever arrived while that was running, now. Not recursive in any
-        // way that matters: the flag is cleared before the call, so a quiet
-        // window stops after one extra pass.
-        if (loadWantedAgain)
-        {
-            loadWantedAgain = false;
-            await LoadAsync();
-        }
 
         if (!response.Succeeded)
         {
