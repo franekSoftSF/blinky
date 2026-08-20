@@ -167,6 +167,7 @@ SoftHSM2 / PKCS#11 · WPF for the workstation UI · Serilog · Docker Compose
 | [06 — Security](docs/06-security.md) | Trust boundaries, key custody, threat notes |
 | [07 — Roadmap](docs/07-roadmap.md) | Phases, numbered patches, definition of done |
 | [08 — What the hardware changed](docs/08-hardware-notes.md) | Every rule that came from a measurement rather than from reading |
+| [Status](docs/STATUS.md) | What is done, what is only written, and what is blocked |
 
 ## Why "Blinky"
 
@@ -192,9 +193,13 @@ Three practical reasons on top of the joke:
 
 ## Status
 
-**Phase 0 — design.** No production code yet. Per-component progress and the
-next concrete actions live in [STATUS.md](STATUS.md), with a machine-readable
-copy in [status.json](status.json).
+**Phase 1 complete — the gate is met.** Blinky reads tokens and tells the truth
+about them: an agent enrols itself over mTLS, watches the readers, and reports
+what it finds. Nothing is issued yet; that is Phase 2.
+
+Per-patch progress, and an explicit list of what is written but **not yet
+verified**, live in [docs/STATUS.md](docs/STATUS.md), with a machine-readable
+copy in [docs/status.json](docs/status.json).
 
 ## Licence
 

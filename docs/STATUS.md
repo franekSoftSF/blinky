@@ -1,22 +1,26 @@
 # Project status — Blinky
 
-**Last updated:** 2026-08-19
-**Phase:** 0 — Design
-**Overall:** phase 1 started - the PIV transport layer is real and driving hardware
+**Last updated:** 2026-08-20
+**Phase:** 1 — See the token, gate met. Phase 2 next
+**Overall:** the agent reads tokens correctly and reports them; nothing is
+issued yet
 
 The machine-readable version of this file is [status.json](status.json). Keep
-both in sync; `status.json` is the one a build or dashboard should read.
+both in sync; `status.json` is the one a build or dashboard should read. The
+definitions of done live in [07 — Roadmap](07-roadmap.md); what is done lives
+here.
 
 ## Where the project stands
 
-The architecture is decided and documented end to end: process split, data
-model, the PIV wire layer, both CA backends, the agent protocol, and the trust
-boundaries. Nothing has been implemented yet.
+Blinky can see a token and tell the truth about it. An agent enrols itself over
+mTLS, watches the readers, and reports what it finds; the backend classifies it
+and stores it. Four YubiKeys, two cards from another vendor and a virtual
+reader all come out the far end correctly, and no code has written a byte to
+any card.
 
-The next milestone is deliberately unambitious: read a YubiKey correctly and
-tell the truth about it, without writing a single byte to any card. Everything
-after that depends on the PIV layer being right, and the PIV layer is the part
-that cannot be reasoned into correctness — it has to be run against hardware.
+Nothing is issued yet. That is Phase 2, which starts with the certificate
+authority interface and the built-in CA — the first patch after which the
+system does something for a cardholder rather than about one.
 
 ## Validated on hardware
 
@@ -166,44 +170,106 @@ Three things in that table are the design working rather than data:
 | CLI-first v1 instead of the Angular console | Phase 5 | revisit if Phase 2 runs long |
 | Which HSM in production | Phase 6 (0062) | needs site input |
 
-Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-questions).
+Full context in [07-roadmap.md § Open questions](07-roadmap.md#open-questions).
+
+## What each state means
+
+| State | Meaning |
+|---|---|
+| **done** | Written, tested, and proved against hardware or a running stack |
+| **done, unverified** | Written and unit-tested, but one specific claim has no evidence yet. The gap is named in *Implemented but not verified* below |
+| **open** | Not started |
+| **blocked** | Cannot be done here, with the reason |
+| **deferred** | Deliberately postponed, with the patch it waits for |
+
+Nothing is marked done because the code exists. It is done when the definition
+of done in [07 — Roadmap](07-roadmap.md) can be checked by somebody who did not
+write it.
+
+## Patch progress
+
+### Phase 0 — Design — **complete**
+
+| # | Patch | State | Proof |
+|---|---|---|---|
+| 0000 | Read-only hardware spike, `tools/PivProbe` | **done** | Ran against five cards; findings in [08](08-hardware-notes.md) |
+| 0001 | Architecture and design documents | **done** | Nine documents |
+| 0002 | Solution skeleton, central packages, CI | **done** | CI green on windows-latest |
+| 0003 | Compose stack and the edge (nginx + ModSecurity + CRS) | **done** | 13 smoke checks |
+
+### Phase 1 — See the token — **gate met**
+
+| # | Patch | State | Proof |
+|---|---|---|---|
+| 0010 | `Blinky.Piv`: transport, transactions, chaining, error map | **done, unverified** | Replay of a real capture plus hardware through the probe. `6Cxx` and outbound chaining have never run on a card |
+| 0011 | PIV read path | **done** | Four tokens read correctly; `61xx` chaining exercised by a real certificate |
+| 0012 | Attestation, verified to a pinned Yubico root | **done, unverified** | A genuine token verifies on hardware. Every rejection path is synthetic |
+| 0013 | Domain, NHibernate mappings, generated schema, `SchemaValidator` | **done** | Clean validation in both containers; `jsonb` round trip against PostgreSQL |
+| 0014 | Agent enrolment over mTLS, agent CA, heartbeat | **done** | Enrolled twice, one row, certificate used |
+| 0015 | Agent service and the inventory job | **done** | Four tokens in the database within one poll |
+| 0016 | Bio Multi-protocol | **done, unverified** | State reads correctly on a real Bio. The temporary-PIN encoding is unconfirmed — asking for one consumes a match attempt, and nothing needs it until 0027 |
+| 0017 | pcsc-lite interop, so the agent runs on Linux | **blocked** | No Linux machine with a reader here. Writing marshalling nothing can test would put untested code under everything else |
+| 0018 | `Agent.Ui`, the session 0 split and the named pipe | **deferred** | To just before 0023, the first workflow that needs a prompt |
+| 0019 | Cards that are not YubiKeys are recognised, not ignored | **done** | An HID Crescendo and a C4000 named and skipped, not dropped |
+
+### Phase 2 — Issue something — **next**
+
+| # | Patch | State |
+|---|---|---|
+| 0020 | `ICertificateAuthority`, `CaCapabilities`, profiles | **open** |
+| 0021 | Built-in CA: generation script, key tiers | **open** |
+| 0022 | Certificate profiles, smart-card logon extensions, SID extension | **open** |
+| 0023 | Key generation, on-card CSR signing, attestation-gated submission | **open** |
+| 0024 | Certificate write-back, `Issued`→`Installed`, store refresh | **open** |
+| 0025 | Personalisation: management key, PUK escrow, PIN policy | **open** |
+| 0026 | Job engine: leases, watchdog, `AwaitingUser` | **open** |
+| 0027 | Biometric user verification during enrolment | **open** |
+| 0028 | Built-in CA topology: single or two-tier | **open** |
+
+### Phases 3 to 6 — **open**
+
+ADCS (0030–0034), the lifecycle (0040–0045), the console (0050–0054) and
+shipping (0060–0063). None started; definitions of done in
+[07 — Roadmap](07-roadmap.md).
+
+## Implemented but not verified
+
+The honest list. Each of these is written and unit-tested, and none has been
+exercised against the thing it is really for.
+
+| What | Why not yet | When it gets proved |
+|---|---|---|
+| `6Cxx` retry-with-length | Comes from T=0 readers; every reader here negotiated T=1 | Needs a T=0 reader, or stays covered by hand-built cases |
+| Outbound command chaining (`CLA 0x10`) | Needs a write longer than one APDU, and nothing writes yet | 0024, the first certificate written to a card |
+| Attestation rejection paths | Forgeries, wrong roots and serial mismatches are synthetic — a real one would mean a counterfeit token | Stays synthetic; the genuine path is proved on hardware |
+| The Linux transport | No Linux machine with a reader | 0017 |
+| Bio temporary PIN | Requesting one consumes a match attempt and needs a finger | 0027 |
+| ADCS, CES and the connector | No Windows AD lab yet | 0030–0034 |
+| Samba4 publication and PKINIT | No Samba4 provision yet | 0061, and the Phase 2 gate |
 
 ## Component progress
 
 | Component | State | Notes |
 |---|---|---|
-| Architecture docs | **done** | Seven documents, all committed |
-| Solution skeleton | **done** | `Blinky.slnx`, 11 projects, central package management, CI on windows-latest |
-| Compose stack | **done** | postgres, api, worker, edge. `docker compose up -d` works |
-| Edge and WAF | **done** | nginx + ModSecurity 3 + CRS v4, two listeners, mTLS forwarded to the API. 9 smoke checks green |
-| `tools/PivProbe` | **done** | Read-only hardware spike; see *Validated on hardware* |
-| `Blinky.Piv` | **transport, read path, attestation** | Patches 0010, 0011 and 0012. 108 tests. `tools/PivProbe` is now only printing, and verifies a live token against the pinned root |
-| `Blinky.Contracts` | skeleton | Protocol version, `JobType`, `JobState`. Envelope in patch 0015 |
-| `Blinky.Domain` | **done** | Patch 0013: eleven entities from doc 02, with the states the hardware turned up |
-| `Blinky.Infrastructure` | **done** | Patch 0013: NHibernate mappings, generated schema, `SchemaValidator` reporting clean in both services |
-| `Blinky.Api` | **enrolment done** | Patch 0014: bootstrap enrolment, agent CA, mTLS enforcement, heartbeat. Proven end to end by `tools/AgentEnrol` |
-| `Blinky.Worker` | skeleton | Host and Serilog, no scanners. Job engine in patch 0026 |
-| `Blinky.Pki` — built-in CA | not started | Phase 2, patches 0021 and 0028 (topology) |
-| `Blinky.Pki` — ADCS | not started | Phase 3 |
-| `Blinky.AdcsConnector` | skeleton | Windows service host. `ICertRequest3` in patch 0032 |
-| `Blinky.Agent.Service` | **inventory done** | Patch 0015: enrols itself, watches readers, reports what it finds. Four tokens land in the database with correct firmware, form factor and slot states |
-| `Blinky.Agent.Ui` | not started | Split out as patch 0018, immediately before the first workflow that needs a prompt |
-| Angular console | not started | Phase 5 |
-| Samba4 setup command | not started | Phase 6 |
+| Architecture docs | **done** | Nine documents |
+| `Blinky.Piv` | **done** | Transport, read path, attestation. Drives the probe against real tokens |
+| `Blinky.Contracts` | **done** | Protocol version, job enums, inventory contracts |
+| `Blinky.Domain` | **done** | Eleven entities from doc 02 |
+| `Blinky.Infrastructure` | **done** | Mappings, generated schema, `SchemaValidator` |
+| `Blinky.Api` | **partial** | Enrolment, heartbeat, inventory. Issuance from 0023 |
+| `Blinky.Worker` | skeleton | Hosts and logs; the job engine is 0026 |
+| `Blinky.Agent.Service` | **partial** | Enrols, watches readers, reports. Executes jobs from 0026 |
+| `Blinky.Agent.Ui` | **deferred** | Patch 0018 |
+| `Blinky.Pki` — built-in CA | open | 0021 and 0028 |
+| `Blinky.Pki` — ADCS | open | 0030–0033 |
+| `Blinky.AdcsConnector` | skeleton | 0032 |
+| Angular console | open | Phase 5 |
+| `blinky-samba-setup` | open | 0061 |
+| `tools/PivProbe` | **done** | Read-only, drives `Blinky.Piv` against hardware |
+| `tools/InsProbe` | **done** | Asks a card whether it knows an instruction, with a control |
+| `tools/SchemaTool` | **done** | Generates the schema; `--roundtrip` proves it can be written to |
+| `tools/AgentEnrol` | **done** | The whole enrolment flow; run twice by the smoke test |
 
-## Phase progress
-
-| Phase | Title | State |
-|---|---|---|
-| 0 | Design | **done** — docs, hardware spike, solution skeleton, CI, compose stack behind a WAF |
-| 1 | See the token | **gate met** — 0010 to 0015 and 0019 done. 0016 mostly done as a side effect, 0017 blocked on hardware, 0018 deferred to just before 0023 |
-| 2 | Issue something | next — 0020 and 0021 |
-
-| 2 | Issue something (built-in CA, on-card CSR, personalisation) | not started |
-| 3 | ADCS (CMC, CES/CEP, DCOM connector) | not started |
-| 4 | The boring lifecycle (renew, revoke, CRL, unblock) | not started |
-| 5 | Console (Angular, RBAC, audit) | not started |
-| 6 | Ship it (MSI, Samba4 setup, production compose) | not started |
 
 ## Risks being carried
 
@@ -225,21 +291,22 @@ Full context in [docs/07-roadmap.md § Open questions](docs/07-roadmap.md#open-q
 
 Ordered, each item small enough to finish in one sitting.
 
-1. ~~Create the GitHub repository~~ — done, `franekSoftSF/blinky`.
-2. ~~Prove the PC/SC path on real hardware~~ — done, `tools/PivProbe`. Results
-   in *Validated on hardware* above.
-3. ~~Scaffold the solution~~ — done, patch 0002. Builds, 11 tests green, CI on
-   windows-latest.
-   ~~Stand up the stack behind a WAF~~ — done, patch 0003. 9 smoke checks green.
-4. ~~Write `Blinky.Piv` against recorded transcripts~~ — done, patch 0010.
-   Transport, chaining, error map, 46 tests, and the probe now runs on it.
-5. **Run patch 0011 against three tokens**: factory, `ykman`-provisioned, and one
-   with a blocked PIN. This is the go/no-go for the PC/SC-and-APDUs decision.
-6. **Stand up the lab**: a Samba4 AD DC for the built-in CA path, and a Windows
-   AD + ADCS pair for Phase 3. Both are needed eventually; the Samba4 one is
-   needed first, because it is what makes the Phase 2 gate demonstrable.
+1. **0020 — `ICertificateAuthority`, `CaCapabilities`, the profile model.** Both
+   backends registerable behind one interface, with the capability differences
+   visible rather than discovered at issuance.
+2. **0021 and 0028 — the built-in CA**, single and two-tier, with the `file` and
+   SoftHSM key tiers. This is what makes an end-to-end demo possible with no
+   directory at all.
+3. **Stand up a Samba4 provision.** The Phase 2 gate is "enrol a factory
+   YubiKey and log into a Samba4 domain with it", and that needs a domain to
+   log into. It is the only item here that needs infrastructure rather than
+   time.
+4. **0022 and 0023 — profiles and on-card CSR signing**, the first point at
+   which a key is generated on a token rather than read from one.
 
-Item 6 needs infrastructure; items 3 to 5 do not and can start immediately. The
-token on the desk is factory-fresh in PIV, so it covers one of the three states
-the Phase 1 gate needs; the `ykman`-provisioned and blocked-PIN tokens still
-have to be prepared.
+Items 1, 2 and 4 can start immediately. Item 3 is the long pole for the phase
+gate and is worth starting in parallel.
+
+Not on this list, deliberately: 0017 is blocked for want of a Linux reader,
+0018 waits for 0023, and the temporary-PIN half of 0016 waits for 0027. All
+three are recorded in *Patch progress* with their reasons.

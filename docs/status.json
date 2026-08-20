@@ -1,5 +1,5 @@
 {
-  "$comment": "Machine-readable project status. Keep in sync with STATUS.md.",
+  "$comment": "Machine-readable project status. Keep in sync with STATUS.md. States: done | done-unverified | open | blocked | deferred.",
   "schema": 1,
   "project": {
     "name": "Blinky",
@@ -21,8 +21,9 @@
     "updated": "2026-08-20",
     "phase": 1,
     "phaseTitle": "See the token",
-    "state": "building",
-    "summary": "Phase 1 gate met on 2026-08-20: factory, ykman-provisioned and blocked-PIN tokens all read correctly, with no write from Blinky to any card. 0016 is mostly done as a side effect, 0017 is blocked with no Linux reader on the bench, 0018 is deferred to just before 0023. Next is phase 2, starting with 0020 and 0021."
+    "state": "gate-met",
+    "summary": "Blinky reads tokens correctly and reports them. An agent enrols itself over mTLS, watches the readers and reports what it finds; the backend classifies and stores it. Nothing is issued yet - that is phase 2, starting with 0020 and 0021.",
+    "nothingIssuedYet": true
   },
   "phases": [
     {
@@ -46,32 +47,26 @@
     {
       "id": 3,
       "title": "ADCS",
-      "state": "not-started",
+      "state": "open",
       "done": "The same workflow, console and audit trail against Windows AD plus ADCS, differing only in the profile's CA instance."
     },
     {
       "id": 4,
       "title": "The boring lifecycle",
-      "state": "not-started",
+      "state": "open",
       "done": "Expiry produces exactly one renewal job; revocation regenerates and publishes the CRL; a blocked PIN is unblocked from an escrowed PUK with an audited disclosure."
     },
     {
       "id": 5,
       "title": "Console",
-      "state": "not-started",
+      "state": "open",
       "done": "Every token and credential state is visible and explained; a credential's whole life is reconstructable from the audit view alone."
     },
     {
       "id": 6,
       "title": "Ship it",
-      "state": "not-started",
+      "state": "open",
       "done": "A stranger can go from clone to smart-card logon using only the repository."
-    },
-    {
-      "id": 18,
-      "title": "(patch) Agent UI and the named pipe",
-      "state": "not-started",
-      "done": "A PIN prompt drawn in the user session and answered over a pipe the service accepts only from the interactive user."
     }
   ],
   "components": [
@@ -424,6 +419,327 @@
       "id": "t0-and-outbound-chaining-untested",
       "impact": "medium",
       "handling": "6Cxx needs a T=0 reader and outbound chaining needs a write; hand-built cases cover both until patch 0024"
+    }
+  ],
+  "stateLegend": {
+    "done": "Written, tested, and proved against hardware or a running stack",
+    "done-unverified": "Written and unit-tested; one specific claim has no evidence yet, listed in notVerified",
+    "open": "Not started",
+    "blocked": "Cannot be done in this environment, with a reason",
+    "deferred": "Deliberately postponed until the patch it waits for"
+  },
+  "patches": [
+    {
+      "id": "0000",
+      "phase": 0,
+      "title": "Read-only hardware spike, tools/PivProbe",
+      "state": "done",
+      "proof": "Ran against five cards; findings in docs/08-hardware-notes.md"
+    },
+    {
+      "id": "0001",
+      "phase": 0,
+      "title": "Architecture and design documents",
+      "state": "done",
+      "proof": "Nine documents"
+    },
+    {
+      "id": "0002",
+      "phase": 0,
+      "title": "Solution skeleton, central packages, CI",
+      "state": "done",
+      "proof": "CI green on windows-latest"
+    },
+    {
+      "id": "0003",
+      "phase": 0,
+      "title": "Compose stack and the edge (nginx + ModSecurity + CRS)",
+      "state": "done",
+      "proof": "13 smoke checks"
+    },
+    {
+      "id": "0010",
+      "phase": 1,
+      "title": "Blinky.Piv transport, chaining, error map",
+      "state": "done-unverified",
+      "proof": "Replay of a real capture plus hardware via the probe",
+      "gap": "6Cxx and outbound chaining have never run on a card"
+    },
+    {
+      "id": "0011",
+      "phase": 1,
+      "title": "PIV read path",
+      "state": "done",
+      "proof": "Four tokens read correctly; 61xx chaining exercised by a real certificate"
+    },
+    {
+      "id": "0012",
+      "phase": 1,
+      "title": "Attestation verified to a pinned Yubico root",
+      "state": "done-unverified",
+      "proof": "A genuine token verifies on hardware",
+      "gap": "Every rejection path is synthetic"
+    },
+    {
+      "id": "0013",
+      "phase": 1,
+      "title": "Domain, mappings, generated schema, SchemaValidator",
+      "state": "done",
+      "proof": "Clean validation in both containers; jsonb round trip"
+    },
+    {
+      "id": "0014",
+      "phase": 1,
+      "title": "Agent enrolment over mTLS, agent CA, heartbeat",
+      "state": "done",
+      "proof": "Enrolled twice, one row, certificate used"
+    },
+    {
+      "id": "0015",
+      "phase": 1,
+      "title": "Agent service and the inventory job",
+      "state": "done",
+      "proof": "Four tokens in the database within one poll"
+    },
+    {
+      "id": "0016",
+      "phase": 1,
+      "title": "Bio Multi-protocol",
+      "state": "done-unverified",
+      "proof": "State reads correctly on a real Bio",
+      "gap": "The temporary-PIN encoding is unconfirmed; asking consumes a match attempt, and nothing needs it until 0027"
+    },
+    {
+      "id": "0017",
+      "phase": 1,
+      "title": "pcsc-lite interop so the agent runs on Linux",
+      "state": "blocked",
+      "gap": "No Linux machine with a reader here; untested marshalling would sit under everything else"
+    },
+    {
+      "id": "0018",
+      "phase": 1,
+      "title": "Agent.Ui, the session 0 split and the named pipe",
+      "state": "deferred",
+      "waitsFor": "0023"
+    },
+    {
+      "id": "0019",
+      "phase": 1,
+      "title": "Cards that are not YubiKeys are recognised, not ignored",
+      "state": "done",
+      "proof": "An HID Crescendo and a C4000 named and skipped, not dropped"
+    },
+    {
+      "id": "0020",
+      "phase": 2,
+      "title": "ICertificateAuthority, CaCapabilities, profiles",
+      "state": "open"
+    },
+    {
+      "id": "0021",
+      "phase": 2,
+      "title": "Built-in CA: generation script, key tiers",
+      "state": "open"
+    },
+    {
+      "id": "0022",
+      "phase": 2,
+      "title": "Certificate profiles, logon extensions, SID extension",
+      "state": "open"
+    },
+    {
+      "id": "0023",
+      "phase": 2,
+      "title": "Key generation, on-card CSR signing, attestation-gated submission",
+      "state": "open"
+    },
+    {
+      "id": "0024",
+      "phase": 2,
+      "title": "Certificate write-back, Issued to Installed",
+      "state": "open"
+    },
+    {
+      "id": "0025",
+      "phase": 2,
+      "title": "Personalisation: management key, PUK escrow, PIN policy",
+      "state": "open"
+    },
+    {
+      "id": "0026",
+      "phase": 2,
+      "title": "Job engine: leases, watchdog, AwaitingUser",
+      "state": "open"
+    },
+    {
+      "id": "0027",
+      "phase": 2,
+      "title": "Biometric user verification during enrolment",
+      "state": "open"
+    },
+    {
+      "id": "0028",
+      "phase": 2,
+      "title": "Built-in CA topology: single or two-tier",
+      "state": "open"
+    },
+    {
+      "id": "0030",
+      "phase": 3,
+      "title": "AdcsCertificateAuthority and CMC with an EA signature",
+      "state": "open"
+    },
+    {
+      "id": "0031",
+      "phase": 3,
+      "title": "CES/CEP transport",
+      "state": "open"
+    },
+    {
+      "id": "0032",
+      "phase": 3,
+      "title": "Blinky.AdcsConnector over DCOM",
+      "state": "open"
+    },
+    {
+      "id": "0033",
+      "phase": 3,
+      "title": "Backend registration checks",
+      "state": "open"
+    },
+    {
+      "id": "0034",
+      "phase": 3,
+      "title": "Revocation through ADCS",
+      "state": "open"
+    },
+    {
+      "id": "0040",
+      "phase": 4,
+      "title": "Expiry scanner and scheduled renewal",
+      "state": "open"
+    },
+    {
+      "id": "0041",
+      "phase": 4,
+      "title": "Revocation, CRL regeneration and publication",
+      "state": "open"
+    },
+    {
+      "id": "0042",
+      "phase": 4,
+      "title": "PIN unblock via escrowed PUK, with audit",
+      "state": "open"
+    },
+    {
+      "id": "0043",
+      "phase": 4,
+      "title": "Lost, stolen, terminate, retire",
+      "state": "open"
+    },
+    {
+      "id": "0044",
+      "phase": 4,
+      "title": "Stale-slot detection and reconciliation",
+      "state": "open"
+    },
+    {
+      "id": "0045",
+      "phase": 4,
+      "title": "Retired-slot rotation for 9D",
+      "state": "open"
+    },
+    {
+      "id": "0050",
+      "phase": 5,
+      "title": "Angular shell, nginx proxy, auth",
+      "state": "open"
+    },
+    {
+      "id": "0051",
+      "phase": 5,
+      "title": "Token and cardholder inventory",
+      "state": "open"
+    },
+    {
+      "id": "0052",
+      "phase": 5,
+      "title": "Lifecycle actions from the console",
+      "state": "open"
+    },
+    {
+      "id": "0053",
+      "phase": 5,
+      "title": "RBAC",
+      "state": "open"
+    },
+    {
+      "id": "0054",
+      "phase": 5,
+      "title": "Audit browser",
+      "state": "open"
+    },
+    {
+      "id": "0060",
+      "phase": 6,
+      "title": "Agent MSI and upgrade path",
+      "state": "open"
+    },
+    {
+      "id": "0061",
+      "phase": 6,
+      "title": "blinky-samba-setup",
+      "state": "open"
+    },
+    {
+      "id": "0062",
+      "phase": 6,
+      "title": "Production compose profile",
+      "state": "open"
+    },
+    {
+      "id": "0063",
+      "phase": 6,
+      "title": "Documentation pass and screenshots",
+      "state": "open"
+    }
+  ],
+  "notVerified": [
+    {
+      "what": "6Cxx retry-with-length",
+      "why": "Comes from T=0 readers; every reader here negotiated T=1",
+      "when": "Needs a T=0 reader; covered by hand-built cases until then"
+    },
+    {
+      "what": "Outbound command chaining (CLA 0x10)",
+      "why": "Needs a write longer than one APDU",
+      "when": "0024"
+    },
+    {
+      "what": "Attestation rejection paths",
+      "why": "A real one would mean a counterfeit token",
+      "when": "Stays synthetic; the genuine path is proved on hardware"
+    },
+    {
+      "what": "The Linux transport",
+      "why": "No Linux machine with a reader",
+      "when": "0017"
+    },
+    {
+      "what": "Bio temporary PIN",
+      "why": "Requesting one consumes a match attempt and needs a finger",
+      "when": "0027"
+    },
+    {
+      "what": "ADCS, CES and the connector",
+      "why": "No Windows AD lab yet",
+      "when": "0030-0034"
+    },
+    {
+      "what": "Samba4 publication and PKINIT",
+      "why": "No Samba4 provision yet",
+      "when": "0061 and the phase 2 gate"
     }
   ]
 }
