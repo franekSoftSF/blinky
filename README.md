@@ -140,6 +140,15 @@ of any kind — and it records the APDU transcript the `Blinky.Piv` tests replay
 Transcripts carry the token serial and any certificate on the card, so they are
 not committed.
 
+```bash
+dotnet run --project tools/InsProbe
+```
+
+`tools/InsProbe` asks a card whether it understands an instruction, with a
+control instruction whose answer is already known. It is what settled which
+commands are standard PIV and which are Yubico's — see
+[08 — What the hardware changed](docs/08-hardware-notes.md).
+
 ## Stack
 
 .NET 10 · ASP.NET Core + SignalR · NHibernate · PostgreSQL · Angular 22 ·
@@ -157,6 +166,7 @@ SoftHSM2 / PKCS#11 · WPF for the workstation UI · Serilog · Docker Compose
 | [05 — Agent protocol](docs/05-agent-protocol.md) | REST + SignalR contract, job envelopes, idempotency |
 | [06 — Security](docs/06-security.md) | Trust boundaries, key custody, threat notes |
 | [07 — Roadmap](docs/07-roadmap.md) | Phases, numbered patches, definition of done |
+| [08 — What the hardware changed](docs/08-hardware-notes.md) | Every rule that came from a measurement rather than from reading |
 
 ## Why "Blinky"
 

@@ -20,6 +20,11 @@ that cannot be reasoned into correctness — it has to be run against hardware.
 
 ## Validated on hardware
 
+Every rule that came out of a measurement, with its evidence and where it now
+lives, is indexed in
+[08 — What the hardware changed](docs/08-hardware-notes.md). What follows is
+the state of the bench rather than the doctrine.
+
 `tools/PivProbe` is a read-only spike that answers the riskiest question before
 any production code exists. Run against a YubiKey 5 on 2026-08-19:
 
