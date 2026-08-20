@@ -28,6 +28,45 @@ public sealed class PivConnection(IApduTransport transport, bool ownsTransport =
     public IDisposable BeginTransaction() => Transport.BeginTransaction();
 
     /// <summary>
+    /// Puts the card's security state back after a reset, and says whether it
+    /// worked. Null when nothing has been authenticated yet.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Reconnecting and selecting the applet gets the connection back and
+    /// throws the security state away - selecting is what clears it. So a
+    /// write retried after a reset reaches the card and is refused with 6982,
+    /// which reads like a wrong management key and is not.
+    /// </para>
+    /// <para>
+    /// Seen on 20 August 2026, on the last step of an enrolment: the
+    /// certificate was issued, and PUT DATA into slot 9A came back 6982
+    /// because the management key authentication had not survived a reset
+    /// during the round trip to the server.
+    /// </para>
+    /// <para>
+    /// The management key only - a challenge and response with a key the
+    /// agent already holds. The PIN is deliberately not restored: replaying it
+    /// would mean keeping it for the life of the connection, and a
+    /// PIN-protected operation that meets a reset is supposed to stop and ask
+    /// the person again.
+    /// </para>
+    /// </remarks>
+    public Func<bool>? RestoreSecurityState { get; set; }
+
+    /// <summary>
+    /// How many times the card was reset underneath this connection and
+    /// recovered from.
+    /// </summary>
+    /// <remarks>
+    /// Counted because the recovery is silent by design, and a silent recovery
+    /// is invisible in exactly the case where somebody needs to know: a
+    /// workstation where something resets the card every few seconds looks,
+    /// from the outside, like a workstation that is simply slow.
+    /// </remarks>
+    public int CardResets { get; private set; }
+
+    /// <summary>
     /// Selects the PIV application. Returns false when the card has no PIV
     /// applet - a virtual reader, or a card that is simply something else -
     /// because that is a normal thing to find in a reader list, not a failure.
@@ -74,7 +113,17 @@ public sealed class PivConnection(IApduTransport transport, bool ownsTransport =
         }
         catch (PcscException reset) when (reset.Code == PcscException.ResetCard)
         {
+            CardResets++;
+
             if (!Transport.Reconnect() || !SelectPiv())
+            {
+                throw;
+            }
+
+            // Selecting the applet cleared whatever had been authenticated.
+            // Without this the retried command reaches a card that no longer
+            // knows us, and answers 6982.
+            if (RestoreSecurityState is { } restore && !restore())
             {
                 throw;
             }

@@ -75,6 +75,58 @@ public sealed class CardResetRecoveryTests
         Assert.Equal(0, transport.Sent.Count(c => c.Length > 1 && c[1] == 0xA4));
     }
 
+    [Fact]
+    public void The_security_state_is_put_back_before_the_command_is_sent_again()
+    {
+        // The half that was missing. Selecting the applet is what clears the
+        // management key authentication, so a write retried after a reset
+        // reaches the card and is refused with 6982 - which reads like a wrong
+        // management key and is not. Seen on the last step of an enrolment,
+        // with the certificate already issued.
+        var transport = new ResettingTransport(resetsOnCommand: 1);
+        var restored = 0;
+
+        using var connection = new PivConnection(transport)
+        {
+            RestoreSecurityState = () => { restored++; return true; },
+        };
+
+        connection.Send(new ApduCommand(0xDB, p1: 0x3F, p2: 0xFF, data: new byte[] { 1, 2 }));
+
+        Assert.Equal(1, restored);
+        Assert.Equal(1, connection.CardResets);
+    }
+
+    [Fact]
+    public void A_security_state_that_cannot_be_put_back_fails_rather_than_retrying_blind()
+    {
+        // Sending it anyway would get 6982 from the card and report that,
+        // which sends somebody to look at the management key instead of at
+        // whatever is resetting the reader.
+        var transport = new ResettingTransport(resetsOnCommand: 1);
+
+        using var connection = new PivConnection(transport)
+        {
+            RestoreSecurityState = () => false,
+        };
+
+        Assert.Throws<PcscException>(() =>
+            connection.Send(new ApduCommand(0xDB, p1: 0x3F, p2: 0xFF, data: new byte[] { 1, 2 })));
+    }
+
+    [Fact]
+    public void Resets_are_counted_so_a_silent_recovery_is_still_visible()
+    {
+        var transport = new ResettingTransport(resetsOnCommand: 1);
+
+        using var connection = new PivConnection(transport);
+        Assert.Equal(0, connection.CardResets);
+
+        connection.Send(new ApduCommand(0x20, p2: 0x80, data: new byte[] { 1, 2, 3, 4 }));
+
+        Assert.Equal(1, connection.CardResets);
+    }
+
     /// <summary>Throws a reset on a chosen command, then behaves.</summary>
     private sealed class ResettingTransport(int resetsOnCommand, bool alsoResetsAfterRecovery = false)
         : IApduTransport

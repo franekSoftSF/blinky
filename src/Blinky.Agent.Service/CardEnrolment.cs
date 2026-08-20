@@ -233,6 +233,19 @@ public sealed class CardEnrolment(
 
         logger.LogInformation("Token {Serial} slot {Slot} now holds {Subject}, issued by {Issuer}",
             serial, slot, readBack.Subject, issued.IssuerSubject);
+
+        // Said out loud when it happened. The recovery is silent by design, and
+        // a workstation where something resets the card mid-operation is worth
+        // knowing about even when every job still succeeds - it is the
+        // difference between "this machine is slow" and "this machine has a
+        // second program fighting us for the reader".
+        if (session.Connection.CardResets is > 0 and var resets)
+        {
+            logger.LogWarning(
+                "The card was reset {Count} time(s) during this job and recovered from. "
+                + "Something else on this machine is taking the reader - the certificate "
+                + "propagation service and card minidrivers both do.", resets);
+        }
     }
 
     /// <summary>

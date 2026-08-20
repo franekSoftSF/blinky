@@ -29,6 +29,34 @@ public partial class PivSession
     /// </remarks>
     public void AuthenticateManagementKey(ManagementKey managementKey)
     {
+        Authenticate(managementKey);
+
+        // Registered so a reset in the middle of a long operation does not end
+        // it. Enrolment authenticates here, generates a key, then goes to the
+        // server and comes back with a certificate to write - and the card is
+        // shared with the operating system for all of that. Recovery selects
+        // the applet again, which is exactly what clears this, so it has to be
+        // done again on the other side.
+        //
+        // Not recursive: Authenticate uses Send, and a reset during the
+        // restore leaves RestoreSecurityState pointing here, but a second
+        // reset in one command already throws before reaching it.
+        Connection.RestoreSecurityState = () =>
+        {
+            try
+            {
+                Authenticate(managementKey);
+                return true;
+            }
+            catch (PivException)
+            {
+                return false;
+            }
+        };
+    }
+
+    private void Authenticate(ManagementKey managementKey)
+    {
         var algorithm = (byte)managementKey.Algorithm;
 
         // 7C 02 80 00 - "give me a witness".
