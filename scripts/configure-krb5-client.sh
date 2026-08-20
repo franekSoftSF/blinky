@@ -82,7 +82,14 @@ if [[ -n "$ANCHORS" ]]; then
     [[ -f "$ANCHORS" ]] || { echo "No such file: $ANCHORS" >&2; exit 2; }
 
     install -d -m 755 /etc/blinky
-    install -m 644 "$ANCHORS" /etc/blinky/ca-chain.pem
+
+    # Skipped when the argument is already the installed copy, which is what a
+    # second run looks like. install refuses source and destination being one
+    # file, and under set -e that ends the script before it writes anything -
+    # so re-running to pick up a change would quietly do nothing at all.
+    if [[ "$(readlink -f "$ANCHORS")" != /etc/blinky/ca-chain.pem ]]; then
+        install -m 644 "$ANCHORS" /etc/blinky/ca-chain.pem
+    fi
 
     pkinit_realm="        pkinit_anchors = FILE:/etc/blinky/ca-chain.pem"
 
@@ -102,9 +109,21 @@ say "writing /etc/krb5.conf for $REALM"
 [[ -f /etc/krb5.conf && ! -f /etc/krb5.conf.before-blinky ]] &&
     cp /etc/krb5.conf /etc/krb5.conf.before-blinky
 
+# SSSD writes krb5 snippets here - the realm mapping it worked out, and the
+# localauth plugin that turns a Kerberos principal into a local user name. On
+# Ubuntu 24.04 realmd does not add the line that includes them, so they sit
+# there being correct and having no effect. That directory already held the
+# exact [domain_realm] this file writes by hand.
+includedir=""
+if [[ -d /var/lib/sss/pubconf/krb5.include.d ]]; then
+    includedir="includedir /var/lib/sss/pubconf/krb5.include.d/"
+fi
+
 cat > /etc/krb5.conf <<EOF
 # Written by scripts/configure-krb5-client.sh. The file this replaced is at
 # /etc/krb5.conf.before-blinky.
+
+$includedir
 
 [libdefaults]
     default_realm = $REALM
