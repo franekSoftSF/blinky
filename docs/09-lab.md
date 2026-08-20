@@ -77,6 +77,18 @@ certificate, is patch **0061** — `blinky-samba-setup`. Until that exists both
 are manual LDAP writes, described in
 [04 § The Samba4 variant](04-pki-backends.md#the-samba4-variant).
 
+### Every other machine
+
+```bash
+sudo bash scripts/join-lab.sh 172.16.1.10
+```
+
+DNS at the DC, clock from the DC, then the join. The first two are checked
+before the third is attempted, because a member that resolves the realm through
+the house router fails a join with something that reads like a network fault,
+and a clock six minutes out fails Kerberos with something that mentions no
+clock at all.
+
 ### 3. win — the Windows client
 
 A VMware guest, joined to the domain, with the YubiKey passed through to it.
