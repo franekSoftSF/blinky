@@ -241,7 +241,8 @@ public sealed class CardOperations(
             session.DeleteCertificate(slot);
 
             logger.LogWarning("The certificate in slot {Slot} of token {Serial} was deleted "
-                              + "(it was not one Blinky issued)", slot, serial);
+                              + "({Why})", slot, serial,
+                ordered ? "the backend ordered it" : "it was not one Blinky issued");
 
             if (alsoTheKey)
             {

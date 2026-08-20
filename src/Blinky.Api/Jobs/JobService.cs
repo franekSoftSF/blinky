@@ -26,6 +26,52 @@ public sealed class JobService(Database database, ILogger<JobService> logger)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// Marks what a completed revocation took off the token.
+    /// </summary>
+    /// <remarks>
+    /// The slot goes back to <c>Empty</c> and the credential to <c>Revoked</c>.
+    /// Revoked rather than deleted: the row is the history of a credential that
+    /// existed, and an audit that cannot say what was withdrawn is not an audit.
+    /// </remarks>
+    private void Withdraw(NHibernate.ISession session, Job job)
+    {
+        var envelope = JsonSerializer.Deserialize<JobEnvelope>(job.Payload, Json);
+
+        var slotId = envelope?.Steps.FirstOrDefault()?.Argument("slot");
+
+        if (slotId is null || job.TokenSerial is not { } serial)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+
+        foreach (var credential in session.Query<Credential>()
+                     .Where(c => c.Token.Serial == serial && c.SlotId == slotId)
+                     .ToList()
+                     .Where(c => c.State is not Blinky.Domain.CredentialState.Revoked))
+        {
+            credential.State = Blinky.Domain.CredentialState.Revoked;
+            credential.UpdatedAt = now;
+            session.Update(credential);
+
+            logger.LogInformation("Credential {Serial} in slot {Slot} of token {Token} was "
+                                  + "withdrawn", credential.SerialNumber, slotId, serial);
+        }
+
+        var slot = session.Query<Slot>()
+            .SingleOrDefault(s => s.Token.Serial == serial && s.SlotId == slotId);
+
+        if (slot is not null)
+        {
+            slot.State = Blinky.Domain.SlotState.Empty;
+            slot.Credential = null;
+            slot.UpdatedAt = now;
+            session.Update(slot);
+        }
+    }
+
     /// <summary>How long a claimed job stays claimed before the watchdog takes it back.</summary>
     public static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(5);
 
@@ -185,6 +231,16 @@ public sealed class JobService(Database database, ILogger<JobService> logger)
         }
 
         var now = DateTime.UtcNow;
+
+        // A withdrawal that reached the card has to reach the record too. This
+        // was the whole argument for making the agent refuse a tray-driven
+        // delete: a credential gone from the token and still reading Installed
+        // here is the divergence, whoever created it. Observed doing exactly
+        // that before this existed.
+        if (result.Succeeded && job.Type == JobType.Revoke)
+        {
+            Withdraw(session, job);
+        }
 
         job.State = result.Succeeded ? JobState.Succeeded : JobState.Failed;
         job.Result = JsonSerializer.Serialize(result, Json);
