@@ -108,7 +108,7 @@ the profile's CA instance differing.
 |---|---|---|
 | 0050 | Angular shell, nginx `/api` proxy, auth | Same bundle runs in dev and compose with no rebuild |
 | 0051 | Token and cardholder inventory, search, detail | Every state in [02](02-data-model.md) is visible and explained in the UI, including `Unknown` and `Stale` |
-| 0052 | Enrolment, renewal, revocation, unblock from the console | Each action creates a job and streams its per-step progress |
+| 0052 | Enrolment, renewal, revocation, unblock from the console | Each action creates a job and streams its per-step progress. Recycle landed; enrolment is blocked on the API rather than on the page - the console cannot see profiles, cannot see cardholders, and cannot see why a job failed. Spelled out in [11](11-console-enrolment.md) |
 | 0053 | RBAC: operator, auditor, administrator | An auditor cannot issue; a PUK disclosure requires the operator role; both are tested |
 | 0054 | Audit browser | Every state change in a credential's life is reconstructable from the audit view alone |
 
