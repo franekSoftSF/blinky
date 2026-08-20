@@ -116,6 +116,44 @@ public sealed class Strings : INotifyPropertyChanged
         ["Pin.RulesCaveat"] = "These rules catch a PIN that is obviously bad. They cannot tell "
                               + "whether yours is a good one.",
 
+        ["Manage.Title"] = "MANAGE",
+        ["Manage.ChangePuk"] = "Change PUK",
+        ["Manage.ManagementKey"] = "Management key",
+        ["Manage.UnblockHint"] = "Sets a new PIN using the PUK.",
+        ["Manage.Unknown"] = "not reported by this firmware",
+
+        ["Default.Banner"] = "Still at the factory value:",
+        ["Default.Pin"] = "PIN",
+        ["Default.Puk"] = "PUK",
+        ["Default.ManagementKey"] = "management key",
+        ["Default.Warning"] = "factory value",
+        ["Default.Prefilled"] = "Filled in with the factory value, which is what this card "
+                                + "reports it still has.",
+
+        ["Device.Generic"] = "PIV token",
+        ["Device.Biometric"] = "(biometric)",
+
+        ["Slots.Header"] = "Certificates",
+        ["Slot.Name.9A"] = "Authentication",
+        ["Slot.Name.9C"] = "Digital signature",
+        ["Slot.Name.9D"] = "Key management",
+        ["Slot.Name.9E"] = "Card authentication",
+
+        ["Badge.Managed"] = "managed",
+        ["Badge.Unmanaged"] = "not managed",
+        ["Badge.Unknown"] = "unknown",
+
+        ["Puk.ChangeTitle"] = "Change the PUK",
+        ["Puk.Current"] = "Current PUK",
+        ["Puk.New"] = "New PUK",
+        ["Puk.Repeat"] = "New PUK again",
+        ["Puk.Changed"] = "The PUK was changed.",
+
+        ["Tray.Theme"] = "Motyw / Theme",
+        ["Tray.ThemeSystem"] = "System",
+        ["Tray.ThemeLight"] = "Light",
+        ["Tray.ThemeDark"] = "Dark",
+
         ["Prompt.PinTitle"] = "Blinky needs your PIN",
         ["Prompt.TouchTitle"] = "Touch your token",
         ["Error.NoService"] = "The Blinky agent service is not answering on this machine.",
@@ -168,6 +206,43 @@ public sealed class Strings : INotifyPropertyChanged
                         + "nie ciąg pod rząd i nie fragment numeru seryjnego wydrukowanego na tokenie.",
         ["Pin.RulesCaveat"] = "Te reguły wyłapują PIN oczywiście zły. Nie potrafią stwierdzić, "
                               + "czy Twój jest dobry.",
+
+        ["Manage.Title"] = "ZARZĄDZANIE",
+        ["Manage.ChangePuk"] = "Zmień PUK",
+        ["Manage.ManagementKey"] = "Klucz zarządzania",
+        ["Manage.UnblockHint"] = "Ustawia nowy PIN przy użyciu PUK-u.",
+        ["Manage.Unknown"] = "ten firmware tego nie podaje",
+
+        ["Default.Banner"] = "Nadal wartość fabryczna:",
+        ["Default.Pin"] = "PIN",
+        ["Default.Puk"] = "PUK",
+        ["Default.ManagementKey"] = "klucz zarządzania",
+        ["Default.Warning"] = "wartość fabryczna",
+        ["Default.Prefilled"] = "Wpisane wartością fabryczną, bo karta sama zgłasza, że wciąż ją ma.",
+
+        ["Device.Generic"] = "Token PIV",
+        ["Device.Biometric"] = "(biometryczny)",
+
+        ["Slots.Header"] = "Certyfikaty",
+        ["Slot.Name.9A"] = "Uwierzytelnienie",
+        ["Slot.Name.9C"] = "Podpis cyfrowy",
+        ["Slot.Name.9D"] = "Zarządzanie kluczem",
+        ["Slot.Name.9E"] = "Uwierzytelnianie kartą",
+
+        ["Badge.Managed"] = "zarządzany",
+        ["Badge.Unmanaged"] = "niezarządzany",
+        ["Badge.Unknown"] = "nieznany",
+
+        ["Puk.ChangeTitle"] = "Zmiana PUK-u",
+        ["Puk.Current"] = "Obecny PUK",
+        ["Puk.New"] = "Nowy PUK",
+        ["Puk.Repeat"] = "Nowy PUK ponownie",
+        ["Puk.Changed"] = "PUK został zmieniony.",
+
+        ["Tray.Theme"] = "Motyw / Theme",
+        ["Tray.ThemeSystem"] = "Systemowy",
+        ["Tray.ThemeLight"] = "Jasny",
+        ["Tray.ThemeDark"] = "Ciemny",
 
         ["Prompt.PinTitle"] = "Blinky prosi o PIN",
         ["Prompt.TouchTitle"] = "Dotknij tokenu",

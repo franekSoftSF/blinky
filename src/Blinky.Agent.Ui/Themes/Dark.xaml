@@ -1,0 +1,32 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Both dictionaries define exactly the same keys. A key present in one
+         and missing from the other is a XAML error that only appears after
+         somebody switches theme, which is the worst time to find it. -->
+
+    <Color x:Key="BackgroundColour">#16181A</Color>
+    <SolidColorBrush x:Key="Background" Color="{StaticResource BackgroundColour}" />
+    <SolidColorBrush x:Key="Panel" Color="#1E2124" />
+    <SolidColorBrush x:Key="PanelRaised" Color="#25292D" />
+    <SolidColorBrush x:Key="Divider" Color="#31363B" />
+
+    <SolidColorBrush x:Key="Text" Color="#E8EAED" />
+    <SolidColorBrush x:Key="TextMuted" Color="#9AA1A9" />
+    <SolidColorBrush x:Key="TextFaint" Color="#6E767E" />
+
+    <!-- Deliberately not the green of the tool this layout was learned from.
+         Blinky is not a Yubico product and must never be mistaken for one. -->
+    <SolidColorBrush x:Key="Accent" Color="#5AA9E6" />
+    <SolidColorBrush x:Key="AccentSoft" Color="#1D3A4F" />
+    <SolidColorBrush x:Key="OnAccent" Color="#0B1116" />
+
+    <SolidColorBrush x:Key="Warning" Color="#E0A83C" />
+    <SolidColorBrush x:Key="WarningSoft" Color="#3A2F16" />
+    <SolidColorBrush x:Key="Danger" Color="#E5675E" />
+    <SolidColorBrush x:Key="Managed" Color="#5FB98A" />
+    <SolidColorBrush x:Key="ManagedSoft" Color="#17301F" />
+
+    <SolidColorBrush x:Key="FieldBackground" Color="#12181D" />
+
+</ResourceDictionary>

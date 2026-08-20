@@ -25,21 +25,48 @@ namespace Blinky.Agent.Service;
 public sealed class CardOperations(
     InventoryCollector collector,
     CardGate gate,
+    BackendClient backend,
     ILogger<CardOperations> logger)
 {
     /// <summary>
-    /// Everything on the readers of this machine, read now.
+    /// Everything on the readers of this machine, read now, and whether Blinky
+    /// put it there.
     /// </summary>
-    public IReadOnlyList<TokenView> ListTokens()
+    /// <remarks>
+    /// The card is read first and the backend asked afterwards, in that order
+    /// and never merged into one step: the card is the fact, and what the
+    /// backend holds is a claim about it. Where the backend cannot be reached
+    /// the list is still correct and every slot reads <see cref="SlotManagement.Unknown"/>.
+    /// </remarks>
+    public async Task<IReadOnlyList<TokenView>> ListTokensAsync(CancellationToken ct)
     {
-        using var held = gate.Acquire();
+        InventorySweep sweep;
 
-        var sweep = collector.ReadAll();
+        using (gate.Acquire())
+        {
+            sweep = collector.ReadAll();
+        }
 
-        return [.. sweep.Tokens.Select(View)];
+        var views = new List<TokenView>(sweep.Tokens.Count);
+
+        foreach (var token in sweep.Tokens)
+        {
+            var known = await backend.GetKnownCredentialsAsync(token.Serial, ct);
+
+            if (known is null)
+            {
+                logger.LogDebug("The backend could not be asked about token {Serial}; "
+                                + "its slots are reported as unknown", token.Serial);
+            }
+
+            views.Add(View(token, known));
+        }
+
+        return views;
     }
 
-    private static TokenView View(TokenInventoryReport token) => new(
+    private static TokenView View(TokenInventoryReport token,
+        IReadOnlyList<KnownCredential>? known) => new(
         token.Serial,
         token.ReaderName,
         token.FirmwareVersion,
@@ -50,9 +77,21 @@ public sealed class CardOperations(
         // attempts left, which is a token nobody can rescue.
         token.Puk.TotalRetries is > 0,
 
-        [.. token.Slots.Select(View)]);
+        [.. token.Slots.Select(slot => View(slot, known))],
 
-    private static SlotView View(SlotReport slot) => new(
+        // IsDefault is null on firmware too old to be asked. Unknown is not the
+        // same as fine, but warning about a token that never said so would be
+        // worse: it teaches people to dismiss the banner.
+        token.Pin.IsDefault ?? false,
+        token.Puk.IsDefault ?? false,
+        token.Puk.RemainingRetries,
+        token.ManagementKey?.IsDefault ?? false,
+        token.ManagementKey?.Algorithm,
+        token.FormFactor,
+        token.IsFipsDevice,
+        token.Biometrics?.FingerprintsEnrolled ?? false);
+
+    private static SlotView View(SlotReport slot, IReadOnlyList<KnownCredential>? known) => new(
         slot.SlotId,
         slot.CertificateSubject,
         slot.CertificateIssuer,
@@ -62,7 +101,38 @@ public sealed class CardOperations(
         // A key with no certificate is the residue of an enrolment that failed
         // after generating. Not a fault, and not nothing: it is why a retry
         // into this slot will be refused.
-        slot.HasKey && !slot.HasCertificate);
+        slot.HasKey && !slot.HasCertificate,
+
+        Manages(slot, known));
+
+    /// <summary>
+    /// Compares the key on the card with the key the backend recorded issuing.
+    /// </summary>
+    /// <remarks>
+    /// The public key rather than the certificate, because a certificate can be
+    /// swapped into a slot while the key stays where it was — and the key is
+    /// the thing the card proved it holds.
+    /// </remarks>
+    private static SlotManagement Manages(SlotReport slot, IReadOnlyList<KnownCredential>? known)
+    {
+        if (!slot.HasCertificate)
+        {
+            // A bare key is not a credential yet, and calling it unmanaged
+            // would point at the wrong problem.
+            return slot.HasKey ? SlotManagement.Unknown : SlotManagement.Empty;
+        }
+
+        if (known is null || slot.PublicKeySha256 is not { } onCard)
+        {
+            return SlotManagement.Unknown;
+        }
+
+        var matches = known.Any(credential =>
+            string.Equals(credential.SlotId, slot.SlotId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(credential.PublicKeySha256, onCard, StringComparison.OrdinalIgnoreCase));
+
+        return matches ? SlotManagement.Managed : SlotManagement.Unmanaged;
+    }
 
     /// <summary>
     /// Changes a PIN. The values reach the card and nowhere else.
@@ -88,6 +158,35 @@ public sealed class CardOperations(
             session.ChangePin(currentPin, newPin!);
 
             logger.LogInformation("The PIN on token {Serial} was changed", serial);
+
+            return new AgentResponse(true);
+        });
+    }
+
+    /// <summary>Changes the PUK, given the current one.</summary>
+    /// <remarks>
+    /// The same complexity rules as a PIN. A PUK is the thing that rescues a
+    /// PIN, so a guessable one makes the PIN's rules decorative.
+    /// </remarks>
+    public AgentResponse ChangePuk(long serial, string? currentPuk, string? newPuk,
+        PinComplexityPolicy policy)
+    {
+        var verdict = PinRules.Check(newPuk, policy, serial);
+        if (!verdict.IsAcceptable)
+        {
+            return AgentResponse.Failed(verdict.Explanation);
+        }
+
+        if (string.IsNullOrEmpty(currentPuk))
+        {
+            return AgentResponse.Failed("The current PUK is required.");
+        }
+
+        return OnToken(serial, session =>
+        {
+            session.ChangePuk(currentPuk, newPuk!);
+
+            logger.LogInformation("The PUK on token {Serial} was changed", serial);
 
             return new AgentResponse(true);
         });

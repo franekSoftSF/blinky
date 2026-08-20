@@ -27,6 +27,11 @@
          class, so its namespace stays where that class is used and nowhere
          else. -->
     <Using Remove="System.Windows.Forms" />
+
+    <!-- Same collision, one layer down: System.Drawing.Brush against
+         System.Windows.Media.Brush, in a project where every brush is a WPF
+         one except the tray icon's. -->
+    <Using Remove="System.Drawing" />
   </ItemGroup>
 
   <ItemGroup>

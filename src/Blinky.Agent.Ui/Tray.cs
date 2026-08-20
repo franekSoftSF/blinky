@@ -26,6 +26,9 @@ public sealed class Tray : IDisposable
     private readonly NotifyIcon icon;
     private readonly ToolStripMenuItem polish;
     private readonly ToolStripMenuItem english;
+    private readonly ToolStripMenuItem systemTheme;
+    private readonly ToolStripMenuItem lightTheme;
+    private readonly ToolStripMenuItem darkTheme;
 
     public event Action? OpenRequested;
     public event Action? ExitRequested;
@@ -39,10 +42,23 @@ public sealed class Tray : IDisposable
         language.DropDownItems.Add(polish);
         language.DropDownItems.Add(english);
 
+        systemTheme = new ToolStripMenuItem(Strings.Current["Tray.ThemeSystem"], null,
+            (_, _) => UseTheme(ThemeChoice.System));
+        lightTheme = new ToolStripMenuItem(Strings.Current["Tray.ThemeLight"], null,
+            (_, _) => UseTheme(ThemeChoice.Light));
+        darkTheme = new ToolStripMenuItem(Strings.Current["Tray.ThemeDark"], null,
+            (_, _) => UseTheme(ThemeChoice.Dark));
+
+        var theme = new ToolStripMenuItem(Strings.Current["Tray.Theme"]);
+        theme.DropDownItems.Add(systemTheme);
+        theme.DropDownItems.Add(lightTheme);
+        theme.DropDownItems.Add(darkTheme);
+
         var menu = new ContextMenuStrip();
         menu.Items.Add(new ToolStripMenuItem(Strings.Current["Tray.Open"], null,
             (_, _) => OpenRequested?.Invoke()));
         menu.Items.Add(language);
+        menu.Items.Add(theme);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem(Strings.Current["Tray.Exit"], null,
             (_, _) => ExitRequested?.Invoke()));
@@ -84,6 +100,12 @@ public sealed class Tray : IDisposable
         Mark();
     }
 
+    private void UseTheme(ThemeChoice choice)
+    {
+        Theme.Apply(choice);
+        Mark();
+    }
+
     private void Rebuild()
     {
         if (icon.ContextMenuStrip is not { } menu)
@@ -93,13 +115,22 @@ public sealed class Tray : IDisposable
 
         menu.Items[0].Text = Strings.Current["Tray.Open"];
         menu.Items[1].Text = Strings.Current["Tray.Language"];
-        menu.Items[3].Text = Strings.Current["Tray.Exit"];
+        menu.Items[2].Text = Strings.Current["Tray.Theme"];
+        menu.Items[4].Text = Strings.Current["Tray.Exit"];
+
+        systemTheme.Text = Strings.Current["Tray.ThemeSystem"];
+        lightTheme.Text = Strings.Current["Tray.ThemeLight"];
+        darkTheme.Text = Strings.Current["Tray.ThemeDark"];
     }
 
     private void Mark()
     {
         polish.Checked = Strings.Current.IsPolish;
         english.Checked = !Strings.Current.IsPolish;
+
+        systemTheme.Checked = Theme.Choice == ThemeChoice.System;
+        lightTheme.Checked = Theme.Choice == ThemeChoice.Light;
+        darkTheme.Checked = Theme.Choice == ThemeChoice.Dark;
     }
 
     public void Dispose()

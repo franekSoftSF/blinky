@@ -4,12 +4,15 @@ using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 using Blinky.Contracts;
 
 namespace Blinky.Agent.Ui;
 
 /// <summary>
-/// What is on the tokens in this machine, read fresh every time it is shown.
+/// Devices on the left, what is in their slots in the middle, what can be done
+/// about it on the right.
 /// </summary>
 /// <remarks>
 /// Nothing is cached between openings. A token can leave the machine between
@@ -20,6 +23,7 @@ public partial class TokensWindow : Window
 {
     private readonly RequestClient client = new();
     private PinComplexityPolicy policy = PinComplexityPolicy.Default;
+    private IReadOnlyList<TokenView> tokens = [];
 
     public TokensWindow()
     {
@@ -28,18 +32,24 @@ public partial class TokensWindow : Window
         Loaded += async (_, _) => await LoadAsync();
     }
 
+    private TokenView? Selected => DeviceList.SelectedIndex >= 0
+                                   && DeviceList.SelectedIndex < tokens.Count
+        ? tokens[DeviceList.SelectedIndex]
+        : null;
+
     public async Task LoadAsync()
     {
         StatusText.Text = Strings.Current["Pin.Working"];
 
-        // The policy comes from the service rather than being assumed here, so
-        // that what the window explains and what the service enforces are the
-        // same rules.
-        var policyResponse = await client.SendAsync(new AgentRequest(AgentRequest.GetPinPolicy));
-        if (policyResponse is { Succeeded: true, PinComplexityPolicy: { } published })
+        // From the service rather than assumed here, so that what this window
+        // explains and what the service enforces are the same rules.
+        var published = await client.SendAsync(new AgentRequest(AgentRequest.GetPinPolicy));
+        if (published is { Succeeded: true, PinComplexityPolicy: { } rules })
         {
-            policy = published;
+            policy = rules;
         }
+
+        var remembered = Selected?.Serial;
 
         var response = await client.SendAsync(new AgentRequest(AgentRequest.ListTokens));
 
@@ -47,143 +57,301 @@ public partial class TokensWindow : Window
 
         if (!response.Succeeded)
         {
-            Show(response.Error ?? Strings.Current["Error.NoService"]);
+            ShowNothing(response.Error ?? Strings.Current["Error.NoService"]);
             return;
         }
 
-        var tokens = response.Tokens ?? [];
+        tokens = response.Tokens ?? [];
 
         if (tokens.Count == 0)
         {
-            Show(Strings.Current["Tokens.Empty"] + " " + Strings.Current["Tokens.EmptyHint"]);
+            ShowNothing(Strings.Current["Tokens.Empty"] + " "
+                        + Strings.Current["Tokens.EmptyHint"]);
             return;
         }
 
-        EmptyText.Visibility = Visibility.Collapsed;
-        TokenList.ItemsSource = tokens.Select(TokenRow.From).ToList();
+        DeviceList.ItemsSource = tokens.Select(DeviceRow.From).ToList();
+
+        // The same device stays selected across a refresh where it can. A list
+        // that jumped back to the first token after every PIN change would
+        // move the thing somebody was looking at.
+        var index = remembered is { } serial
+            ? tokens.Select((token, i) => (token, i))
+                .Where(pair => pair.token.Serial == serial)
+                .Select(pair => pair.i)
+                .DefaultIfEmpty(0)
+                .First()
+            : 0;
+
+        DeviceList.SelectedIndex = index;
     }
 
-    private void Show(string message)
+    private void ShowNothing(string message)
     {
-        TokenList.ItemsSource = null;
+        tokens = [];
+        DeviceList.ItemsSource = null;
+        SlotList.ItemsSource = null;
+        DefaultsBanner.Visibility = Visibility.Collapsed;
+        ManagementPanel.Visibility = Visibility.Collapsed;
+
+        HeaderText.Text = Strings.Current["Tokens.Title"];
+        SubHeaderText.Text = string.Empty;
         EmptyText.Text = message;
         EmptyText.Visibility = Visibility.Visible;
     }
 
-    private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadAsync();
+    private void Device_Changed(object sender, SelectionChangedEventArgs e) => ShowSelected();
 
-    private void Close_Click(object sender, RoutedEventArgs e) => Hide();
-
-    private async void ChangePin_Click(object sender, RoutedEventArgs e) =>
-        await OpenPinDialogAsync(sender, unblocking: false);
-
-    private async void Unblock_Click(object sender, RoutedEventArgs e) =>
-        await OpenPinDialogAsync(sender, unblocking: true);
-
-    private async Task OpenPinDialogAsync(object sender, bool unblocking)
+    private void ShowSelected()
     {
-        if (sender is not FrameworkElement { Tag: long serial })
+        if (Selected is not { } token)
         {
             return;
         }
 
-        var dialog = new PinDialog(client, serial, unblocking, policy) { Owner = this };
+        EmptyText.Visibility = Visibility.Collapsed;
+        ManagementPanel.Visibility = Visibility.Visible;
+
+        HeaderText.Text = Strings.Current["Slots.Header"];
+        SubHeaderText.Text = DeviceRow.Describe(token);
+
+        SlotList.ItemsSource = token.Slots.Select(SlotRow.From).ToList();
+
+        ShowDefaults(token);
+        ShowManagement(token);
+    }
+
+    /// <summary>
+    /// One banner for everything still at its factory value.
+    /// </summary>
+    /// <remarks>
+    /// Three separate warnings for the PIN, the PUK and the management key
+    /// would be three things to dismiss and the same single fact: nobody has
+    /// personalised this token yet.
+    /// </remarks>
+    private void ShowDefaults(TokenView token)
+    {
+        var strings = Strings.Current;
+
+        var atFactory = new List<string>();
+
+        if (token.PinIsDefault)
+        {
+            atFactory.Add(strings["Default.Pin"]);
+        }
+
+        if (token.PukIsDefault)
+        {
+            atFactory.Add(strings["Default.Puk"]);
+        }
+
+        if (token.ManagementKeyIsDefault)
+        {
+            atFactory.Add(strings["Default.ManagementKey"]);
+        }
+
+        if (atFactory.Count == 0)
+        {
+            DefaultsBanner.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        DefaultsText.Text = strings["Default.Banner"] + " " + string.Join(", ", atFactory) + ".";
+        DefaultsBanner.Visibility = Visibility.Visible;
+    }
+
+    private void ShowManagement(TokenView token)
+    {
+        var strings = Strings.Current;
+
+        PinStateText.Text = Attempts(token.PinAttemptsRemaining)
+                            + (token.PinIsDefault ? "  •  " + strings["Default.Warning"] : string.Empty);
+
+        // A token with no PUK is not a token with a PUK we cannot see. The Bio
+        // has none by design, and offering an action that would certainly fail
+        // teaches people that this window guesses.
+        ChangePukButton.IsEnabled = token.HasPuk;
+        UnblockButton.IsEnabled = token.HasPuk;
+
+        PukStateText.Text = token.HasPuk
+            ? Attempts(token.PukAttemptsRemaining)
+              + (token.PukIsDefault ? "  •  " + strings["Default.Warning"] : string.Empty)
+            : strings["Tokens.NoPuk"];
+
+        UnblockStateText.Text = token.HasPuk
+            ? strings["Manage.UnblockHint"]
+            : strings["Tokens.NoPuk"];
+
+        ManagementKeyText.Text = token.ManagementKeyAlgorithm is { } algorithm
+            ? algorithm + (token.ManagementKeyIsDefault
+                ? "  •  " + strings["Default.Warning"]
+                : string.Empty)
+            : strings["Manage.Unknown"];
+    }
+
+    private static string Attempts(int? remaining) => remaining is { } left
+        ? string.Format(CultureInfo.CurrentCulture, Strings.Current["Pin.AttemptsLeft"], left)
+        : Strings.Current["Manage.Unknown"];
+
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadAsync();
+
+    private async void ChangePin_Click(object sender, RoutedEventArgs e) =>
+        await OpenAsync(PinDialogKind.ChangePin);
+
+    private async void ChangePuk_Click(object sender, RoutedEventArgs e) =>
+        await OpenAsync(PinDialogKind.ChangePuk);
+
+    private async void Unblock_Click(object sender, RoutedEventArgs e) =>
+        await OpenAsync(PinDialogKind.Unblock);
+
+    private async Task OpenAsync(PinDialogKind kind)
+    {
+        if (Selected is not { } token)
+        {
+            return;
+        }
+
+        var dialog = new PinDialog(client, token, kind, policy) { Owner = this };
 
         if (dialog.ShowDialog() == true)
         {
-            // The attempt counter moved, so the list is out of date the moment
-            // this returns.
+            // The attempt counter moved and a default may no longer be one, so
+            // everything on screen is out of date the moment this returns.
             await LoadAsync();
         }
     }
 }
 
-/// <summary>One token, flattened into the strings the template draws.</summary>
-/// <remarks>
-/// Formatting here rather than in XAML converters: the sentences are
-/// translated, and a converter would have to reach for the table anyway.
-/// </remarks>
-public sealed record TokenRow(
-    long Serial,
-    string Heading,
-    string SubHeading,
-    string Warning,
-    Visibility WarningVisibility,
-    bool HasPuk,
-    IReadOnlyList<SlotRow> Slots)
+/// <summary>One device in the left column.</summary>
+public sealed record DeviceRow(string Name, string Line2)
 {
-    public static TokenRow From(TokenView token)
+    public static DeviceRow From(TokenView token) =>
+        new(Label(token), $"S/N: {token.Serial}"
+                         + (token.FirmwareVersion is { } firmware ? $"  F/W: {firmware}" : string.Empty));
+
+    /// <summary>
+    /// What the card actually said, never a model name worked out from it.
+    /// </summary>
+    /// <remarks>
+    /// The form factor comes from an attestation and is therefore absent on a
+    /// token holding no key. Filling that gap by reading a model out of a
+    /// firmware version would put a guess in the one line people read as the
+    /// identity of the thing in their hand — the same mistake doc 08 records
+    /// for the form-factor column.
+    /// </remarks>
+    private static string Label(TokenView token)
     {
         var strings = Strings.Current;
 
-        var heading = $"{strings["Tokens.Serial"]} {token.Serial}";
+        var name = token.FormFactor is { Length: > 0 } form
+            ? form
+            : strings["Device.Generic"];
 
-        var parts = new string?[]
+        if (token.FingerprintsEnrolled)
         {
-            $"{strings["Tokens.Reader"]}: {token.ReaderName}",
+            name += "  " + strings["Device.Biometric"];
+        }
 
-            // Firmware and the attempt count are both absent on firmware too
-            // old to be asked. Left out rather than shown as a blank label.
-            token.FirmwareVersion is { } firmware
-                ? $"{strings["Tokens.Firmware"]}: {firmware}"
-                : null,
-            token.PinAttemptsRemaining is { } attempts
-                ? $"{strings["Tokens.PinAttempts"]}: {attempts}"
-                : null,
-        };
+        return token.IsFipsDevice ? name + "  FIPS" : name;
+    }
 
-        var subHeading = string.Join("   ", parts.Where(part => part is not null));
+    public static string Describe(TokenView token)
+    {
+        var strings = Strings.Current;
 
-        return new TokenRow(
-            token.Serial,
-            heading,
-            subHeading,
-            strings["Tokens.NoPuk"],
-
-            // A token with no PUK is not an error to hide: it is the one fact
-            // that decides whether a blocked PIN is recoverable, and the person
-            // holding it should know before they block it.
-            token.HasPuk ? Visibility.Collapsed : Visibility.Visible,
-            token.HasPuk,
-            [.. token.Slots.Select(SlotRow.From)]);
+        return $"{strings["Tokens.Reader"]}: {token.ReaderName}"
+               + $"    {strings["Tokens.Serial"]}: {token.Serial}"
+               + (token.FirmwareVersion is { } firmware
+                   ? $"    {strings["Tokens.Firmware"]}: {firmware}"
+                   : string.Empty);
     }
 }
 
-/// <summary>One slot, in two lines.</summary>
-public sealed record SlotRow(string SlotId, string Line1, string Line2)
+/// <summary>One slot, ready for the template.</summary>
+public sealed record SlotRow(
+    string SlotId,
+    string SlotName,
+    string Subject,
+    string Detail,
+    string BadgeText,
+    Visibility BadgeVisibility,
+    Brush BadgeBackground,
+    Brush BadgeForeground)
 {
     public static SlotRow From(SlotView slot)
     {
         var strings = Strings.Current;
 
-        if (slot.Subject is null)
-        {
-            return new SlotRow(slot.SlotId,
-                strings[slot.HasKeyWithoutCertificate
-                    ? "Slot.KeyNoCertificate"
-                    : "Slot.Empty"],
-                string.Empty);
-        }
+        var name = strings[$"Slot.Name.{slot.SlotId.ToUpperInvariant()}"];
 
-        var expiry = slot.NotAfter is { } notAfter
-            ? $"{strings["Slot.Expires"]}: "
-              + notAfter.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
-              + " " + Remaining(slot.DaysRemaining)
-            : string.Empty;
+        var subject = slot.Subject
+                      ?? strings[slot.HasKeyWithoutCertificate
+                          ? "Slot.KeyNoCertificate"
+                          : "Slot.Empty"];
 
-        var issuer = slot.Issuer is { } signedBy
-            ? $"{strings["Slot.Issuer"]}: {signedBy}    "
-            : string.Empty;
+        var detail = slot.Subject is null
+            ? string.Empty
+            : string.Join("    ", new[]
+                {
+                    slot.Issuer is { } issuer ? $"{strings["Slot.Issuer"]}: {issuer}" : null,
+                    Expiry(slot),
+                    slot.KeyAlgorithm,
+                }
+                .Where(part => !string.IsNullOrEmpty(part)));
 
-        return new SlotRow(slot.SlotId, slot.Subject, issuer + expiry);
+        var (text, background, foreground) = Badge(slot.Management);
+
+        return new SlotRow(slot.SlotId.ToLowerInvariant(), name, subject, detail,
+            text,
+            slot.Management == SlotManagement.Empty ? Visibility.Collapsed : Visibility.Visible,
+            background, foreground);
     }
 
-    private static string Remaining(int? days) => days switch
+    /// <summary>
+    /// Managed, unmanaged, or unknown — and unknown is shown rather than
+    /// hidden. A blank badge would read as "fine".
+    /// </summary>
+    private static (string Text, Brush Background, Brush Foreground) Badge(SlotManagement state)
     {
-        null => string.Empty,
-        < 0 => string.Format(CultureInfo.CurrentCulture,
-            Strings.Current["Slot.Expired"], Math.Abs(days.Value)),
-        _ => string.Format(CultureInfo.CurrentCulture,
-            Strings.Current["Slot.ExpiresIn"], days.Value),
-    };
+        var strings = Strings.Current;
+
+        return state switch
+        {
+            SlotManagement.Managed => (strings["Badge.Managed"],
+                Look("ManagedSoft"), Look("Managed")),
+
+            SlotManagement.Unmanaged => (strings["Badge.Unmanaged"],
+                Look("WarningSoft"), Look("Warning")),
+
+            _ => (strings["Badge.Unknown"], Look("PanelRaised"), Look("TextMuted")),
+        };
+    }
+
+    /// <summary>
+    /// Resolved from the live dictionary so a badge follows a theme switch.
+    /// Falls back to grey rather than throwing if a key is ever missing.
+    /// </summary>
+    private static Brush Look(string key) =>
+        Application.Current.TryFindResource(key) as Brush ?? Brushes.Gray;
+
+    private static string? Expiry(SlotView slot)
+    {
+        if (slot.NotAfter is not { } notAfter)
+        {
+            return null;
+        }
+
+        var date = notAfter.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        var remaining = slot.DaysRemaining switch
+        {
+            null => string.Empty,
+            < 0 => " " + string.Format(CultureInfo.CurrentCulture,
+                Strings.Current["Slot.Expired"], Math.Abs(slot.DaysRemaining.Value)),
+            var days => " " + string.Format(CultureInfo.CurrentCulture,
+                Strings.Current["Slot.ExpiresIn"], days),
+        };
+
+        return $"{Strings.Current["Slot.Expires"]}: {date}{remaining}";
+    }
 }

@@ -242,6 +242,38 @@ app.MapPost("/api/credentials/issue",
         }
     });
 
+// What the backend believes is on a token, so an agent can compare it with
+// what the card actually holds. The disagreement is the point: a credential the
+// server thinks is installed and the card does not have is the leak that
+// docs/02-data-model.md separates Issued from Installed to make visible.
+app.MapGet("/api/tokens/{serial:long}/credentials",
+    (long serial, HttpContext context, Database database) =>
+    {
+        // An agent speaks for the machine it is on, and any agent may be
+        // holding any token: this says nothing a person with the token in their
+        // hand cannot read off the card itself.
+        _ = (Agent)context.Items["agent"]!;
+
+        using var session = database.OpenSession();
+
+        // Materialised before projecting: the hex conversion and the null
+        // handling below are C#, not SQL, and NHibernate would try to translate
+        // them.
+        var credentials = session.Query<Credential>()
+            .Where(c => c.Token.Serial == serial)
+            .ToList()
+            .Select(c => new KnownCredential(
+                c.SlotId,
+                c.SerialNumber,
+                c.PublicKeySha256 is { } hash ? Convert.ToHexString(hash) : null,
+                c.State.ToString(),
+                c.SubjectDn,
+                c.NotAfter))
+            .ToList();
+
+        return Results.Ok(credentials);
+    });
+
 app.MapPost("/api/credentials/{id:guid}/installed",
     (Guid id, CredentialInstalled confirmation, CredentialIssuanceService credentials) =>
         credentials.MarkInstalled(confirmation with { CredentialId = id })
@@ -317,6 +349,15 @@ static bool IsOperator(HttpContext context, string expected)
 /// <summary>What an agent reports when it checks in.</summary>
 /// <summary>Asks for one token inventory pass on one agent.</summary>
 internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
+
+/// <summary>One credential the backend holds, as an agent needs to see it.</summary>
+internal sealed record KnownCredential(
+    string SlotId,
+    string? SerialNumber,
+    string? PublicKeySha256,
+    string State,
+    string? SubjectDn,
+    DateTime? NotAfter);
 
 /// <remarks>
 /// <c>ProfileName</c> rather than <c>Profile</c>, and that is not a style

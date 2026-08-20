@@ -184,6 +184,34 @@ public sealed class BackendClient : IDisposable
             : null;
     }
 
+    /// <summary>
+    /// What the backend holds for a token, so the agent can compare it with
+    /// what is actually on the card.
+    /// </summary>
+    /// <returns>
+    /// Null when the backend could not be asked — which is not the same as an
+    /// empty list, and the caller must not treat it as one. A backend that is
+    /// unreachable makes every slot <b>unknown</b>, never <b>unmanaged</b>.
+    /// </returns>
+    public async Task<IReadOnlyList<KnownCredential>?> GetKnownCredentialsAsync(long serial,
+        CancellationToken ct)
+    {
+        try
+        {
+            var response = await Authenticated()
+                .GetAsync($"/api/tokens/{serial}/credentials", ct);
+
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync<List<KnownCredential>>(ct)
+                : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException
+                                      or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     private HttpClient Authenticated() => authenticated
         ?? throw new InvalidOperationException("The agent has no identity yet.");
 
@@ -244,3 +272,17 @@ public sealed class BackendClient : IDisposable
 
     private sealed record EnrolmentResponse(Guid AgentId, string CertificatePem);
 }
+
+/// <summary>One credential the backend holds for a token.</summary>
+/// <remarks>
+/// The join is <see cref="PublicKeySha256"/>, not the certificate: a
+/// certificate can be replaced in a slot while the key stays, and the key is
+/// what the card proved it holds.
+/// </remarks>
+public sealed record KnownCredential(
+    string SlotId,
+    string? SerialNumber,
+    string? PublicKeySha256,
+    string State,
+    string? SubjectDn,
+    DateTimeOffset? NotAfter);

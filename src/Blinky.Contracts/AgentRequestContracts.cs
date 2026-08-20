@@ -38,6 +38,9 @@ public sealed record AgentRequest(
     /// <summary>Set a new PIN using the PUK.</summary>
     public const string UnblockPin = "UnblockPin";
 
+    /// <summary>Change the PUK, given the current one.</summary>
+    public const string ChangePuk = "ChangePuk";
+
     /// <summary>The rules a new PIN has to satisfy on this deployment.</summary>
     public const string GetPinPolicy = "GetPinPolicy";
 }
@@ -70,6 +73,32 @@ public sealed record AgentResponse(
         new(false, error, AttemptsRemaining: attemptsRemaining);
 }
 
+/// <summary>
+/// Whether Blinky put what is in this slot there.
+/// </summary>
+/// <remarks>
+/// Three values rather than a boolean, and the third is the important one. The
+/// answer comes from comparing the key on the card against what the backend
+/// holds, so a backend that cannot be reached means <b>unknown</b> — not
+/// unmanaged. A two-valued version would relabel every certificate in the
+/// fleet as foreign the moment the network went down, which is the one moment
+/// nobody should be told their credential is suspect.
+/// </remarks>
+public enum SlotManagement
+{
+    /// <summary>The backend could not be asked.</summary>
+    Unknown,
+
+    /// <summary>Blinky issued this and the key on the card matches.</summary>
+    Managed,
+
+    /// <summary>Something else put this here — <c>ykman</c>, another CMS, a person.</summary>
+    Unmanaged,
+
+    /// <summary>Nothing in the slot.</summary>
+    Empty,
+}
+
 /// <summary>A token on a reader of this machine, as the tray shows it.</summary>
 public sealed record TokenView(
     long Serial,
@@ -77,7 +106,25 @@ public sealed record TokenView(
     string? FirmwareVersion,
     int? PinAttemptsRemaining,
     bool HasPuk,
-    IReadOnlyList<SlotView> Slots);
+    IReadOnlyList<SlotView> Slots,
+
+    // Everything below is what the management panel needs to stop guessing.
+    // A screen that shows "change the PIN" without saying the PIN is still the
+    // factory one has left out the only urgent thing on it.
+    bool PinIsDefault = false,
+    bool PukIsDefault = false,
+    int? PukAttemptsRemaining = null,
+    bool ManagementKeyIsDefault = false,
+    string? ManagementKeyAlgorithm = null,
+
+    /// <remarks>
+    /// From an attestation and nowhere else, so it is present only on a token
+    /// that holds a key. Absent is absent: a model name inferred from a
+    /// firmware version would be a guess in a column people read as fact.
+    /// </remarks>
+    string? FormFactor = null,
+    bool IsFipsDevice = false,
+    bool FingerprintsEnrolled = false);
 
 /// <summary>
 /// One slot, read from the card.
@@ -94,7 +141,8 @@ public sealed record SlotView(
     string? Issuer,
     DateTimeOffset? NotAfter,
     string? KeyAlgorithm,
-    bool HasKeyWithoutCertificate)
+    bool HasKeyWithoutCertificate,
+    SlotManagement Management = SlotManagement.Unknown)
 {
     /// <summary>Days left, negative once it has expired. Null with no certificate.</summary>
     public int? DaysRemaining => NotAfter is { } expiry

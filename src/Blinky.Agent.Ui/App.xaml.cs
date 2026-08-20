@@ -32,6 +32,11 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // Before any window is constructed: a window built against an empty
+        // resource dictionary resolves every DynamicResource to nothing and
+        // comes up in system colours.
+        Theme.Apply(ThemeChoice.System);
+
         window = new MainWindow();
 
         Trace($"started with {e.Args.Length} args: {string.Join(" ", e.Args)}");

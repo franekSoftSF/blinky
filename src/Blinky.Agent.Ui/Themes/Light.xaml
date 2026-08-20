@@ -1,0 +1,30 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- The same keys as Dark.xaml, in the same order, for the same reason. -->
+
+    <Color x:Key="BackgroundColour">#F4F5F7</Color>
+    <SolidColorBrush x:Key="Background" Color="{StaticResource BackgroundColour}" />
+    <SolidColorBrush x:Key="Panel" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PanelRaised" Color="#FAFBFC" />
+    <SolidColorBrush x:Key="Divider" Color="#DCE0E5" />
+
+    <SolidColorBrush x:Key="Text" Color="#1B1F24" />
+    <SolidColorBrush x:Key="TextMuted" Color="#5B646E" />
+    <SolidColorBrush x:Key="TextFaint" Color="#8A939D" />
+
+    <SolidColorBrush x:Key="Accent" Color="#1F6FB2" />
+    <SolidColorBrush x:Key="AccentSoft" Color="#DCEBF7" />
+    <SolidColorBrush x:Key="OnAccent" Color="#FFFFFF" />
+
+    <!-- Darker than the dark theme's amber: the same hue on white loses too
+         much contrast to read as a warning. -->
+    <SolidColorBrush x:Key="Warning" Color="#9A6B00" />
+    <SolidColorBrush x:Key="WarningSoft" Color="#FBF1D9" />
+    <SolidColorBrush x:Key="Danger" Color="#B3261E" />
+    <SolidColorBrush x:Key="Managed" Color="#1F7A4D" />
+    <SolidColorBrush x:Key="ManagedSoft" Color="#E1F2E8" />
+
+    <SolidColorBrush x:Key="FieldBackground" Color="#FFFFFF" />
+
+</ResourceDictionary>

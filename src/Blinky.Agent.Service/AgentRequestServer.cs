@@ -77,7 +77,7 @@ public sealed class AgentRequestServer(
 
         var response = envelope is null
             ? AgentResponse.Failed("The request could not be read.")
-            : Handle(envelope);
+            : await HandleAsync(envelope, ct);
 
         var reply = JsonSerializer.Serialize(response, Json) + "\n";
         await pipe.WriteAsync(Encoding.UTF8.GetBytes(reply), ct);
@@ -89,7 +89,8 @@ public sealed class AgentRequestServer(
     /// record for exactly this reason — so that logging the one cannot reach
     /// the other by accident.
     /// </remarks>
-    private AgentResponse Handle(AgentRequestEnvelope envelope)
+    private async Task<AgentResponse> HandleAsync(AgentRequestEnvelope envelope,
+        CancellationToken ct)
     {
         var request = envelope.Request;
 
@@ -101,7 +102,7 @@ public sealed class AgentRequestServer(
             return request.Op switch
             {
                 AgentRequest.ListTokens =>
-                    new AgentResponse(true, Tokens: cards.ListTokens()),
+                    new AgentResponse(true, Tokens: await cards.ListTokensAsync(ct)),
 
                 AgentRequest.GetPinPolicy =>
                     new AgentResponse(true, PinComplexityPolicy: options.PinPolicy),
@@ -110,11 +111,15 @@ public sealed class AgentRequestServer(
                     cards.ChangePin(token, envelope.Secrets?.CurrentPin,
                         envelope.Secrets?.NewPin, options.PinPolicy),
 
+                AgentRequest.ChangePuk when request.TokenSerial is { } token =>
+                    cards.ChangePuk(token, envelope.Secrets?.CurrentPin,
+                        envelope.Secrets?.NewPin, options.PinPolicy),
+
                 AgentRequest.UnblockPin when request.TokenSerial is { } token =>
                     cards.UnblockPin(token, envelope.Secrets?.Puk,
                         envelope.Secrets?.NewPin, options.PinPolicy),
 
-                AgentRequest.ChangePin or AgentRequest.UnblockPin =>
+                AgentRequest.ChangePin or AgentRequest.ChangePuk or AgentRequest.UnblockPin =>
                     AgentResponse.Failed("That request has to name a token."),
 
                 _ => AgentResponse.Failed($"This agent does not know the request {request.Op}."),

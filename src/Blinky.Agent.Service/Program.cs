@@ -22,6 +22,14 @@ builder.Services.AddSingleton<InventoryCollector>();
 // One card operation at a time in this process: a poll, a job and a person
 // clicking in the tray all end at the same exclusive reader handle.
 builder.Services.AddSingleton<CardGate>();
+
+// One client, shared: the worker authenticates it once with the agent's
+// certificate and the tray's request handler asks the same backend with the
+// same identity. Two clients would mean two identities to keep in step.
+builder.Services.AddSingleton(services => new BackendClient(
+    options.BackendUrl,
+    options.ServerCertificateAuthorityPath,
+    options.AcceptAnyServerCertificate));
 // Prompts and enrolment both need Windows: one draws in a user session, the
 // other holds a reader. Registered only where they can work, and the executor
 // refuses the step rather than pretending otherwise.

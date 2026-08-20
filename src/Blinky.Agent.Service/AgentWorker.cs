@@ -14,6 +14,7 @@ public sealed class AgentWorker(
     InventoryCollector collector,
     JobExecutor executor,
     CardGate gate,
+    BackendClient backend,
     ILogger<AgentWorker> logger) : BackgroundService
 {
     private readonly HashSet<string> reportedUnsupported = new(StringComparer.OrdinalIgnoreCase);
@@ -30,9 +31,6 @@ public sealed class AgentWorker(
                             + "Windows-only. The agent has nothing to do here.");
             return;
         }
-
-        using var backend = new BackendClient(options.BackendUrl,
-            options.ServerCertificateAuthorityPath, options.AcceptAnyServerCertificate);
 
         if (options.ServerCertificateAuthorityPath is null or "" && options.AcceptAnyServerCertificate)
         {
