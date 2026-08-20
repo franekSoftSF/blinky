@@ -25,6 +25,8 @@ public partial class App : Application
     private readonly CancellationTokenSource stopping = new();
 
     private MainWindow? window;
+    private TokensWindow? tokens;
+    private Tray? tray;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -51,6 +53,37 @@ public partial class App : Application
         var client = new PromptClient(request => window.ShowPromptAsync(request));
 
         _ = client.RunAsync(stopping.Token);
+
+        // The tray is the half the person starts. The prompt pipe above is the
+        // half that starts on them, and the two are deliberately independent:
+        // a tray that failed to appear must not stop a PIN prompt arriving.
+        tray = new Tray();
+        tray.OpenRequested += ShowTokens;
+        tray.ExitRequested += Shutdown;
+
+        Trace("tray icon shown");
+    }
+
+    /// <summary>
+    /// Shows the token list, reloading it every time. The window is kept rather
+    /// than recreated so that its position survives being closed, but its
+    /// contents never do — a token can leave the machine between two openings.
+    /// </summary>
+    private async void ShowTokens()
+    {
+        try
+        {
+            tokens ??= new TokensWindow();
+
+            tokens.Show();
+            tokens.Activate();
+
+            await tokens.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Trace($"the token window failed: {ex}");
+        }
     }
 
     /// <summary>Shows one PIN prompt locally, prints the outcome, and exits.</summary>
@@ -95,6 +128,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         stopping.Cancel();
+        tray?.Dispose();
         base.OnExit(e);
     }
 }

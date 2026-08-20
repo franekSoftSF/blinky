@@ -74,7 +74,12 @@ public sealed record SlotReport(
     string? CertificateSubject,
     string? CertificateThumbprint,
     DateTimeOffset? NotBefore,
-    DateTimeOffset? NotAfter);
+    DateTimeOffset? NotAfter,
+
+    // Trailing and optional: the backend has never needed the issuer, and the
+    // tray does - a certificate is only reassuring once you can see who signed
+    // it.
+    string? CertificateIssuer = null);
 
 /// <summary>
 /// A card that speaks PIV but is not something Blinky can manage.

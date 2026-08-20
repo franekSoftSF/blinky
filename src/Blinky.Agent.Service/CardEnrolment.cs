@@ -29,6 +29,7 @@ namespace Blinky.Agent.Service;
 [SupportedOSPlatform("windows")]
 public sealed class CardEnrolment(
     UserPrompts prompts,
+    CardGate gate,
     ILogger<CardEnrolment> logger) : ICardEnrolment
 {
     private readonly AttestationVerifier verifier = new(YubicoRoots.PivAttestation);
@@ -49,6 +50,11 @@ public sealed class CardEnrolment(
         {
             throw new InvalidOperationException($"{slotName} is not a credential slot.");
         }
+
+        // Held for the whole enrolment, prompt included. A sweep or a tray
+        // click landing in the middle would take the reader and lose the
+        // verified PIN with it.
+        using var held = await gate.AcquireAsync(ct);
 
         using var context = PcscContext.Establish();
 

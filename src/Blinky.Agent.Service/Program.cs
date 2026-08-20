@@ -18,6 +18,10 @@ builder.Services.AddSingleton(options.IdentityDirectory is { Length: > 0 } direc
     : AgentIdentity.Default());
 
 builder.Services.AddSingleton<InventoryCollector>();
+
+// One card operation at a time in this process: a poll, a job and a person
+// clicking in the tray all end at the same exclusive reader handle.
+builder.Services.AddSingleton<CardGate>();
 // Prompts and enrolment both need Windows: one draws in a user session, the
 // other holds a reader. Registered only where they can work, and the executor
 // refuses the step rather than pretending otherwise.
@@ -44,4 +48,9 @@ static void AddWindowsOnlyServices(IServiceCollection services)
 {
     services.AddSingleton<UserPrompts>();
     services.AddSingleton<ICardEnrolment, CardEnrolment>();
+    services.AddSingleton<CardOperations>();
+
+    // The tray's half of the conversation. Windows-only for the same reason
+    // everything else here is: it ends at a reader.
+    services.AddHostedService<AgentRequestServer>();
 }

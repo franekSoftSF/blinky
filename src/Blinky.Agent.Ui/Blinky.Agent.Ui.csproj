@@ -7,6 +7,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
 
+    <!-- For NotifyIcon alone. WPF has never had a tray icon, and the usual
+         answer is a NuGet package; two framework references cost less to keep
+         working than a dependency does. -->
+    <UseWindowsForms>true</UseWindowsForms>
+
     <!-- Directory.Build.props turns globalization-invariant mode on for every
          project, which is right for a container and fatal here: WPF asks for
          the current input language the moment a text control takes focus, and
@@ -14,6 +19,15 @@
          exactly when somebody clicks into the PIN box. -->
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Both toolkits add a global using, and they collide on Application,
+         KeyEventArgs and several more: every WPF file suddenly has two
+         candidates for a type it has always used. Windows Forms is here for one
+         class, so its namespace stays where that class is used and nowhere
+         else. -->
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Blinky.Contracts\Blinky.Contracts.csproj" />

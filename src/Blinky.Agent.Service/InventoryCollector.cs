@@ -168,6 +168,7 @@ public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
         string? publicKey = null;
         string? subject = null;
         string? thumbprint = null;
+        string? issuer = null;
         DateTimeOffset? notBefore = null;
         DateTimeOffset? notAfter = null;
 
@@ -178,6 +179,7 @@ public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
                     .LoadCertificate(der);
 
             subject = certificate.Subject;
+            issuer = certificate.Issuer;
             thumbprint = certificate.Thumbprint;
             notBefore = certificate.NotBefore;
             notAfter = certificate.NotAfter;
@@ -200,7 +202,8 @@ public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
             subject,
             thumbprint,
             notBefore,
-            notAfter);
+            notAfter,
+            issuer);
     }
 }
 

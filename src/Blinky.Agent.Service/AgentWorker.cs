@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Blinky.Contracts;
 using Blinky.Piv.Pcsc;
 
 namespace Blinky.Agent.Service;
@@ -12,6 +13,7 @@ public sealed class AgentWorker(
     AgentIdentity identity,
     InventoryCollector collector,
     JobExecutor executor,
+    CardGate gate,
     ILogger<AgentWorker> logger) : BackgroundService
 {
     private readonly HashSet<string> reportedUnsupported = new(StringComparer.OrdinalIgnoreCase);
@@ -156,7 +158,11 @@ public sealed class AgentWorker(
     {
         try
         {
-            var sweep = collector.ReadAll();
+            InventorySweep sweep;
+            using (await gate.AcquireAsync(ct))
+            {
+                sweep = collector.ReadAll();
+            }
 
             await backend.HeartbeatAsync(agentId, Version,
                 [.. sweep.Tokens.Select(r => r.ReaderName)], sweep.Unsupported, ct);
@@ -179,6 +185,7 @@ public sealed class AgentWorker(
             // recorded as provisioned.
             if (await RunClaimedJobsAsync(backend, ct))
             {
+                using var reread = await gate.AcquireAsync(ct);
                 sweep = collector.ReadAll();
             }
 
@@ -246,4 +253,11 @@ public sealed class AgentOptions
     public bool AcceptAnyServerCertificate { get; set; }
 
     public string? IdentityDirectory { get; set; }
+
+    /// <summary>
+    /// The rules a new PIN has to satisfy. Configuration for now; patch 0047
+    /// has the backend publish it, because a rule that each workstation keeps
+    /// its own copy of is several rules.
+    /// </summary>
+    public PinComplexityPolicy PinPolicy { get; set; } = PinComplexityPolicy.Default;
 }
