@@ -34,6 +34,10 @@ public partial class TokensWindow : Window
     /// </summary>
     private bool loading;
 
+    // Something changed while a read was in flight, and the screen has to be
+    // brought up to date once that read finishes. See LoadAsync.
+    private bool loadWantedAgain;
+
     private readonly DispatcherTimer refresh = new()
     {
         // Long enough not to fight the poll loop for the reader, short enough
@@ -71,10 +75,20 @@ public partial class TokensWindow : Window
         ? tokens[DeviceList.SelectedIndex]
         : null;
 
+    /// <remarks>
+    /// One read at a time - two overlapping sweeps are the agent competing
+    /// with itself for a card. But a refresh that arrives during one is
+    /// remembered rather than dropped: the timer fires every four seconds, a
+    /// read can take thirty while the service waits for the card, and the
+    /// refresh that mattered was the one right after the PIN changed. Dropped,
+    /// it left the old PIN state on screen and made the Refresh button look
+    /// broken.
+    /// </remarks>
     public async Task LoadAsync()
     {
         if (loading)
         {
+            loadWantedAgain = true;
             return;
         }
 
@@ -101,6 +115,15 @@ public partial class TokensWindow : Window
 
         StatusText.Text = string.Empty;
         loading = false;
+
+        // Whatever arrived while that was running, now. Not recursive in any
+        // way that matters: the flag is cleared before the call, so a quiet
+        // window stops after one extra pass.
+        if (loadWantedAgain)
+        {
+            loadWantedAgain = false;
+            await LoadAsync();
+        }
 
         if (!response.Succeeded)
         {
