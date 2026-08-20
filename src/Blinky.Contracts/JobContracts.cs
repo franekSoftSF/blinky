@@ -28,6 +28,26 @@ public sealed record JobEnvelope(
             [new JobStep("ReadAllReaders")]);
 
     /// <summary>
+    /// Take a credential off a token and destroy its key.
+    /// </summary>
+    /// <remarks>
+    /// The way a credential Blinky issued gets removed. The agent refuses to
+    /// delete one on its own — doing so would leave this server holding a
+    /// credential it believes is installed — so the order comes from here, and
+    /// the record is corrected when the job reports back. That is the whole
+    /// difference between a withdrawal and a divergence.
+    /// </remarks>
+    public static JobEnvelope Recycle(Guid jobId, string idempotencyKey,
+        DateTimeOffset deadline, long tokenSerial, string slotId) =>
+        new(Protocol.SchemaVersion, jobId, JobType.Revoke, idempotencyKey, deadline, tokenSerial,
+        [
+            new JobStep("RecycleSlot", new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["slot"] = slotId,
+            }),
+        ]);
+
+    /// <summary>
     /// One step, not eight. Generate, attest, sign, issue and write all share a
     /// single PC/SC transaction on the workstation: a verified PIN and an
     /// authenticated management key are lost the moment the card is released,

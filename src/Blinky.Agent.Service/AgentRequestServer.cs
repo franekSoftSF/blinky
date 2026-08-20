@@ -28,7 +28,7 @@ namespace Blinky.Agent.Service;
 /// </remarks>
 [SupportedOSPlatform("windows")]
 public sealed class AgentRequestServer(
-    CardOperations cards,
+    ICardSlots cards,
     PukUnblock unblock,
     AgentOptions options,
     ILogger<AgentRequestServer> logger) : BackgroundService

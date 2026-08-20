@@ -32,6 +32,7 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
     [
         "/api/jobs/inventory",
         "/api/jobs/enrol",
+        "/api/jobs/recycle",
 
         // Both reached from a console, never from an agent: the machine whose
         // token is being rescued is the one that cannot call anybody.

@@ -229,6 +229,29 @@ app.MapPost("/api/jobs/enrol",
         return Results.Ok(new { job.Id, created, state = job.State.ToString() });
     });
 
+// Taking a credential back off a token. The agent refuses to do this on its
+// own - deleting something Blinky issued would leave this server holding a
+// credential it believes is installed - so the order comes from here, and the
+// record is corrected when the job reports back.
+app.MapPost("/api/jobs/recycle",
+    (RecycleJobRequest request, HttpContext context, JobService jobs) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        var key = $"recycle:{request.TokenSerial}:{request.SlotId}:{request.Reason ?? "manual"}";
+
+        var (job, created) = jobs.Create(JobType.Revoke, key,
+            id => JobEnvelope.Recycle(id, key, DateTimeOffset.UtcNow.AddHours(1),
+                request.TokenSerial, request.SlotId),
+            request.AgentId);
+
+        return Results.Ok(new { job.Id, created, state = job.State.ToString() });
+    });
+
 // An agent asking for a certificate. The attestation is verified here, against
 // this server's pinned root - see docs/06-security.md.
 app.MapPost("/api/credentials/issue",
@@ -496,6 +519,13 @@ internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
 /// <summary>One credential the backend holds, as an agent needs to see it.</summary>
 /// <summary>An offline code that the card would not take.</summary>
 internal sealed record PukRefused(long TokenSerial);
+
+/// <summary>An operator taking a credential back off a token.</summary>
+internal sealed record RecycleJobRequest(
+    Guid? AgentId,
+    long TokenSerial,
+    string SlotId,
+    string? Reason = null);
 
 internal sealed record KnownCredential(
     string SlotId,

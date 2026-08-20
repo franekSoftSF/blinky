@@ -94,6 +94,7 @@ if (OperatingSystem.IsWindows())
 builder.Services.AddSingleton(services => new JobExecutor(
     services.GetRequiredService<InventoryCollector>(),
     services.GetService<ICardEnrolment>(),
+    services.GetService<ICardSlots>(),
     services.GetRequiredService<ILogger<JobExecutor>>()));
 
 // LocalSystem, session 0. It owns the reader and executes jobs; it cannot draw
@@ -109,7 +110,10 @@ static void AddWindowsOnlyServices(IServiceCollection services)
 {
     services.AddSingleton<UserPrompts>();
     services.AddSingleton<ICardEnrolment, CardEnrolment>();
-    services.AddSingleton<CardOperations>();
+    // Registered by interface only. A forwarding lambda would name the
+    // Windows-only type in a body the platform analyser treats as reachable
+    // from anywhere, and nothing outside this method needs the concrete class.
+    services.AddSingleton<ICardSlots, CardOperations>();
     services.AddSingleton<PukUnblock>();
 
     // The tray's half of the conversation. Windows-only for the same reason

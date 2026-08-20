@@ -71,6 +71,10 @@ public sealed class JobExecutorTests
     private static JobExecutor Executor() =>
         new(new InventoryCollector(NullLogger<InventoryCollector>.Instance),
             enrolment: null,
+
+            // Neither is registered off Windows, and the executor's job is to
+            // refuse the step rather than pretend it can run it.
+            cards: null,
             NullLogger<JobExecutor>.Instance);
 
     /// <summary>

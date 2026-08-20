@@ -20,6 +20,7 @@ namespace Blinky.Agent.Service;
 public sealed class JobExecutor(
     InventoryCollector collector,
     ICardEnrolment? enrolment,
+    ICardSlots? cards,
     ILogger<JobExecutor> logger)
 {
     public async Task<JobResult> ExecuteAsync(JobEnvelope job, BackendClient backend,
@@ -75,7 +76,10 @@ public sealed class JobExecutor(
     /// newer than this agent, and the job is refused rather than partly done.
     /// </summary>
     public static readonly IReadOnlySet<string> Supported =
-        new HashSet<string>(StringComparer.Ordinal) { "ReadAllReaders", "EnrolCredential" };
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ReadAllReaders", "EnrolCredential", "RecycleSlot",
+        };
 
     private async Task RunAsync(JobEnvelope job, JobStep step, BackendClient backend,
         int attempt, CancellationToken ct)
@@ -108,6 +112,33 @@ public sealed class JobExecutor(
                 }
 
                 await enrolment!.EnrolAsync(job, step, backend, attempt, ct);
+                return;
+            }
+
+            case "RecycleSlot":
+            {
+                if (cards is null)
+                {
+                    throw new InvalidOperationException(
+                        "This agent cannot reach a card reader on this platform.");
+                }
+
+                var serial = job.TokenSerial
+                             ?? throw new InvalidOperationException(
+                                 "A recycle names its token.");
+
+                // ordered: the backend asked, so the guard that stops a person
+                // deleting a credential Blinky issued does not apply. The
+                // server is the thing that guard protects, and it is the one
+                // asking.
+                var result = await cards.DeleteCertificateAsync(serial, step.Argument("slot"),
+                    alsoTheKey: true, ct, ordered: true);
+
+                if (!result.Succeeded)
+                {
+                    throw new InvalidOperationException(result.Error ?? "the slot was not cleared");
+                }
+
                 return;
             }
 

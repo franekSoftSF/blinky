@@ -26,7 +26,7 @@ public sealed class CardOperations(
     InventoryCollector collector,
     CardGate gate,
     BackendClient backend,
-    ILogger<CardOperations> logger)
+    ILogger<CardOperations> logger) : ICardSlots
 {
     /// <summary>
     /// Everything on the readers of this machine, read now, and whether Blinky
@@ -184,8 +184,13 @@ public sealed class CardOperations(
     /// why a fresh enrolment into that slot is refused rather than quietly
     /// destroying what is there.
     /// </remarks>
+    /// <param name="ordered">
+    /// True when the backend asked for this, which is the only way a credential
+    /// Blinky issued comes off a token. The check below is about a person
+    /// clicking in a tray, not about the server changing its own mind.
+    /// </param>
     public async Task<AgentResponse> DeleteCertificateAsync(long serial, string? slotId,
-        bool alsoTheKey, CancellationToken ct)
+        bool alsoTheKey, CancellationToken ct, bool ordered = false)
     {
         if (Slot(slotId) is not { } slot)
         {
@@ -202,7 +207,7 @@ public sealed class CardOperations(
                 ? SlotManagement.Managed
                 : SlotManagement.Unmanaged;
 
-        if (management == SlotManagement.Managed)
+        if (management == SlotManagement.Managed && !ordered)
         {
             // Blinky issued this. Taking it off the card from a tray leaves the
             // backend holding a credential it believes is installed - the exact
@@ -216,7 +221,7 @@ public sealed class CardOperations(
                 + "on the token.");
         }
 
-        if (management == SlotManagement.Unknown)
+        if (management == SlotManagement.Unknown && !ordered)
         {
             // Not unmanaged. The backend could not be asked, so there is no way
             // to tell whether this is somebody else's certificate or one of
