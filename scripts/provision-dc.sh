@@ -111,6 +111,13 @@ EOF
 
 cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
 
+# Explicitly, because the umask above is still 077 and every Kerberos tool
+# run by a normal user then fails with "Permission denied while
+# initializing Kerberos 5 library" - which sounds like a ticket problem and
+# is a file mode.
+chmod 644 /etc/krb5.conf
+umask 022
+
 say "4/6  dns"
 
 # Every member machine has to resolve the realm through this DC. Doing that
@@ -132,6 +139,19 @@ if ! grep -q 'dns forwarder' /etc/samba/smb.conf; then
     sed -i "/^\[global\]/a\\        dns forwarder = $FORWARDER" /etc/samba/smb.conf
 fi
 
+# Bound to real interfaces, or Samba's DNS listens on [::]:53 and answers
+# over IPv6 while every IPv4 query is refused. The zone is then perfect and
+# unreachable, and the machine's own resolver is one of the things that
+# cannot reach it. Seen on the first provision of BY-DC01.
+if ! grep -q 'bind interfaces only' /etc/samba/smb.conf; then
+    nic="$(ip -4 route show default | awk '{print $5; exit}')"
+    printf '	interfaces = lo %s
+	bind interfaces only = yes
+' "${nic:-eth0}" \n        > /tmp/blinky-bind.$$
+    sed -i "/^\[global\]/r /tmp/blinky-bind.$$" /etc/samba/smb.conf
+    rm -f /tmp/blinky-bind.$$
+fi
+
 say "5/6  start"
 
 systemctl enable --now samba-ad-dc >/dev/null
@@ -144,10 +164,34 @@ realm_lower="$(echo "$REALM" | tr '[:upper:]' '[:lower:]')"
 
 samba-tool domain info 127.0.0.1
 
+address="$(hostname -I | awk '{print $1}')"
+
 echo
 echo "SRV records the members will look for:"
-host -t SRV "_ldap._tcp.$realm_lower" 127.0.0.1 || true
-host -t SRV "_kerberos._udp.$realm_lower" 127.0.0.1 || true
+
+# Checked rather than printed. This script reported success once while its DNS
+# answered nothing at all, because a failed lookup was allowed to scroll past.
+failed=0
+for record in "_ldap._tcp" "_kerberos._udp"; do
+    if host -t SRV "$record.$realm_lower" "$address" >/dev/null 2>&1; then
+        echo "  $record.$realm_lower  ok"
+    else
+        echo "  $record.$realm_lower  NOT ANSWERING"
+        failed=1
+    fi
+done
+
+if [[ $failed -eq 1 ]]; then
+    cat >&2 <<EOF
+
+The domain is provisioned and its DNS is not answering on $address. Nothing
+joins until it does. Start here:
+
+    ss -lnup | grep :53
+    systemctl status samba-ad-dc
+EOF
+    exit 5
+fi
 
 echo
 echo "Kerberos:"
