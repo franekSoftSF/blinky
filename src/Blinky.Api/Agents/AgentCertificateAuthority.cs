@@ -58,8 +58,24 @@ public sealed class AgentCertificateAuthority(X509Certificate2 issuer, TimeSpan 
         var serialNumber = RandomNumberGenerator.GetBytes(16);
         serialNumber[0] &= 0x7F;
 
+        // Backdated slightly so a workstation whose clock runs fast does not
+        // reject its own certificate - but never before the issuer itself is
+        // valid. A CA created minutes ago would otherwise make every enrolment
+        // fail with an exception for the first five minutes of its life, which
+        // is exactly when somebody is standing up a lab and trying it.
         var notBefore = DateTimeOffset.UtcNow.AddMinutes(-5);
+        if (notBefore < issuer.NotBefore)
+        {
+            notBefore = issuer.NotBefore;
+        }
+
         var notAfter = notBefore.Add(lifetime);
+        if (notAfter > issuer.NotAfter)
+        {
+            // An agent certificate outliving its issuer is a certificate that
+            // stops working without anything having expired.
+            notAfter = issuer.NotAfter;
+        }
 
         // Short-lived and rotated automatically, so a leaked agent certificate
         // expires on its own rather than needing to be noticed first.

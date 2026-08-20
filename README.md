@@ -112,6 +112,46 @@ dotnet run --project tools/SchemaTool -- docker/postgres/001-schema.sql
 It runs only against an empty data directory, so changing the schema means
 `docker compose down -v` or a hand-written `ALTER`.
 
+## Running on more than one machine
+
+Everything above assumes one box. In a lab the backend, the agents and the
+directory are separate machines, and three things change.
+
+On the machine that runs the stack, name it in the certificate:
+
+```bash
+./scripts/dev-certs.sh --force --host blinky.lab --host 10.0.0.5
+docker compose up -d --build
+```
+
+Every `--host` becomes a subject alternative name. `localhost` and `127.0.0.1`
+are always included, so the stack keeps working from its own console.
+
+On each agent machine, copy `certs/dev-ca.crt` across and point the agent at
+it:
+
+```
+Agent__BackendUrl=https://blinky.lab:9443
+Agent__Domain=corp.example
+Agent__BootstrapToken=<from .env>
+Agent__ServerCertificateAuthorityPath=C:\ProgramData\Blinky\dev-ca.crt
+```
+
+`Agent__AcceptAnyServerCertificate` exists for a single-machine bench and
+checks nothing. Once the backend is somewhere else, pin the CA instead — the
+agent logs a warning if it is running without one.
+
+And point the checks at the right host:
+
+```bash
+BLINKY_HOST=blinky.lab ./smoke-test.sh
+```
+
+**Regenerating certificates means restarting.** `api` loads the agent CA at
+startup and nginx loads its own certificate at startup, so both need a restart
+after `dev-certs.sh --force` — and every agent certificate issued by the
+previous CA stops being accepted.
+
 ## Building
 
 ```bash

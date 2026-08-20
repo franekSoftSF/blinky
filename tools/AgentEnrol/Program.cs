@@ -14,6 +14,7 @@
 // script doing this would have to parse JSON and juggle PEM by hand.
 
 using System.Net.Http.Json;
+using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json.Serialization;
@@ -26,6 +27,7 @@ var domain = arguments.GetValueOrDefault("domain");
 var token = arguments.GetValueOrDefault("token");
 var outputPrefix = arguments.GetValueOrDefault("out", "certs/agent");
 var insecure = arguments.ContainsKey("insecure");
+var serverCa = arguments.GetValueOrDefault("server-ca");
 
 if (string.IsNullOrWhiteSpace(domain) || string.IsNullOrWhiteSpace(token))
 {
@@ -38,12 +40,7 @@ if (string.IsNullOrWhiteSpace(domain) || string.IsNullOrWhiteSpace(token))
 }
 
 using var handler = new HttpClientHandler();
-if (insecure)
-{
-    // Development certificates from scripts/dev-certs.sh are self-signed.
-    handler.ServerCertificateCustomValidationCallback =
-        HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-}
+Configure(handler);
 
 using var http = new HttpClient(handler) { BaseAddress = new Uri(backend) };
 
@@ -98,11 +95,7 @@ using var authenticatedHandler = new HttpClientHandler();
 authenticatedHandler.ClientCertificates.Add(
     X509CertificateLoader.LoadPkcs12(identity.Export(X509ContentType.Pkcs12), null));
 
-if (insecure)
-{
-    authenticatedHandler.ServerCertificateCustomValidationCallback =
-        HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-}
+Configure(authenticatedHandler);
 
 using var authenticated = new HttpClient(authenticatedHandler) { BaseAddress = new Uri(backend) };
 
@@ -130,6 +123,42 @@ Console.WriteLine($"  heartbeat    {await heartbeat.Content.ReadAsStringAsync()}
 Console.WriteLine($"enrolled: {enrolment.AgentId}");
 
 return 0;
+
+// --server-ca pins the CA that signed the edge certificate, which is what an
+// agent on another machine has to do. --insecure checks nothing and is for a
+// single-machine bench.
+void Configure(HttpClientHandler handler)
+{
+    if (!string.IsNullOrWhiteSpace(serverCa))
+    {
+        var roots = new X509Certificate2Collection(X509Certificate2.CreateFromPemFile(serverCa));
+
+        handler.ServerCertificateCustomValidationCallback = (_, certificate, _, errors) =>
+        {
+            // The name check is not inherited by a custom callback; without
+            // repeating it, any host with a certificate from this CA passes.
+            if (certificate is null || errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
+            {
+                return false;
+            }
+
+            using var chain = new X509Chain();
+            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.CustomTrustStore.AddRange(roots);
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+
+            return chain.Build(certificate);
+        };
+
+        return;
+    }
+
+    if (insecure)
+    {
+        handler.ServerCertificateCustomValidationCallback =
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+    }
+}
 
 static Dictionary<string, string> ParseArguments(string[] args)
 {

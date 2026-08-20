@@ -15,10 +15,13 @@ set -uo pipefail
 
 cd "$(dirname "$0")"
 
+# BLINKY_HOST points the checks at a stack running somewhere else. Left unset,
+# everything runs against the compose network on this machine.
 NETWORK="${COMPOSE_PROJECT_NAME:-blinky}_default"
 CURL_IMAGE="curlimages/curl:latest"
-CONSOLE="https://edge:8443"
-AGENT="https://edge:9443"
+HOST="${BLINKY_HOST:-edge}"
+CONSOLE="https://${HOST}:${CONSOLE_PORT:-8443}"
+AGENT="https://${HOST}:${AGENT_PORT:-9443}"
 
 pass=0
 fail=0
@@ -78,7 +81,7 @@ echo "agent enrolment"
 
 enrol() {
     dotnet run --project tools/AgentEnrol --no-build -- \
-        --backend "https://localhost:${AGENT_PORT:-9443}" \
+        --backend "https://${BLINKY_HOST:-localhost}:${AGENT_PORT:-9443}" \
         --hostname smoke-test --domain blinky.invalid \
         --token "${BOOTSTRAP_TOKEN:-change-me-before-anyone-else-can-reach-this}" \
         --out "$(mktemp -d)/agent" --insecure 2>/dev/null \
@@ -106,7 +109,7 @@ echo
 echo "host"
 check "console port is published" 200 \
     "$(curl -sk -o /dev/null -w '%{http_code}' \
-        "https://localhost:${CONSOLE_PORT:-8443}/health")"
+        "https://${BLINKY_HOST:-localhost}:${CONSOLE_PORT:-8443}/health")"
 
 echo
 if [ "$fail" -eq 0 ]; then

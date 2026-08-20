@@ -76,7 +76,24 @@ public sealed class AgentEnrolmentService(
             };
         }
 
-        using var issued = authority.Issue(signingRequest, hostname, domain);
+        X509Certificate2 issued;
+        try
+        {
+            issued = authority.Issue(signingRequest, hostname, domain);
+        }
+        catch (Exception ex)
+        {
+            // An unhandled exception here becomes a 500 with no explanation on
+            // the agent's side, which is a miserable thing to debug from a
+            // workstation.
+            logger.LogError(ex, "Issuing a certificate for {Hostname}.{Domain} failed",
+                hostname, domain);
+
+            return new EnrolmentResult(EnrolmentOutcome.Rejected,
+                $"the agent certificate could not be issued: {ex.Message}");
+        }
+
+        using var _ = issued;
 
         agent.ClientCertificateThumbprint = issued.Thumbprint;
         agent.State = AgentState.Enrolled;

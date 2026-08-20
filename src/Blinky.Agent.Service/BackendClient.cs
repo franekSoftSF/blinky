@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Blinky.Contracts;
@@ -6,10 +7,32 @@ using Blinky.Contracts;
 namespace Blinky.Agent.Service;
 
 /// <summary>Everything the agent says to the backend.</summary>
-public sealed class BackendClient(Uri backend, bool acceptAnyServerCertificate = false)
-    : IDisposable
+public sealed class BackendClient : IDisposable
 {
+    private readonly Uri backend;
+    private readonly X509Certificate2Collection pinnedRoots = [];
+    private readonly bool acceptAnyServerCertificate;
+
     private HttpClient? authenticated;
+
+    /// <summary>
+    /// <paramref name="serverCertificateAuthorityPath"/> is the CA that signed
+    /// the edge certificate. Pinning it is how an agent on one machine can
+    /// believe a backend on another; the alternative,
+    /// <paramref name="acceptAnyServerCertificate"/>, checks nothing and is for
+    /// a single-machine bench.
+    /// </summary>
+    public BackendClient(Uri backend, string? serverCertificateAuthorityPath = null,
+        bool acceptAnyServerCertificate = false)
+    {
+        this.backend = backend;
+        this.acceptAnyServerCertificate = acceptAnyServerCertificate;
+
+        if (!string.IsNullOrWhiteSpace(serverCertificateAuthorityPath))
+        {
+            pinnedRoots.Add(X509Certificate2.CreateFromPemFile(serverCertificateAuthorityPath));
+        }
+    }
 
     public Uri Backend => backend;
 
@@ -90,14 +113,48 @@ public sealed class BackendClient(Uri backend, bool acceptAnyServerCertificate =
             handler.ClientCertificates.Add(certificate);
         }
 
-        if (acceptAnyServerCertificate)
+        if (pinnedRoots.Count > 0)
         {
-            // Development certificates from scripts/dev-certs.sh are self-signed.
+            handler.ServerCertificateCustomValidationCallback = ValidateAgainstPinnedRoot;
+        }
+        else if (acceptAnyServerCertificate)
+        {
             handler.ServerCertificateCustomValidationCallback =
                 HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
         }
 
         return new HttpClient(handler) { BaseAddress = backend };
+    }
+
+    /// <summary>
+    /// Accepts a server certificate that chains to the pinned CA.
+    /// </summary>
+    /// <remarks>
+    /// The name check has to be repeated by hand. Installing a custom callback
+    /// replaces the platform's validation entirely, so a callback that only
+    /// checks the chain would accept <b>any</b> host holding a certificate from
+    /// that CA - which, in a lab where the CA also signs the test agent's
+    /// issuer, is not a small hole.
+    /// </remarks>
+    private bool ValidateAgainstPinnedRoot(HttpRequestMessage request,
+        X509Certificate2? certificate, X509Chain? chain, SslPolicyErrors errors)
+    {
+        if (certificate is null)
+        {
+            return false;
+        }
+
+        if (errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
+        {
+            return false;
+        }
+
+        using var pinned = new X509Chain();
+        pinned.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        pinned.ChainPolicy.CustomTrustStore.AddRange(pinnedRoots);
+        pinned.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+
+        return pinned.Build(certificate);
     }
 
     public void Dispose() => authenticated?.Dispose();

@@ -91,7 +91,35 @@ public sealed class AgentCertificateAuthorityTests
         Assert.Contains("dev-certs.sh", error.Message, StringComparison.Ordinal);
     }
 
-    private static AgentCertificateAuthority BuildAuthority()
+    [Fact]
+    public void A_certificate_never_starts_before_the_issuer_does()
+    {
+        // The backdating that tolerates a fast workstation clock must not
+        // reach past the CA's own start. A CA created a moment ago otherwise
+        // makes every enrolment throw for the first five minutes of its life -
+        // which is precisely when somebody is standing up a lab.
+        var authority = BuildAuthority(issuerValidFrom: DateTimeOffset.UtcNow);
+
+        using var issued = authority.Issue(RequestNaming("CN=whatever"), "ws01", "corp.example");
+
+        Assert.True(issued.NotBefore >= issued.NotBefore.ToUniversalTime().AddMinutes(-1));
+        Assert.InRange(issued.NotAfter - issued.NotBefore, TimeSpan.Zero, TimeSpan.FromDays(91));
+    }
+
+    [Fact]
+    public void A_certificate_never_outlives_the_issuer()
+    {
+        // Otherwise it stops working with nothing having expired, which reads
+        // as a bug in everything except the certificate.
+        var authority = BuildAuthority(issuerValidUntil: DateTimeOffset.UtcNow.AddDays(10));
+
+        using var issued = authority.Issue(RequestNaming("CN=whatever"), "ws01", "corp.example");
+
+        Assert.True(issued.NotAfter <= DateTime.UtcNow.AddDays(11));
+    }
+
+    private static AgentCertificateAuthority BuildAuthority(
+        DateTimeOffset? issuerValidFrom = null, DateTimeOffset? issuerValidUntil = null)
     {
         using var key = RSA.Create(2048);
         var request = new CertificateRequest("CN=Test agent CA", key,
@@ -102,7 +130,8 @@ public sealed class AgentCertificateAuthorityTests
             new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign, true));
 
         var issuer = request.CreateSelfSigned(
-            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(5));
+            issuerValidFrom ?? DateTimeOffset.UtcNow.AddDays(-1),
+            issuerValidUntil ?? DateTimeOffset.UtcNow.AddYears(5));
 
         return new AgentCertificateAuthority(issuer, TimeSpan.FromDays(90));
     }

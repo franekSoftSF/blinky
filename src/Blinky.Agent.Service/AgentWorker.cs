@@ -28,7 +28,15 @@ public sealed class AgentWorker(
             return;
         }
 
-        using var backend = new BackendClient(options.BackendUrl, options.AcceptAnyServerCertificate);
+        using var backend = new BackendClient(options.BackendUrl,
+            options.ServerCertificateAuthorityPath, options.AcceptAnyServerCertificate);
+
+        if (options.ServerCertificateAuthorityPath is null or "" && options.AcceptAnyServerCertificate)
+        {
+            logger.LogWarning("The backend's certificate is not being checked. "
+                              + "Set Agent:ServerCertificateAuthorityPath once the backend is "
+                              + "not on this machine.");
+        }
 
         Guid agentId;
         try
@@ -159,7 +167,16 @@ public sealed class AgentOptions
 
     public int PollIntervalSeconds { get; set; } = 60;
 
-    /// <summary>Development only: trust a self-signed backend certificate.</summary>
+    /// <summary>
+    /// The CA that signed the backend's certificate. Copy `certs/dev-ca.crt`
+    /// from the stack, or point at whatever signs it for real.
+    /// </summary>
+    public string? ServerCertificateAuthorityPath { get; set; }
+
+    /// <summary>
+    /// Single-machine bench only: check nothing about the backend. Ignored when
+    /// a certificate authority is configured.
+    /// </summary>
     public bool AcceptAnyServerCertificate { get; set; }
 
     public string? IdentityDirectory { get; set; }
