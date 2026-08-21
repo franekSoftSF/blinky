@@ -46,6 +46,7 @@ public sealed class JobService(Database database, ILogger<JobService> logger)
         }
 
         var now = DateTime.UtcNow;
+        var withdrawn = false;
 
         foreach (var credential in session.Query<Credential>()
                      .Where(c => c.Token.Serial == serial && c.SlotId == slotId)
@@ -53,11 +54,28 @@ public sealed class JobService(Database database, ILogger<JobService> logger)
                      .Where(c => c.State is not Blinky.Domain.CredentialState.Revoked))
         {
             credential.State = Blinky.Domain.CredentialState.Revoked;
+
+            // Both of these, not just the state. A credential marked revoked
+            // with no timestamp is one the revocation list has to guess about,
+            // and "when" is what a relying party is told - a CRL entry carries
+            // a revocation date whether or not anybody recorded one.
+            credential.RevokedAt = now;
+            credential.RevocationReason ??= Blinky.Pki.X509RevocationReason.Superseded.ToString();
             credential.UpdatedAt = now;
             session.Update(credential);
 
+            withdrawn = true;
+
             logger.LogInformation("Credential {Serial} in slot {Slot} of token {Token} was "
                                   + "withdrawn", credential.SerialNumber, slotId, serial);
+        }
+
+        // Now, not at the next scheduled publication. A credential taken off a
+        // card that is still good on every revocation list for another two
+        // hours is a credential that still works.
+        if (withdrawn)
+        {
+            RequestCrlPublication($"recycled:{serial}:{slotId}");
         }
 
         var slot = session.Query<Slot>()
@@ -95,6 +113,42 @@ public sealed class JobService(Database database, ILogger<JobService> logger)
     /// doing the work and calling it a success while the row sat untouched
     /// until the watchdog reclaimed it.
     /// </remarks>
+    /// <summary>
+    /// Asks for the revocation list to be rebuilt and published now.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A revocation that waits for the next scheduled publication is a
+    /// certificate that still works. Two hours is a reasonable interval for
+    /// keeping a list fresh and an unreasonable one for a card somebody
+    /// reported lost this morning.
+    /// </para>
+    /// <para>
+    /// A request rather than the work: this process does not build the list.
+    /// The worker does, from one place, and it polls for these in seconds. The
+    /// API asking is the same shape as an operator asking for an enrolment -
+    /// a row, claimed and reported on like any other.
+    /// </para>
+    /// <para>
+    /// Keyed on what caused it, so the same revocation asked for twice is one
+    /// job. Bounded by the number of revocations, which is the right number of
+    /// rows for something that has to be auditable anyway.
+    /// </para>
+    /// </remarks>
+    public void RequestCrlPublication(string cause)
+    {
+        var (_, created) = Create(JobType.PublishCrl, $"publish-crl:{cause}",
+            id => new JobEnvelope(Protocol.SchemaVersion, id, JobType.PublishCrl,
+                $"publish-crl:{cause}", DateTimeOffset.UtcNow.AddHours(1), null, []),
+            deadline: TimeSpan.FromHours(1));
+
+        if (created)
+        {
+            logger.LogInformation("Asked for the revocation list to be republished ({Cause})",
+                cause);
+        }
+    }
+
     public (Job Job, bool Created) Create(JobType type, string idempotencyKey,
         Func<Guid, JobEnvelope> buildEnvelope, Guid? agentId = null, TimeSpan? deadline = null)
     {

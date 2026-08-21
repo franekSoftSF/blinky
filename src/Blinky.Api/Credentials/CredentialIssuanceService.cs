@@ -22,6 +22,7 @@ namespace Blinky.Api.Credentials;
 public sealed class CredentialIssuanceService(
     Database database,
     ICertificateAuthority authority,
+    Blinky.Api.Jobs.JobService jobs,
     ILogger<CredentialIssuanceService> logger)
 {
     private readonly AttestationVerifier verifier = new(YubicoRoots.PivAttestation);
@@ -155,6 +156,16 @@ public sealed class CredentialIssuanceService(
         }
 
         transaction.Commit();
+
+        // Now rather than at the next scheduled publication. Somebody revokes
+        // a credential because they want it to stop working, and a list that
+        // still vouches for it for another two hours is the wrong answer to
+        // "the card was lost this morning".
+        //
+        // Asked for rather than done: the worker builds the list, from one
+        // place, and polls for these in seconds.
+        jobs.RequestCrlPublication($"revoked:{credentialId}");
+
         return true;
     }
 
