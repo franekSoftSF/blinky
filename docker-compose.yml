@@ -86,6 +86,20 @@ services:
         ASSEMBLY: Blinky.Worker
     environment:
       ConnectionStrings__Blinky: Host=postgres;Database=${POSTGRES_DB:-blinky};Username=${POSTGRES_USER:-blinky};Password=${POSTGRES_PASSWORD:-blinky}
+
+      # The worker builds the revocation list; the API only serves the file it
+      # writes. One producer, so there is one list - the store behind it is
+      # per-process, and two processes each building their own would publish
+      # two different answers to the same question.
+      Blinky__Ca__Directory: /etc/blinky/ca
+      Blinky__Ca__Password: ${CA_PASSWORD:-blinky}
+      Blinky__Ca__AllowFileKeys: "true"
+      Blinky__Ca__CrlFile: /var/lib/blinky/pki/issuing.crl
+      Blinky__Ca__CrlValidityHours: ${CRL_VALIDITY_HOURS:-8}
+      Blinky__Ca__CrlRefreshHours: ${CRL_REFRESH_HOURS:-2}
+    volumes:
+      - ./ca:/etc/blinky/ca:ro
+      - ./pki:/var/lib/blinky/pki
     depends_on:
       postgres:
         condition: service_healthy

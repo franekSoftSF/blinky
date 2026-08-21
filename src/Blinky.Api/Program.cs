@@ -55,18 +55,6 @@ builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
 
 builder.Services.AddSingleton<CredentialIssuanceService>();
 
-// Rebuilt on a schedule rather than when something is revoked: a CRL expires,
-// and an expired one does not fail open - it breaks every chain built under
-// it. Two hours against a six-hour validity, so one missed run is a retry
-// rather than an outage.
-builder.Services.AddSingleton(new CrlPublicationOptions(
-    // A third of the validity, so two consecutive failures are still not an
-    // outage.
-    TimeSpan.FromHours(
-        builder.Configuration.GetValue("Blinky:Ca:CrlRefreshHours", 2)),
-    builder.Configuration["Blinky:Ca:CrlFile"] ?? "/var/lib/blinky/pki/issuing.crl"));
-
-builder.Services.AddHostedService<CrlPublisher>();
 
 // The key that protects every escrowed PUK. Refused rather than generated when
 // absent: a KEK invented at startup would encrypt this run's PUKs with a value
@@ -567,13 +555,24 @@ app.MapGet("/pki/root.crl", (IConfiguration configuration) =>
     return Results.File(File.ReadAllBytes(path), "application/pkix-crl", "root.crl");
 });
 
-app.MapGet("/pki/issuing.crl", async (Blinky.Pki.ICertificateAuthority ca, CancellationToken ct) =>
+// Served from the file, not built here. The worker produces it, on a schedule,
+// as a job - and it has to be one list rather than two, because the store
+// behind GetCrlAsync is per-process: an API that built its own would publish a
+// list holding whatever this replica happened to have been told about, which
+// on a fresh container is nothing at all.
+app.MapGet("/pki/issuing.crl", (IConfiguration configuration) =>
 {
-    var crl = await ca.GetCrlAsync(ct);
+    var path = configuration["Blinky:Ca:CrlFile"] ?? "/var/lib/blinky/pki/issuing.crl";
 
-    return crl is null
-        ? Results.NotFound()
-        : Results.File(crl.Der, "application/pkix-crl", "issuing.crl");
+    if (!File.Exists(path))
+    {
+        // Before the worker's first pass, or with no worker at all. A 404 says
+        // that plainly; an empty list would be a signed claim that nothing has
+        // been revoked, which is a different thing and might not be true.
+        return Results.NotFound();
+    }
+
+    return Results.File(File.ReadAllBytes(path), "application/pkix-crl", "issuing.crl");
 });
 
 app.MapGet("/api/console/overview", (HttpContext context, Database database) =>

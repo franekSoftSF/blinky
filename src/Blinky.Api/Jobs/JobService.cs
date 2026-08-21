@@ -150,9 +150,18 @@ public sealed class JobService(Database database, ILogger<JobService> logger)
 
         var now = DateTime.UtcNow;
 
+        // Server-side work is filtered out here rather than left for the agent
+        // to reject. An agent that claims a job it cannot do holds it for the
+        // length of a lease, hands it back to the watchdog, and takes it again
+        // - a loop with no error in it and no progress either.
+        //
+        // Written as an exclusion list rather than a call into JobTypes so the
+        // provider can translate it: NHibernate has to turn this into SQL, and
+        // a method it does not know becomes a table scan in memory.
         var job = session.Query<Job>()
             .Where(j => j.State == JobState.Pending
                         && j.DeadlineAt > now
+                        && j.Type != JobType.PublishCrl
                         && (j.AgentId == null || j.AgentId == agentId))
             .OrderBy(j => j.CreatedAt)
             .FirstOrDefault();
