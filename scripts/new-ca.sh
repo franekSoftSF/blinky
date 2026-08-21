@@ -63,7 +63,8 @@ if [ "$topology" = "single" ]; then
         -keyout "$outdir/issuing.key" -out "$outdir/issuing.crt" \
         -subj "/CN=$name CA/O=$name" \
         -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
-        -addext "keyUsage=critical,keyCertSign,cRLSign"
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -addext "subjectKeyIdentifier=hash"
 
     cp "$outdir/issuing.crt" "$outdir/anchor.crt"
     cat "$outdir/issuing.crt" > "$outdir/chain.pem"
@@ -78,13 +79,23 @@ else
         -keyout "$outdir/root.key" -out "$outdir/anchor.crt" \
         -subj "/CN=$name Root CA/O=$name" \
         -addext "basicConstraints=critical,CA:TRUE,pathlen:1" \
-        -addext "keyUsage=critical,keyCertSign,cRLSign"
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -addext "subjectKeyIdentifier=hash"
 
     openssl req -newkey rsa:4096 -nodes \
         -keyout "$outdir/issuing.key" -out "$outdir/issuing.csr" \
         -subj "/CN=$name Issuing CA/O=$name"
 
-    printf 'basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\n' \
+    # Identifiers, always. A leaf's authority key identifier points at the
+    # issuer's subject key identifier, and without one a chain is built by
+    # name - which works until two CAs share one. Distribution points are
+    # added by scripts/resign-issuing-ca.sh, where the public address is
+    # known.
+    printf 'basicConstraints=critical,CA:TRUE,pathlen:0
+keyUsage=critical,keyCertSign,cRLSign
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always
+' \
         > "$outdir/issuing.ext"
 
     openssl x509 -req -in "$outdir/issuing.csr" -days 3650 \
