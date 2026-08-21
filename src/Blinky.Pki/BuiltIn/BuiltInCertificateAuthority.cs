@@ -26,7 +26,8 @@ public sealed class BuiltInCertificateAuthority(
     ICaKeyStore keyStore,
     CaTopology topology,
     IReadOnlyList<X509Certificate2> chain,
-    ICrlStore? crlStore = null) : ICertificateAuthority, IDisposable
+    ICrlStore? crlStore = null,
+    CaPublication? publication = null) : ICertificateAuthority, IDisposable
 {
     /// <summary>Microsoft's smart-card logon extended key usage.</summary>
     public const string SmartCardLogonOid = "1.3.6.1.4.1.311.20.2.2";
@@ -212,6 +213,39 @@ public sealed class BuiltInCertificateAuthority(
         // convenience extension would be absurd. Fall back to naming the
         // issuer instead.
         certificate.CertificateExtensions.Add(BuildAuthorityKeyIdentifier());
+
+        // Where to check whether this certificate is still good, and where to
+        // find the CA that signed it. Both are optional in X.509 and neither
+        // is optional in practice:
+        //
+        //   Without a CRL distribution point Windows reports
+        //   CERT_TRUST_REVOCATION_STATUS_UNKNOWN and refuses a smart-card
+        //   logon, because Microsoft requires the certificate to pass a
+        //   revocation check rather than to skip one.
+        //
+        //   Without authority information access a machine that does not
+        //   already hold the issuing CA cannot build the chain at all, and the
+        //   failure it reports is about trust rather than about a missing
+        //   certificate.
+        //
+        // Both were absent until 21 August 2026, which is what `certutil
+        // -scinfo` on the first real logon attempt said, twice.
+        if (publication is { } urls)
+        {
+            if (urls.CrlUrls.Count > 0)
+            {
+                certificate.CertificateExtensions.Add(
+                    CertificateRevocationListBuilder.BuildCrlDistributionPointExtension(
+                        urls.CrlUrls));
+            }
+
+            if (urls.CaIssuerUrls.Count > 0)
+            {
+                certificate.CertificateExtensions.Add(
+                    new X509AuthorityInformationAccessExtension(
+                        ocspUris: [], caIssuersUris: urls.CaIssuerUrls));
+            }
+        }
 
         if (profile.IncludeUpnSan)
         {

@@ -35,7 +35,15 @@ builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
         builder.Configuration["Blinky:Ca:Directory"] ?? "/etc/blinky/ca",
         builder.Configuration["Blinky:Ca:Password"],
         builder.Configuration.GetValue("Blinky:Ca:AllowFileKeys", false),
-        TimeSpan.FromHours(6)));
+        TimeSpan.FromHours(6),
+        // The address relying parties are told to fetch revocation from, and
+        // it has to be one they can reach: not localhost, not the container
+        // name, and over HTTP rather than HTTPS - see CaPublication. Left
+        // unset, certificates are issued with neither extension, which is
+        // what they were until 21 August 2026 and why the first smart-card
+        // logon reported CERT_TRUST_REVOCATION_STATUS_UNKNOWN.
+        Blinky.Pki.BuiltIn.CaPublication.FromBaseUrl(
+            builder.Configuration["Blinky:Ca:PublicUrl"])));
 
 builder.Services.AddSingleton<CredentialIssuanceService>();
 

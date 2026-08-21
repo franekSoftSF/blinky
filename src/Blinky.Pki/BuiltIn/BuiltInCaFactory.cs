@@ -19,7 +19,8 @@ public static class BuiltInCaFactory
     /// topology and the files on disk would be a setting that silently lies.
     /// </remarks>
     public static BuiltInCertificateAuthority LoadFromDirectory(string directory,
-        string? password, bool allowFileKeys, TimeSpan? crlValidity = null)
+        string? password, bool allowFileKeys, TimeSpan? crlValidity = null,
+        CaPublication? publication = null)
     {
         var anchorPath = Path.Combine(directory, "anchor.crt");
         var issuingPath = Path.Combine(directory, "issuing.p12");
@@ -48,6 +49,7 @@ public static class BuiltInCaFactory
             keyStore,
             topology,
             chain,
-            crlValidity is { } validity ? new InMemoryCrlStore(validity) : null);
+            crlValidity is { } validity ? new InMemoryCrlStore(validity) : null,
+            publication);
     }
 }

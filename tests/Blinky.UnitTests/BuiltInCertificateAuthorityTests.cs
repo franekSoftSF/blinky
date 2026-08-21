@@ -247,8 +247,76 @@ public sealed class BuiltInCertificateAuthorityTests
 
     // ---------------------------------------------------------------- helpers
 
+    [Fact]
+    public async Task An_issued_certificate_says_where_the_crl_is()
+    {
+        // Without this Windows reports CERT_TRUST_REVOCATION_STATUS_UNKNOWN
+        // and refuses the logon: Microsoft requires a smart-card certificate
+        // to pass a revocation check, not to skip one. Seen on the first real
+        // attempt, 21 August 2026.
+        using var ca = Authority(CaTopology.TwoTier,
+            publication: CaPublication.FromBaseUrl("http://ca.example"));
+
+        var issued = await ca.IssueAsync(Request());
+        using var certificate = X509Certificate2.CreateFromPem(issued.CertificatePem);
+
+        var cdp = certificate.Extensions
+            .Single(e => e.Oid?.Value == "2.5.29.31");
+
+        Assert.Contains("http://ca.example/pki/issuing.crl",
+            System.Text.Encoding.ASCII.GetString(cdp.RawData));
+    }
+
+    [Fact]
+    public async Task An_issued_certificate_says_where_its_issuer_is()
+    {
+        // For the machine that does not already hold the issuing CA. Without
+        // it the chain cannot be built and the error is about trust rather
+        // than about a certificate nobody published.
+        using var ca = Authority(CaTopology.TwoTier,
+            publication: CaPublication.FromBaseUrl("http://ca.example"));
+
+        var issued = await ca.IssueAsync(Request());
+        using var certificate = X509Certificate2.CreateFromPem(issued.CertificatePem);
+
+        var aia = certificate.Extensions
+            .Single(e => e.Oid?.Value == "1.3.6.1.5.5.7.1.1");
+
+        Assert.Contains("http://ca.example/pki/issuing.crt",
+            System.Text.Encoding.ASCII.GetString(aia.RawData));
+    }
+
+    [Fact]
+    public async Task Without_a_published_address_neither_extension_is_invented()
+    {
+        // A URL nobody serves is worse than no URL: the relying party tries it,
+        // waits, and fails a check that would otherwise have been skipped.
+        using var ca = Authority(CaTopology.TwoTier);
+
+        var issued = await ca.IssueAsync(Request());
+        using var certificate = X509Certificate2.CreateFromPem(issued.CertificatePem);
+
+        Assert.DoesNotContain(certificate.Extensions, e => e.Oid?.Value == "2.5.29.31");
+        Assert.DoesNotContain(certificate.Extensions, e => e.Oid?.Value == "1.3.6.1.5.5.7.1.1");
+    }
+
+    [Fact]
+    public void A_base_address_that_is_not_set_publishes_nothing()
+    {
+        Assert.Null(CaPublication.FromBaseUrl(null));
+        Assert.Null(CaPublication.FromBaseUrl("   "));
+    }
+
+    [Fact]
+    public void A_trailing_slash_does_not_double_up()
+    {
+        var publication = CaPublication.FromBaseUrl("http://ca.example/");
+
+        Assert.Equal("http://ca.example/pki/issuing.crl", publication!.CrlUrls[0]);
+    }
+
     private static BuiltInCertificateAuthority Authority(CaTopology topology,
-        ICrlStore? crl = null)
+        ICrlStore? crl = null, CaPublication? publication = null)
     {
         var notBefore = DateTimeOffset.UtcNow.AddDays(-1);
         var notAfter = DateTimeOffset.UtcNow.AddYears(10);
@@ -261,7 +329,7 @@ public sealed class BuiltInCertificateAuthorityTests
         if (topology is CaTopology.Single)
         {
             return new BuiltInCertificateAuthority("test", new TestKeyStore(root),
-                topology, [Public(root)], crl);
+                topology, [Public(root)], crl, publication);
         }
 
         using var issuingKey = RSA.Create(2048);
@@ -278,7 +346,7 @@ public sealed class BuiltInCertificateAuthorityTests
             .CopyWithPrivateKey(issuingKey);
 
         return new BuiltInCertificateAuthority("test", new TestKeyStore(issuing),
-            topology, [Public(issuing), Public(root)], crl);
+            topology, [Public(issuing), Public(root)], crl, publication);
     }
 
     private static X509Certificate2 SelfSignedCa(string subject, DateTimeOffset notBefore,
