@@ -38,6 +38,19 @@ services:
       Blinky__AgentCa__CertificatePath: /etc/blinky/certs/agent-ca.crt
       Blinky__AgentCa__KeyPath: /etc/blinky/certs/agent-ca.key
       Blinky__Ca__Directory: /etc/blinky/ca
+
+      # The address written into every certificate as its CRL distribution
+      # point and authority information access. Has to be one the relying
+      # party can reach - not localhost, not a container name - and HTTP
+      # rather than HTTPS. Unset, certificates are issued without either
+      # extension and Windows refuses the logon with
+      # CERT_TRUST_REVOCATION_STATUS_UNKNOWN.
+      Blinky__Ca__PublicUrl: ${CA_PUBLIC_URL:-}
+
+      # Where the CRL is also written, as DER. Samba publishes it into the
+      # directory as bytes and PKINIT reads it from disk; neither fetches a
+      # URL.
+      Blinky__Ca__CrlFile: /var/lib/blinky/pki/issuing.crl
       Blinky__Ca__Password: ${CA_PASSWORD:-blinky}
       # Development material. A file-backed CA key refuses to load without this
       # said out loud, because nobody ever decides to use one - they inherit it.
@@ -53,6 +66,11 @@ services:
       # here that belongs behind a key store.
       - ./certs:/etc/blinky/certs:ro
       - ./ca:/etc/blinky/ca:ro
+
+      # Writable, and on the host on purpose: scripts/blinky-samba-setup.sh
+      # publishes this file into the directory, and it has to be readable by
+      # something that is not this container.
+      - ./pki:/var/lib/blinky/pki
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,6 +105,10 @@ services:
   edge:
     image: owasp/modsecurity-crs:nginx
     ports:
+      # Plain HTTP, for the CRL and the CA certificate only. See the pki
+      # server block in docker/edge: a client fetching revocation cannot be
+      # asked to validate a certificate first.
+      - "${PKI_PORT:-80}:80"
       - "${CONSOLE_PORT:-8443}:8443"
       - "${AGENT_PORT:-9443}:9443"
     environment:

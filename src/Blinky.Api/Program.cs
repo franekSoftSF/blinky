@@ -47,6 +47,16 @@ builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
 
 builder.Services.AddSingleton<CredentialIssuanceService>();
 
+// Rebuilt on a schedule rather than when something is revoked: a CRL expires,
+// and an expired one does not fail open - it breaks every chain built under
+// it. Two hours against a six-hour validity, so one missed run is a retry
+// rather than an outage.
+builder.Services.AddSingleton(new CrlPublicationOptions(
+    TimeSpan.FromHours(2),
+    builder.Configuration["Blinky:Ca:CrlFile"] ?? "/var/lib/blinky/pki/issuing.crl"));
+
+builder.Services.AddHostedService<CrlPublisher>();
+
 // The key that protects every escrowed PUK. Refused rather than generated when
 // absent: a KEK invented at startup would encrypt this run's PUKs with a value
 // that dies with the process, and the tokens would be unrecoverable without
@@ -466,6 +476,65 @@ app.MapPost("/api/agents/{id:guid}/renew-certificate",
 // One coherent, read-only snapshot for the browser. Keeping the first console
 // endpoint coarse-grained avoids four races between counters and tables, and
 // keeps the Angular bundle on the same-origin /api contract used behind nginx.
+// ---------------------------------------------------------------- pki
+//
+// Plain HTTP, unauthenticated, and both are deliberate. These are the
+// addresses written into every certificate this CA issues - the CRL
+// distribution point and the authority information access - and whoever
+// fetches them is in the middle of deciding whether they can trust anything at
+// all. A relying party that has to validate a certificate in order to fetch
+// the thing that tells it whether the certificate is valid has a problem it
+// cannot get out of, and a CA certificate is public by construction.
+//
+// The CRL is signed. That is what protects it, not the transport.
+
+app.MapGet("/pki/issuing.crt", (Blinky.Pki.ICertificateAuthority ca) =>
+{
+    if (ca is not Blinky.Pki.BuiltIn.BuiltInCertificateAuthority built)
+    {
+        return Results.NotFound();
+    }
+
+    // DER rather than PEM: this is what an authority information access
+    // fetch expects, and Windows will not read a PEM here.
+    return Results.File(built.Issuer.RawData, "application/pkix-cert", "issuing.crt");
+});
+
+app.MapGet("/pki/root.crt", (Blinky.Pki.ICertificateAuthority ca) =>
+{
+    if (ca is not Blinky.Pki.BuiltIn.BuiltInCertificateAuthority built)
+    {
+        return Results.NotFound();
+    }
+
+    return Results.File(built.TrustAnchor.RawData, "application/pkix-cert", "root.crt");
+});
+
+app.MapGet("/pki/chain.pem", (Blinky.Pki.ICertificateAuthority ca) =>
+{
+    if (ca is not Blinky.Pki.BuiltIn.BuiltInCertificateAuthority built)
+    {
+        return Results.NotFound();
+    }
+
+    // For the things that want the lot in one file - PKINIT anchors, an
+    // openssl verify, a Linux client being set up by hand.
+    var chain = built.TrustAnchor.Thumbprint == built.Issuer.Thumbprint
+        ? built.TrustAnchor.ExportCertificatePem()
+        : built.Issuer.ExportCertificatePem() + "\n" + built.TrustAnchor.ExportCertificatePem();
+
+    return Results.Text(chain, "application/x-pem-file");
+});
+
+app.MapGet("/pki/issuing.crl", async (Blinky.Pki.ICertificateAuthority ca, CancellationToken ct) =>
+{
+    var crl = await ca.GetCrlAsync(ct);
+
+    return crl is null
+        ? Results.NotFound()
+        : Results.File(crl.Der, "application/pkix-crl", "issuing.crl");
+});
+
 app.MapGet("/api/console/overview", (HttpContext context, Database database) =>
 {
     if (!IsOperator(context, operatorToken))

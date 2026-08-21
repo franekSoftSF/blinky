@@ -108,6 +108,60 @@ server {
     }
 }
 
+# ------------------------------------------------------------------- pki
+#
+# Port 80, no TLS, and that is the point. This serves the CRL distribution
+# point and the authority information access address written into every
+# certificate the CA issues, and whoever fetches them is in the middle of
+# deciding whether they can trust anything at all. Serving revocation over
+# HTTPS means a client must validate a certificate in order to fetch the thing
+# that tells it whether the certificate is valid - a loop with no way out, and
+# the reason every public CA publishes revocation over plain HTTP.
+#
+# The CRL is signed. That is what protects it, not the transport.
+#
+# Nothing else is reachable here. Two locations, both GET, both public by
+# construction: a CA certificate and a revocation list.
+server {
+    listen 80;
+    server_name _;
+
+    # Same reason as the other two listeners: nginx pins upstream addresses at
+    # startup unless told to re-resolve, and a restarted api leaves this
+    # answering 502 for the CRL - which reads as a revocation check that failed.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $api http://api:8080;
+
+    # DetectionOnly would still be noise on a path that serves two static
+    # blobs to clients that are not browsers. The rule set stays off here and
+    # the surface is the whitelist below.
+    modsecurity off;
+
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location = /healthz {
+        access_log off;
+        return 200 "ok
+";
+    }
+
+    location /pki/ {
+        proxy_pass $api$request_uri;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+
+        proxy_set_header X-Client-Verify "";
+        proxy_set_header X-Client-Cert   "";
+    }
+
+    # Everything else on this port is not a mistake worth explaining.
+    location / {
+        return 404;
+    }
+}
+
 # ---------------------------------------------------------------- agents
 server {
     listen 9443 ssl;

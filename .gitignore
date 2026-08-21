@@ -37,6 +37,10 @@ certs/
 # Certificate authority material
 ca/
 
+# The published revocation list and anything else the API writes for the
+# outside world. Regenerated on a schedule; a committed one is a stale one.
+pki/
+
 # Lab agent identity: a private key, never in the repo.
 .lab/
 
