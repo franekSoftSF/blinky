@@ -328,6 +328,80 @@ public partial class PivSession
         PivStatus.ThrowIfFailed(response.Status, $"PUT DATA {slot}");
     }
 
+    /// <summary>
+    /// Writes the two data objects that make a card usable by Windows, unless
+    /// it already has them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// See <see cref="PivCardObjects"/> for why. In short: without a CHUID and
+    /// a CCC the inbox minidriver finds the certificate, cannot associate a
+    /// key container with it, and answers <c>NTE_BAD_KEYSET</c>.
+    /// </para>
+    /// <para>
+    /// Not overwritten when present. The GUID inside a CHUID is how Windows
+    /// tells one card from another, and replacing it on a card somebody
+    /// already enrolled would look, from the operating system's side, like a
+    /// different card wearing the same certificates.
+    /// </para>
+    /// <para>
+    /// Needs the management key, like every other write.
+    /// </para>
+    /// </remarks>
+    /// <returns>What it had to write, for the caller to report.</returns>
+    public CardIdentityWritten EnsureCardIdentity(DateOnly chuidExpires)
+    {
+        var chuid = WriteIfAbsent(PivCardObjects.CardholderUniqueIdentifier,
+            () => PivCardObjects.BuildChuid(chuidExpires), "CHUID");
+
+        var ccc = WriteIfAbsent(PivCardObjects.CardCapabilityContainer,
+            PivCardObjects.BuildCapabilityContainer, "CCC");
+
+        return new CardIdentityWritten(chuid, ccc);
+    }
+
+    private bool WriteIfAbsent(byte[] tag, Func<byte[]> build, string what)
+    {
+        if (ReadObject(tag) is { Length: > 0 })
+        {
+            return false;
+        }
+
+        var body = new List<byte> { 0x53 };
+        var value = build();
+        AppendLength(body, value.Length);
+        body.AddRange(value);
+
+        var data = new List<byte> { 0x5C, (byte)tag.Length };
+        data.AddRange(tag);
+        data.AddRange(body);
+
+        var response = Connection.Send(new ApduCommand(InsPutData,
+            p1: 0x3F, p2: 0xFF, data: data.ToArray()));
+
+        if (response.Status.Value == StatusWord.SecurityStatusNotSatisfied)
+        {
+            throw new PivAuthenticationFailedException(
+                $"Writing the {what} needs the management key authenticated first.");
+        }
+
+        PivStatus.ThrowIfFailed(response.Status, $"PUT DATA ({what})");
+        return true;
+    }
+
+    private byte[]? ReadObject(byte[] tag)
+    {
+        var data = new List<byte> { 0x5C, (byte)tag.Length };
+        data.AddRange(tag);
+
+        var response = Connection.Send(new ApduCommand(InsGetData,
+            p1: 0x3F, p2: 0xFF, data: data.ToArray(), le: 0));
+
+        // 6A82 is the card saying the object is not there, which is the normal
+        // answer on a card nobody has provisioned and not a failure.
+        return response.IsSuccess ? response.Data : null;
+    }
+
     /// <summary>Appends a BER length: short form, or 81/82 as needed.</summary>
     internal static void AppendLength(List<byte> target, int length)
     {

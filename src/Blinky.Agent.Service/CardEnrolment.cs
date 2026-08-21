@@ -126,6 +126,28 @@ public sealed class CardEnrolment(
         // factory key is refused instead.
         session.AuthenticateManagementKey(ManagementKey.Default(management.Algorithm));
 
+        // Before anything else is written, because a certificate on a card
+        // with no CHUID is a certificate Windows can see and cannot use: the
+        // inbox minidriver enumerates key containers from the CCC and
+        // identifies the card by the CHUID's GUID, and without them it answers
+        // NTE_BAD_KEYSET for a key that is sitting right there. A YubiKey
+        // leaves the factory without either, and `ykman piv reset` removes
+        // them again.
+        //
+        // Costs nothing on a card that already has them - they are read first
+        // and left alone, because the GUID is how the operating system tells
+        // one card from another and replacing it would make an enrolled card
+        // look like a new one.
+        var identity = session.EnsureCardIdentity(
+            DateOnly.FromDateTime(DateTime.UtcNow.AddYears(10)));
+
+        if (identity.Anything)
+        {
+            logger.LogInformation(
+                "Token {Serial}: wrote {What} - the card had none, and Windows needs "
+                + "them to find a key container at all", serial, identity);
+        }
+
         await Report(backend, job, attempt, "GenerateKey", ct);
 
         var existing = session.GetSlotMetadata(slot);
