@@ -246,21 +246,44 @@ public sealed class CardOperations(
 
             if (alsoTheKey)
             {
-                // Firmware 5.7 and later. Older tokens throw, and the message
-                // says why rather than leaving somebody to wonder whether the
-                // slot is empty: on a 5.4 a key can only be overwritten.
-                if (session.DeleteKey(slot))
+                // Firmware 5.7 and later. Older tokens cannot do it at all,
+                // and that is reported rather than thrown: the certificate is
+                // already gone, and removing the certificate is what withdraws
+                // a credential. A key with nothing to prove it belongs to
+                // anybody is inert.
+                //
+                // It used to throw from here, which discarded the part that had
+                // already worked: on a 5.4.3 the certificate came off the card,
+                // the job reported failure, and the server went on believing
+                // the credential was installed. Found recycling the first real
+                // credential, 21 August 2026.
+                try
                 {
-                    logger.LogWarning("The key in slot {Slot} of token {Serial} was destroyed",
-                        slot, serial);
+                    if (session.DeleteKey(slot))
+                    {
+                        logger.LogWarning("The key in slot {Slot} of token {Serial} was destroyed",
+                            slot, serial);
+                    }
+                    else
+                    {
+                        logger.LogInformation("Slot {Slot} of token {Serial} already held no key",
+                            slot, serial);
+                    }
                 }
-                else
+                catch (PivException ex) when (ex.Status.Value is 0x6D00 or 0x6A81)
                 {
-                    logger.LogInformation("Slot {Slot} of token {Serial} already held no key",
-                        slot, serial);
+                    logger.LogWarning(
+                        "The certificate is off token {Serial}, and the key in slot {Slot} "
+                        + "stays: {Reason} The credential is withdrawn either way - the "
+                        + "certificate is what proved the key belonged to anybody.",
+                        serial, slot, ex.Message);
                 }
             }
 
+            // Success either way. That the key stayed is in the log above and in
+            // the next inventory sweep, which reports the slot as holding a key
+            // with no certificate - the state the tray already shows as an
+            // unfinished issuance.
             return new AgentResponse(true);
         });
     }
