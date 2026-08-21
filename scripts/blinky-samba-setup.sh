@@ -22,7 +22,14 @@
 #                               with "the smartcard certificate used for
 #                               authentication was not trusted", which sounds
 #                               like the first problem and is not.
-#   The KDC certificate         PKINIT will not start without it.
+#   The KDC certificate         PKINIT will not start without it - and holding
+#                               one is not the same as using it. Samba has to
+#                               be told, in its own krb5.conf, with a [kdc]
+#                               section that names the identity and the
+#                               anchors. A controller can sit for a day with a
+#                               perfectly good certificate and no [kdc] section
+#                               at all, and every explanation offered for the
+#                               failed logon will be about the card.
 
 set -euo pipefail
 
@@ -203,17 +210,119 @@ fi
 cp "$KDC_CERT" "$private/kdc.crt"
 chmod 644 "$private/kdc.crt"
 
+# The full chain beside it. PKINIT presents what it is given, and a client that
+# does not already hold the issuing CA cannot build a path from a leaf alone -
+# which it reports as the KDC certificate being untrusted, sending everybody to
+# look at anchors instead of at what was sent.
+install -d -m 755 "$private/tls"
+
+if [[ -n "$CHAIN" && -f "$CHAIN" ]]; then
+    cat "$private/kdc.crt" "$CHAIN" > "$private/kdc-chain.pem"
+    chmod 644 "$private/kdc-chain.pem"
+    identity="$private/kdc-chain.pem"
+
+    install -m 644 "$CHAIN" "$private/tls/ca-chain.pem"
+else
+    identity="$private/kdc.crt"
+fi
+
+anchors="$private/tls/ca-chain.pem"
+
+[[ -f "$anchors" ]] || {
+    echo "No anchor chain at $anchors. Pass --chain so PKINIT has something to" >&2
+    echo "check client certificates against." >&2
+    exit 4
+}
+
+# ------------------------------------------------------------ enable pkinit
+
+say "enabling PKINIT"
+
+# A certificate the KDC never reads is a certificate that does nothing. Samba
+# does not turn PKINIT on because material appeared in its directory: it has to
+# be told, in its own krb5.conf, and /etc/krb5.conf has to be a copy of that
+# file rather than a different one that happens to work for kinit.
+#
+# Found on 21 August 2026. The KDC had held a certificate for a day, there was
+# no [kdc] section anywhere, and every explanation offered for the failed logon
+# was about the card.
+samba_krb5="$private/krb5.conf"
+
+# Rewritten rather than appended to, so running this twice does not leave two
+# [kdc] sections with different paths in them.
+if grep -q "^\[kdc\]" "$samba_krb5" 2>/dev/null; then
+    sed -i '/^\[kdc\]/,$d' "$samba_krb5"
+fi
+
+cat >> "$samba_krb5" <<KRB
+[kdc]
+    # The dash is not a typo: Samba spells this one with a hyphen and
+    # everything around it with underscores.
+    enable-pkinit = yes
+    pkinit_identity = FILE:$identity,$private/kdc.key
+    pkinit_anchors = FILE:$anchors
+
+    # The client is named by what is inside its certificate rather than by
+    # where the certificate was found - which is what the UPN and the SID
+    # extension are for.
+    pkinit_principal_in_certificate = yes
+
+    # A certificate without the KDC Authentication EKU is refused rather than
+    # accepted on the strength of looking right.
+    pkinit_require_eku = true
+
+    # The Windows 2000 form is off, and the binding it needs is required
+    # wherever it is used at all. Both together: half of this pair is a
+    # downgrade waiting to be asked for.
+    pkinit_win2k = no
+    pkinit_win2k_require_binding = yes
+KRB
+
+# Anchors at the top level too, for this machine acting as a client.
+if ! sed -n '/^\[libdefaults\]/,/^\[/p' "$samba_krb5" | grep -q pkinit_anchors; then
+    sed -i "/^\[libdefaults\]/a\    pkinit_anchors = FILE:$anchors" "$samba_krb5"
+fi
+
+# A copy, not a symbolic link. Samba rewrites its own file, and a link means
+# the system file changes underneath everything that has already read it.
+cp "$samba_krb5" /etc/krb5.conf
+chmod 644 /etc/krb5.conf
+
+# The revocation list smbd checks, once one has been published here.
+if [[ -f "$private/tls/issuing.crl" ]] &&
+        ! grep -q "tls crlfile" /etc/samba/smb.conf; then
+    sed -i "/^\[global\]/a\\ttls crlfile = $private/tls/issuing.crl" /etc/samba/smb.conf
+    say "smb.conf now points at the revocation list"
+fi
+
 systemctl restart samba-ad-dc
 sleep 4
 systemctl is-active samba-ad-dc
 
+# Checked rather than claimed. "PKINIT is enabled" is a line that was written;
+# whether Samba could load what it points at is a different question.
+if journalctl -u samba-ad-dc --since "-1 min" --no-pager 2>/dev/null |
+        grep -qiE "pkinit.*(fail|error)|Failed to load"; then
+    echo
+    echo "  Samba logged a PKINIT problem on startup:" >&2
+    echo "      journalctl -u samba-ad-dc --since '-2 min'" >&2
+fi
+
 cat <<EOF
 
-  key    $private/kdc.key
-  cert   $private/kdc.crt
+  key       $private/kdc.key
+  cert      $private/kdc.crt
+  identity  $identity
+  anchors   $anchors
 
-The KDC has a certificate. A client can now try PKINIT:
+PKINIT is enabled and /etc/krb5.conf is a copy of Samba's own. A client can now
+try it:
 
-    kinit -X X509_user_identity=PKCS11:/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so \\
+    kinit -X X509_user_identity=PKCS11:/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so \
           user@$REALM
+
+If that works and a Windows logon still does not, the difference is the
+revocation check. Keep the directory's lists current:
+
+    sudo bash scripts/publish-crl-to-directory.sh --url <ca-url> --install-timer
 EOF
