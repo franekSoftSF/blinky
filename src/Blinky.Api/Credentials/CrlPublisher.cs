@@ -1,5 +1,6 @@
 using Blinky.Api.Persistence;
 using Blinky.Domain.Entities;
+using DomainCredentialState = Blinky.Domain.CredentialState;
 using Blinky.Pki;
 
 namespace Blinky.Api.Credentials;
@@ -72,8 +73,13 @@ public sealed class CrlPublisher(
 
         using (var session = database.OpenSession())
         {
+            // On the state, not on the timestamp. A credential marked revoked
+            // with no RevokedAt is a bookkeeping gap somewhere upstream, and
+            // the answer to that is not to leave it off the revocation list -
+            // which would mean the one path that forgot a timestamp is also
+            // the one that silently keeps a certificate valid.
             var revoked = session.Query<Credential>()
-                .Where(c => c.RevokedAt != null)
+                .Where(c => c.RevokedAt != null || c.State == DomainCredentialState.Revoked)
                 .ToList();
 
             replayed = 0;
@@ -111,7 +117,22 @@ public sealed class CrlPublisher(
 
         if (options.File is { Length: > 0 } path)
         {
-            WriteAtomically(path, crl.Der);
+            // Its own failure. The list itself is fine and is being served
+            // over HTTP either way; what has gone wrong is a directory, and
+            // saying "could not publish the revocation list" about a
+            // permission on a folder sends somebody to look at the CA.
+            try
+            {
+                WriteAtomically(path, crl.Der);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogError(ex,
+                    "The revocation list is published over HTTP but could not be written to "
+                    + "{Path}. Samba and PKINIT read that file rather than the URL, so "
+                    + "publication into the directory will be stale until this is fixed",
+                    path);
+            }
         }
 
         logger.LogInformation(
