@@ -491,10 +491,28 @@ app.MapGet("/api/console/overview", (HttpContext context, Database database) =>
     var jobs = session.Query<Job>().OrderByDescending(j => j.CreatedAt).Take(100).ToList().Select(j => new
     {
         j.Id, type = j.Type.ToString(), state = j.State.ToString(), j.TokenSerial,
-        j.Attempt, j.CreatedAt,
+        j.Attempt, j.CreatedAt, j.Result, j.UpdatedAt,
     }).ToList();
 
-    return Results.Ok(new { agents, tokens, credentials, jobs });
+    // What is actually in the slots, which is not the same question as what
+    // credentials exist. A credential row survives being revoked and survives
+    // the card being reset; the slot is the thing that says whether anything
+    // is on the token now.
+    //
+    // Without this the console can only reason from the credential list, and a
+    // revoked credential looks exactly like a live one apart from a word. On
+    // 21 August 2026 a token was reset with ykman, every slot correctly went to
+    // Empty, both credentials correctly went to Revoked - and the console went
+    // on showing a certificate on the token, because nothing had ever told it
+    // what a slot was.
+    var slots = session.Query<Slot>().ToList().Select(s => new
+    {
+        tokenSerial = s.Token.Serial, s.SlotId, state = s.State.ToString(),
+        credentialId = s.Credential?.Id, s.KeyAlgorithm, s.PinPolicy, s.TouchPolicy,
+        s.UpdatedAt,
+    }).ToList();
+
+    return Results.Ok(new { agents, tokens, slots, credentials, jobs });
 });
 
 app.MapPost("/api/agents/{id:guid}/heartbeat",
