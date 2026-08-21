@@ -297,6 +297,75 @@ app.MapPost("/api/credentials/issue",
 // stops being a secret people know and becomes one only this server holds:
 // random per token, released for the seconds an unblock takes, replaced
 // immediately. See docs/10-agent-ui.md.
+// Taking a token out of service, from the console, about a card nobody can
+// necessarily reach - which is the situation that makes it necessary. A card
+// reported lost is not going to be presented for a recycle job.
+app.MapPost("/api/tokens/{serial:long}/block",
+    async (long serial, BlockTokenRequest request, HttpContext context,
+        CredentialIssuanceService credentials, CancellationToken ct) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        if (!Enum.TryParse<Blinky.Domain.TokenState>(request.State, true, out var state))
+        {
+            return Results.Json(new
+            {
+                error = $"'{request.State}' is not a state",
+                states = new[] { "Suspended", "Lost", "Stolen", "Terminated", "Retired" },
+            }, statusCode: 400);
+        }
+
+        try
+        {
+            var revoked = await credentials.BlockAsync(serial, state, request.Comment, ct);
+
+            return revoked is { } count
+                ? Results.Ok(new
+                {
+                    serial,
+                    state = state.ToString(),
+                    credentialsRevoked = count,
+
+                    // Said in the answer rather than left to be discovered. A
+                    // suspension is the only one that can be lifted; the rest
+                    // revoke on key compromise or cessation, and those do not
+                    // come back.
+                    reversible = state is Blinky.Domain.TokenState.Suspended,
+                })
+                : Results.NotFound(new { error = $"no token with serial {serial}" });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.Json(new { error = ex.Message }, statusCode: 400);
+        }
+    });
+
+// And back. Only from a suspension - see CredentialIssuanceService.Unblock for
+// why the others do not come back.
+app.MapPost("/api/tokens/{serial:long}/unblock",
+    (long serial, HttpContext context, CredentialIssuanceService credentials) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        return credentials.Unblock(serial)
+            ? Results.Ok(new { serial, state = "Registered" })
+            : Results.Json(new
+            {
+                error = "no such token, or it is not suspended",
+                detail = "Only a suspension is lifted here. A token revoked as lost, stolen, "
+                         + "terminated or retired stays that way, and the route back is a new "
+                         + "credential rather than an undo.",
+            }, statusCode: 409);
+    });
+
 app.MapPost("/api/tokens/{serial:long}/puk/checkout",
     (long serial, HttpContext context, PukEscrow escrow) =>
     {
@@ -726,6 +795,9 @@ internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
 internal sealed record PukRefused(long TokenSerial);
 
 /// <summary>An operator taking a credential back off a token.</summary>
+/// <summary>An operator taking a token out of service.</summary>
+internal sealed record BlockTokenRequest(string State, string? Comment = null);
+
 /// <summary>An operator withdrawing a credential the card cannot be asked about.</summary>
 internal sealed record RevokeCredentialRequest(string Reason, string? Comment = null);
 

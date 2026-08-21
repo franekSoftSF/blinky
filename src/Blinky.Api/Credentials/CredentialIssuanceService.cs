@@ -78,6 +78,127 @@ public sealed class CredentialIssuanceService(
     }
 
     /// <summary>
+    /// Takes a token out of service, and everything on it with it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An operator's action, from the console, about a card they cannot
+    /// necessarily reach — which is the situation that makes it necessary. A
+    /// card reported lost is not going to be presented for a recycle job.
+    /// </para>
+    /// <para>
+    /// <b>Reversible or not, decided here.</b> A suspension puts every
+    /// credential on hold, and hold is the one revocation reason X.509 lets
+    /// you take back: the certificate can be removed from the list and start
+    /// working again. Anything else — lost, stolen, terminated — is permanent,
+    /// because a key that might be in somebody else's hands does not become
+    /// trustworthy again by being found.
+    /// </para>
+    /// <para>
+    /// So <c>Suspended</c> can be undone and the rest cannot, and that is a
+    /// property of the reason rather than a policy this could choose
+    /// differently.
+    /// </para>
+    /// </remarks>
+    /// <returns>How many credentials were taken with it, or null if no such token.</returns>
+    public async Task<int?> BlockAsync(long serial, Blinky.Domain.TokenState state,
+        string? comment, CancellationToken ct = default)
+    {
+        var reason = state switch
+        {
+            Blinky.Domain.TokenState.Suspended => Blinky.Pki.X509RevocationReason.CertificateHold,
+
+            // The key may be in somebody else's hands. Nothing weaker would be
+            // honest, and every relying party reads this.
+            Blinky.Domain.TokenState.Lost or Blinky.Domain.TokenState.Stolen =>
+                Blinky.Pki.X509RevocationReason.KeyCompromise,
+
+            Blinky.Domain.TokenState.Terminated or Blinky.Domain.TokenState.Retired =>
+                Blinky.Pki.X509RevocationReason.CessationOfOperation,
+
+            _ => throw new ArgumentException(
+                $"{state} is not a way of taking a token out of service.", nameof(state)),
+        };
+
+        List<Credential> live;
+
+        using (var session = database.OpenSession())
+        using (var transaction = session.BeginTransaction())
+        {
+            var token = session.Query<Token>().SingleOrDefault(t => t.Serial == serial);
+            if (token is null)
+            {
+                return null;
+            }
+
+            live = session.Query<Credential>()
+                .Where(c => c.Token.Serial == serial)
+                .ToList()
+                .Where(c => c.State != DomainCredentialState.Revoked)
+                .ToList();
+
+            var now = DateTime.UtcNow;
+
+            token.State = state;
+            token.UpdatedAt = now;
+            session.Update(token);
+
+            transaction.Commit();
+        }
+
+        foreach (var credential in live)
+        {
+            await RevokeAsync(credential.Id, reason, comment, ct);
+        }
+
+        logger.LogWarning(
+            "Token {Serial} is {State}: {Count} credential(s) revoked as {Reason}",
+            serial, state, live.Count, reason);
+
+        return live.Count;
+    }
+
+    /// <summary>
+    /// Puts a suspended token back into service.
+    /// </summary>
+    /// <remarks>
+    /// Only a suspension. Certificates revoked for anything else stay revoked,
+    /// and the way back for that token is a new credential — which is correct
+    /// rather than inconvenient: a certificate withdrawn because its key might
+    /// be compromised cannot be un-withdrawn by somebody deciding it probably
+    /// was not.
+    /// <para>
+    /// The credentials are not un-revoked here either. Removing an entry from a
+    /// revocation list is possible for a hold and is not something to do
+    /// quietly — it belongs behind its own decision, with its own audit, and
+    /// until it exists a suspension lifted means the token can be issued to
+    /// again.
+    /// </para>
+    /// </remarks>
+    /// <returns>False when the token is not suspended, or does not exist.</returns>
+    public bool Unblock(long serial)
+    {
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var token = session.Query<Token>().SingleOrDefault(t => t.Serial == serial);
+
+        if (token is null || token.State is not Blinky.Domain.TokenState.Suspended)
+        {
+            return false;
+        }
+
+        token.State = Blinky.Domain.TokenState.Registered;
+        token.UpdatedAt = DateTime.UtcNow;
+        session.Update(token);
+
+        transaction.Commit();
+
+        logger.LogInformation("Token {Serial} is back in service", serial);
+        return true;
+    }
+
+    /// <summary>
     /// Withdraws a credential without touching the card it is on.
     /// </summary>
     /// <remarks>
