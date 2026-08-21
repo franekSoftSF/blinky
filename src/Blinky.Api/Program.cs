@@ -393,6 +393,42 @@ app.MapGet("/api/tokens/{serial:long}/credentials",
         return Results.Ok(credentials);
     });
 
+// Withdrawing a credential without the card. The ordinary route is a recycle
+// job, which needs the card, an agent that can reach it and a management key
+// Blinky still holds; this is for when one of those is gone and the
+// certificate is out of reach while still being perfectly valid to everybody
+// who checks it.
+app.MapPost("/api/credentials/{id:guid}/revoke",
+    async (Guid id, RevokeCredentialRequest request, HttpContext context,
+        CredentialIssuanceService credentials, CancellationToken ct) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        // Named by the operator rather than defaulted quietly. A revocation
+        // reason travels into the CRL and is the only thing a relying party
+        // ever learns about why, so "unspecified" should be a choice somebody
+        // made.
+        if (!Enum.TryParse<Blinky.Pki.X509RevocationReason>(request.Reason, true, out var reason))
+        {
+            return Results.Json(new
+            {
+                error = $"'{request.Reason}' is not a revocation reason",
+                reasons = Enum.GetNames<Blinky.Pki.X509RevocationReason>(),
+            }, statusCode: 400);
+        }
+
+        var revoked = await credentials.RevokeAsync(id, reason, request.Comment, ct);
+
+        return revoked
+            ? Results.Ok(new { id, state = "Revoked", reason = reason.ToString() })
+            : Results.Json(new { error = "no such credential, or it was already revoked" },
+                statusCode: 404);
+    });
+
 app.MapPost("/api/credentials/{id:guid}/installed",
     (Guid id, CredentialInstalled confirmation, CredentialIssuanceService credentials) =>
         credentials.MarkInstalled(confirmation with { CredentialId = id })
@@ -563,6 +599,9 @@ internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
 internal sealed record PukRefused(long TokenSerial);
 
 /// <summary>An operator taking a credential back off a token.</summary>
+/// <summary>An operator withdrawing a credential the card cannot be asked about.</summary>
+internal sealed record RevokeCredentialRequest(string Reason, string? Comment = null);
+
 internal sealed record RecycleJobRequest(
     Guid? AgentId,
     long TokenSerial,

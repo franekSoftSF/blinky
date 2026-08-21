@@ -77,6 +77,88 @@ public sealed class CredentialIssuanceService(
     }
 
     /// <summary>
+    /// Withdraws a credential without touching the card it is on.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The ordinary way to withdraw one is a recycle job: the agent takes the
+    /// certificate off the card and the record follows. That needs the card,
+    /// an agent that can reach it, and a management key Blinky still holds.
+    /// </para>
+    /// <para>
+    /// This is for when one of those is gone. A token reset outside Blinky, a
+    /// card that left with somebody, a management key changed by another tool
+    /// — the certificate is beyond reach and is still, as far as every relying
+    /// party is concerned, valid. Refusing to revoke it because the card
+    /// cannot be reached would leave the one credential that most needs
+    /// revoking as the one that cannot be.
+    /// </para>
+    /// <para>
+    /// The serial number goes on the revocation list, which is what actually
+    /// withdraws it. The record is marked to match. What is physically on the
+    /// card afterwards is unknown and is recorded as unknown rather than
+    /// guessed at.
+    /// </para>
+    /// <para>
+    /// Wanted on 21 August 2026, when a token's management key turned out to
+    /// have been changed by another tool: two credentials, neither reachable,
+    /// both still valid, and no way to say so.
+    /// </para>
+    /// </remarks>
+    /// <returns>False when there is no such credential, or it was already revoked.</returns>
+    public async Task<bool> RevokeAsync(Guid credentialId, Blinky.Pki.X509RevocationReason reason,
+        string? comment, CancellationToken ct = default)
+    {
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var credential = session.Get<Credential>(credentialId);
+        if (credential is null || credential.State is DomainCredentialState.Revoked)
+        {
+            return false;
+        }
+
+        // A credential that never reached a certificate has no serial number
+        // and so has nothing to put on a list. It is still worth closing the
+        // record - a row stuck at Requested is a job somebody has to decide
+        // about eventually - but saying it was revoked would claim a
+        // revocation that no relying party will ever see.
+        if (!string.IsNullOrEmpty(credential.SerialNumber))
+        {
+            // The list first. If publishing fails, nothing is marked: a record
+            // that says revoked while the certificate is still good on every
+            // revocation list is worse than one that says nothing yet.
+            await authority.RevokeAsync(
+                new RevocationRequest(credential.SerialNumber, reason, comment), ct);
+        }
+
+        var now = DateTime.UtcNow;
+
+        credential.State = DomainCredentialState.Revoked;
+        credential.RevokedAt = now;
+        credential.RevocationReason = reason.ToString();
+        credential.UpdatedAt = now;
+        session.Update(credential);
+
+        // The slot is no longer something Blinky put there and is not known to
+        // be empty either: nobody has looked at the card. Stale is the honest
+        // answer, and the next inventory sweep corrects it.
+        var slot = session.Query<Slot>().SingleOrDefault(s =>
+            s.Token.Id == credential.Token.Id && s.SlotId == credential.SlotId);
+
+        if (slot is not null)
+        {
+            slot.State = Blinky.Domain.SlotState.Stale;
+            slot.Credential = null;
+            slot.UpdatedAt = now;
+            session.Update(slot);
+        }
+
+        transaction.Commit();
+        return true;
+    }
+
+    /// <summary>
     /// Marks a credential as actually on the card.
     /// </summary>
     /// <returns>False when there is no such credential to confirm.</returns>

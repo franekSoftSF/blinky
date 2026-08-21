@@ -31,9 +31,9 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)] [string] $BootstrapToken,
-    [string] $Backend = 'https://by-ca-cms.blinky.lab:9443',
-    [string] $Domain = 'blinky.lab',
+    [string] $BootstrapToken,
+    [string] $Backend,
+    [string] $Domain,
     [string] $Msi = "$PSScriptRoot\blinky-agent-0.2.9.msi",
     [string] $CaCertificate = "$PSScriptRoot\dev-ca.crt"
 )
@@ -44,6 +44,43 @@ $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "Run this elevated: it installs a service and writes to HKLM."
+}
+
+# What this machine was told last time. An upgrade should not make somebody
+# find the backend URL again, and it should not make them paste a bootstrap
+# token that the agent stopped needing the moment it enrolled - a token typed
+# once a day ends up in shell history, on a memory stick and in a chat window.
+$settings = 'HKLM:\SOFTWARE\Blinky\Agent'
+$existing = if (Test-Path $settings) { Get-ItemProperty $settings } else { $null }
+
+function Prefer($given, $remembered, $fallback) {
+    if ($given) { return $given }
+    if ($remembered) { return $remembered }
+    return $fallback
+}
+
+$Backend = Prefer $Backend $existing.BackendUrl 'https://by-ca-cms.blinky.lab:9443'
+$Domain  = Prefer $Domain  $existing.Domain     'blinky.lab'
+
+# The token buys an identity and is useless afterwards. An agent that already
+# holds one - a certificate in the machine store, named for it - is upgrading
+# rather than enrolling, and should not be asked for it again.
+$enrolled = @(Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+    Where-Object { $_.FriendlyName -like 'Blinky agent *' }).Count -gt 0
+
+if (-not $BootstrapToken) {
+    $BootstrapToken = $existing.BootstrapToken
+
+    if (-not $BootstrapToken -and -not $enrolled) {
+        throw @'
+This machine has no agent identity and no bootstrap token to get one with.
+
+Pass -BootstrapToken on the first install. It is remembered afterwards, and an
+upgrade then needs no arguments at all:
+
+    ssh sysadmin@172.16.1.11 "sudo grep ^BOOTSTRAP_TOKEN= ~/blinky/.env"
+'@
+    }
 }
 
 foreach ($file in $Msi, $CaCertificate) {
@@ -60,6 +97,12 @@ Import-Certificate -FilePath $CaCertificate `
 Write-Host "     $((Get-PfxCertificate $CaCertificate).Subject)"
 
 Write-Host "`n2/3  installing the agent"
+Write-Host "     backend  $Backend"
+Write-Host "     domain   $Domain"
+Write-Host ("     token    " + $(
+    if ($PSBoundParameters.ContainsKey('BootstrapToken')) { 'given on the command line' }
+    elseif ($BootstrapToken) { 'remembered from the last install' }
+    else { 'not needed - this machine already has an identity' }))
 
 $log = "$env:TEMP\blinky-agent-install.log"
 
@@ -69,9 +112,15 @@ $arguments = @(
     '/l*v', "`"$log`"",
     "BACKEND=$Backend",
     "DOMAIN=$Domain",
-    "BOOTSTRAPTOKEN=$BootstrapToken",
     "SERVERCA=$CaCertificate"
 )
+
+# Only when there is one. Passing an empty property writes an empty registry
+# value over whatever was there, which on an upgrade would take away the token
+# a machine might still need if its identity is ever lost.
+if ($BootstrapToken) {
+    $arguments += "BOOTSTRAPTOKEN=$BootstrapToken"
+}
 
 $result = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
 
@@ -84,7 +133,8 @@ if ($result.ExitCode -ne 0) {
 # log. So the log is scrubbed rather than trusted or deleted: a bootstrap token
 # sitting in %TEMP% is one anybody on the machine can read, and the rest of the
 # log is what anyone diagnosing a failed install needs.
-if (Select-String -Path $log -Pattern ([regex]::Escape($BootstrapToken)) -Quiet) {
+if ($BootstrapToken -and
+    (Select-String -Path $log -Pattern ([regex]::Escape($BootstrapToken)) -Quiet)) {
     # UTF-16, which is what msiexec writes and what Get-Content has to be told.
     (Get-Content $log -Raw -Encoding Unicode).Replace($BootstrapToken, '<redacted>') |
         Set-Content $log -Encoding Unicode -NoNewline
