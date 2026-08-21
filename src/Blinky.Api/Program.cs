@@ -35,7 +35,15 @@ builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
         builder.Configuration["Blinky:Ca:Directory"] ?? "/etc/blinky/ca",
         builder.Configuration["Blinky:Ca:Password"],
         builder.Configuration.GetValue("Blinky:Ca:AllowFileKeys", false),
-        TimeSpan.FromHours(6),
+
+        // How long an issued list claims to be good for. Short is safer -
+        // a revocation reaches relying parties sooner - but only as far as
+        // publication is reliable, because an expired CRL does not fail open:
+        // it breaks every chain built under it. Whatever this is, the copy
+        // Samba holds in the directory has to be refreshed inside it, which is
+        // what scripts/publish-crl-to-directory.sh is for.
+        TimeSpan.FromHours(
+            builder.Configuration.GetValue("Blinky:Ca:CrlValidityHours", 8)),
         // The address relying parties are told to fetch revocation from, and
         // it has to be one they can reach: not localhost, not the container
         // name, and over HTTP rather than HTTPS - see CaPublication. Left
@@ -52,7 +60,10 @@ builder.Services.AddSingleton<CredentialIssuanceService>();
 // it. Two hours against a six-hour validity, so one missed run is a retry
 // rather than an outage.
 builder.Services.AddSingleton(new CrlPublicationOptions(
-    TimeSpan.FromHours(2),
+    // A third of the validity, so two consecutive failures are still not an
+    // outage.
+    TimeSpan.FromHours(
+        builder.Configuration.GetValue("Blinky:Ca:CrlRefreshHours", 2)),
     builder.Configuration["Blinky:Ca:CrlFile"] ?? "/var/lib/blinky/pki/issuing.crl"));
 
 builder.Services.AddHostedService<CrlPublisher>();
@@ -524,6 +535,36 @@ app.MapGet("/pki/chain.pem", (Blinky.Pki.ICertificateAuthority ca) =>
         : built.Issuer.ExportCertificatePem() + "\n" + built.TrustAnchor.ExportCertificatePem();
 
     return Results.Text(chain, "application/x-pem-file");
+});
+
+// The root's own list, which says whether the issuing CA was revoked. Served
+// from the file scripts/resign-issuing-ca.sh writes, because signing it needs
+// the root key and the root key is not something this process holds - that is
+// the whole point of a two-tier CA.
+//
+// A year of validity is right for it: a root that has issued one intermediate
+// has nothing to say that changes, and every refresh means taking the root key
+// out. Short-lived lists belong to the CA that issues daily.
+//
+// This endpoint exists because the issuing CA's certificate names it. A URL
+// written into a certificate that nobody answers is worse than no URL at all:
+// the relying party tries it, waits, and fails a check it would otherwise have
+// skipped.
+app.MapGet("/pki/root.crl", (IConfiguration configuration) =>
+{
+    var directory = configuration["Blinky:Ca:Directory"] ?? "/etc/blinky/ca";
+    var path = Path.Combine(directory, "root.crl");
+
+    if (!File.Exists(path))
+    {
+        // 404 rather than an empty list. An empty CRL is a statement - "I have
+        // revoked nothing, and here is my signature on that" - and this
+        // process cannot make it, because it does not hold the root key. Better
+        // to be plainly absent than to look like an answer.
+        return Results.NotFound();
+    }
+
+    return Results.File(File.ReadAllBytes(path), "application/pkix-crl", "root.crl");
 });
 
 app.MapGet("/pki/issuing.crl", async (Blinky.Pki.ICertificateAuthority ca, CancellationToken ct) =>
