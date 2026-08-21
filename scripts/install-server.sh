@@ -1,0 +1,429 @@
+#!/usr/bin/env bash
+#
+# Blinky - install the server on a fresh machine.
+#
+#     sudo bash scripts/install-server.sh
+#     sudo bash scripts/install-server.sh --hostname by-ca-cms.blinky.lab
+#
+#     sudo bash scripts/install-server.sh #         --issuing-p12 issuing.p12 --anchor corporate-root.crt #         --edge-cert wildcard.crt --edge-key wildcard.key
+#
+# Creates the service account, generates every secret, sets up the CA, starts
+# the stack and checks it. Idempotent: run it again and it changes what is
+# wrong and leaves what is right, including every secret it already generated.
+#
+# Neither certificate authority has to be Blinky's. An organisation that
+# already has a root gives Blinky an issuing CA under it and keeps the root
+# where it is - which is the correct arrangement and the one this should not
+# ask anybody to abandon. Infrastructure TLS is separable the same way: the
+# self-signed pair is a convenience for a lab, not a design.
+#
+# This exists because doing it by hand went wrong in the same four ways every
+# time:
+#
+#   - .env written a line at a time, so a value was missing until something
+#     failed for a reason that named neither the value nor the file
+#   - directories owned by root that a container running as an ordinary user
+#     cannot read, reported as "does not hold a CA" rather than as a permission
+#   - the root key readable by a container that has no business holding it
+#   - passwords typed by a person, which means remembered by a person, which
+#     means the same one twice
+#
+# Nothing here is interactive and nothing here prints a secret. What it
+# generates goes into a file only root can read, and the file says where.
+
+set -euo pipefail
+
+# The uid the containers run as - see docker/dotnet/Dockerfile. The host
+# account is given the same number on purpose: a bind mount carries numbers,
+# not names, and "the container cannot write here" is otherwise a puzzle rather
+# than a permission.
+BLINKY_UID=10001
+BLINKY_GID=10001
+
+HOSTNAME_FQDN=""
+CA_NAME="${CA_NAME:-Blinky}"
+IMPORT_P12=""
+IMPORT_P12_PASSWORD=""
+IMPORT_ANCHOR=""
+EDGE_CERT=""
+EDGE_KEY=""
+FORCE_SECRETS=0
+SKIP_UP=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --hostname) HOSTNAME_FQDN="$2"; shift 2 ;;
+        --ca-name) CA_NAME="$2"; shift 2 ;;
+
+        # An issuing CA that came from somewhere else - a corporate root, an
+        # offline ceremony, an HSM export. Blinky signs with it and never sees
+        # the root key, which is the arrangement a real organisation already has
+        # and should not be asked to abandon in order to run this.
+        --issuing-p12) IMPORT_P12="$2"; shift 2 ;;
+        --issuing-p12-password) IMPORT_P12_PASSWORD="$2"; shift 2 ;;
+        --anchor) IMPORT_ANCHOR="$2"; shift 2 ;;
+
+        # Infrastructure TLS from a real CA rather than the self-signed pair.
+        --edge-cert) EDGE_CERT="$2"; shift 2 ;;
+        --edge-key) EDGE_KEY="$2"; shift 2 ;;
+        --regenerate-secrets) FORCE_SECRETS=1; shift ;;
+        --no-start) SKIP_UP=1; shift ;;
+        *) echo "unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
+
+[[ $EUID -eq 0 ]] || { echo "Run this with sudo." >&2; exit 2; }
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+
+# Left to itself, umask can make .env and the CA readable by nobody, or by
+# everybody. This lab has been bitten by both.
+umask 077
+
+say()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
+note() { printf '  %s\n' "$*"; }
+
+[[ -n "$HOSTNAME_FQDN" ]] || HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
+
+# ------------------------------------------------------------------ 1. user
+
+say "1/6  the service account"
+
+if id blinky >/dev/null 2>&1; then
+    note "blinky exists (uid $(id -u blinky))"
+
+    if [[ "$(id -u blinky)" != "$BLINKY_UID" ]]; then
+        cat >&2 <<EOF
+
+  blinky has uid $(id -u blinky) and the containers run as $BLINKY_UID.
+
+  Bind mounts carry numbers rather than names, so the two have to agree. Either
+  change the account's uid, or change the Dockerfile - but not neither, because
+  the failure is a container that cannot read a directory it can see.
+EOF
+        exit 3
+    fi
+else
+    groupadd --gid "$BLINKY_GID" blinky 2>/dev/null || true
+
+    # No login, no home, no shell. It exists to own files.
+    useradd --uid "$BLINKY_UID" --gid "$BLINKY_GID" \
+        --no-create-home --shell /usr/sbin/nologin \
+        --comment "Blinky credential management" blinky
+
+    note "created blinky (uid $BLINKY_UID)"
+fi
+
+# Whoever is running this keeps being able to drive docker afterwards.
+if getent group docker >/dev/null && [[ -n "${SUDO_USER:-}" ]]; then
+    if ! id -nG "$SUDO_USER" | grep -qw docker; then
+        usermod -aG docker "$SUDO_USER"
+        note "$SUDO_USER added to the docker group - log out and back in"
+    fi
+fi
+
+# --------------------------------------------------------------- 2. secrets
+
+say "2/6  secrets"
+
+secret() { openssl rand -base64 "${1:-24}" | tr -d '\n=' | tr '+/' '-_'; }
+
+if [[ -f .env && $FORCE_SECRETS -eq 0 ]]; then
+    note ".env exists - keeping every value already in it"
+else
+    [[ -f .env ]] && cp .env ".env.replaced-$(date +%Y%m%d%H%M%S)"
+    : > .env
+fi
+
+# Added only when absent, so a re-run fills gaps without rotating anything.
+# Rotating a secret in place is not a small act: POSTGRES_PASSWORD locks the
+# database out of itself, PUK_KEK makes every escrowed PUK undecryptable, and
+# neither failure says so.
+ensure() {
+    local key="$1" value="$2"
+
+    if grep -q "^$key=" .env 2>/dev/null; then
+        return
+    fi
+
+    printf '%s=%s\n' "$key" "$value" >> .env
+    note "$key generated"
+}
+
+ensure POSTGRES_DB blinky
+ensure POSTGRES_USER blinky
+ensure POSTGRES_PASSWORD "$(secret 24)"
+
+# What an agent presents once, to get an identity it then uses instead.
+ensure BOOTSTRAP_TOKEN "$(secret 24)"
+
+# What the console and any operator tooling presents on every call.
+ensure OPERATOR_TOKEN "$(secret 24)"
+
+# The CA's PKCS#12 password. Not a person's password: nothing types it.
+ensure CA_PASSWORD "$(secret 24)"
+
+# The key that encrypts every escrowed PUK. Exactly 32 bytes, base64, because
+# it is an AES-256 key rather than a passphrase - and if this is ever lost,
+# every escrowed PUK is lost with it.
+ensure PUK_KEK "$(openssl rand -base64 32)"
+
+# The address written into every certificate as its distribution point. Has to
+# be one a relying party resolves, over HTTP - see CaPublication.
+ensure CA_PUBLIC_URL "http://$HOSTNAME_FQDN"
+
+ensure CRL_VALIDITY_HOURS 8
+ensure CRL_REFRESH_HOURS 2
+
+chown root:root .env
+chmod 600 .env
+
+note "$(grep -c '=' .env) values in .env, readable by root only"
+
+# ------------------------------------------------------------------- 3. ca
+
+say "3/6  certificate authority"
+
+ca_password="$(grep '^CA_PASSWORD=' .env | cut -d= -f2-)"
+public_url="$(grep '^CA_PUBLIC_URL=' .env | cut -d= -f2-)"
+
+if [[ -n "$IMPORT_P12" ]]; then
+    [[ -f "$IMPORT_P12" ]] || { echo "No such file: $IMPORT_P12" >&2; exit 2; }
+    [[ -n "$IMPORT_ANCHOR" && -f "$IMPORT_ANCHOR" ]] || {
+        echo "--issuing-p12 needs --anchor: the root it chains to." >&2
+        exit 2
+    }
+
+    install -d -m 750 ca
+
+    # Re-wrapped with the password from .env, so nothing else has to know the
+    # one the file arrived with - and that one is not written down here.
+    openssl pkcs12 -in "$IMPORT_P12" -passin "pass:$IMPORT_P12_PASSWORD" -nodes 2>/dev/null |
+        openssl pkcs12 -export -out ca/issuing.p12 -passout "pass:$ca_password" 2>/dev/null || {
+            echo "Could not read $IMPORT_P12 - wrong password?" >&2
+            exit 3
+        }
+
+    cp "$IMPORT_ANCHOR" ca/anchor.crt
+    openssl pkcs12 -in ca/issuing.p12 -passin "pass:$ca_password" -nokeys -clcerts \
+        -out ca/issuing.crt 2>/dev/null
+    cat ca/issuing.crt ca/anchor.crt > ca/chain.pem
+
+    openssl verify -CAfile ca/anchor.crt ca/issuing.crt >/dev/null 2>&1 || {
+        echo "The issuing CA does not verify against the anchor given." >&2
+        exit 3
+    }
+
+    note "imported: $(openssl x509 -in ca/issuing.crt -noout -subject | sed 's/^subject=//')"
+    note "anchored: $(openssl x509 -in ca/anchor.crt -noout -subject | sed 's/^subject=//')"
+
+    # No root CRL, and that is correct rather than missing. Blinky signs the
+    # issuing CA's list because it holds that key; the root's list belongs to
+    # whoever holds the root, and publishing an empty one here would be this
+    # installation making a statement about a CA it does not run.
+    #
+    # /pki/root.crl answers 404 in this arrangement, and the imported issuing
+    # certificate should carry a distribution point pointing wherever its own
+    # root publishes.
+    note "root CRL: not ours - the root is external and publishes its own"
+
+    # Not re-signed. Adding extensions to somebody else's intermediate needs
+    # their root key, which is the whole reason it is theirs. If it arrived
+    # without a distribution point that is for them to fix, and worth saying
+    # rather than silently issuing under it.
+    for ext in crlDistributionPoints authorityInfoAccess; do
+        openssl x509 -in ca/issuing.crt -noout -ext "$ext" >/dev/null 2>&1 || cat <<EOF
+
+  The imported issuing CA has no $ext.
+
+  Certificates issued under it will still chain, and Windows will still report
+  CERT_TRUST_REVOCATION_STATUS_UNKNOWN for the CA itself - which refuses a
+  smart-card logon. Ask whoever issued it for one that carries it; this script
+  cannot add it, because that needs their root key.
+
+EOF
+    done
+elif [[ -f ca/issuing.p12 ]]; then
+    note "ca/ exists - keeping it"
+
+    CA_PASSWORD="$ca_password" bash scripts/resign-issuing-ca.sh \
+        --public-url "$public_url" 2>&1 |
+        grep -E "issuing CA (was|now)|root CRL" | sed 's/^/  /' || true
+else
+    CA_PASSWORD="$ca_password" \
+        bash scripts/new-ca.sh --name "$CA_NAME" --topology two-tier >/dev/null
+    note "two-tier CA created: $CA_NAME Root CA, $CA_NAME Issuing CA"
+
+    CA_PASSWORD="$ca_password" bash scripts/resign-issuing-ca.sh \
+        --public-url "$public_url" 2>&1 |
+        grep -E "issuing CA (was|now)|root CRL" | sed 's/^/  /' || true
+fi
+
+if [[ -n "$EDGE_CERT" ]]; then
+    [[ -f "$EDGE_CERT" && -f "$EDGE_KEY" ]] || {
+        echo "--edge-cert needs --edge-key, and both have to exist." >&2
+        exit 2
+    }
+
+    install -d -m 750 certs
+    install -m 640 "$EDGE_CERT" certs/edge.crt
+    install -m 640 "$EDGE_KEY" certs/edge.key
+
+    openssl x509 -in certs/edge.crt -noout -checkend 0 >/dev/null 2>&1 ||
+        note "WARNING: the certificate given has already expired"
+
+    note "edge certificate: $(openssl x509 -in certs/edge.crt -noout -subject | sed 's/^subject=//')"
+elif [[ ! -f certs/edge.crt ]]; then
+    # The name agents and browsers actually use has to be in the certificate,
+    # or every connection fails on the name rather than on the trust - and the
+    # message says the certificate is invalid, which sends people to the CA.
+    bash scripts/dev-certs.sh --host "$HOSTNAME_FQDN" >/dev/null 2>&1 || true
+    note "edge certificates generated for $HOSTNAME_FQDN"
+else
+    if ! openssl x509 -in certs/edge.crt -noout -text 2>/dev/null |
+            grep -q "$HOSTNAME_FQDN"; then
+        cat <<EOF
+
+  certs/edge.crt does not carry $HOSTNAME_FQDN. Agents connecting by that name
+  will refuse it, and the error will be about the certificate rather than about
+  the name. To replace it:
+
+      bash scripts/dev-certs.sh --force --host $HOSTNAME_FQDN
+
+EOF
+    fi
+fi
+
+# ----------------------------------------------------------- 4. permissions
+
+say "4/6  who can read what"
+
+install -d -o "$BLINKY_UID" -g "$BLINKY_GID" -m 755 pki
+
+# The containers read the CA through a read-only mount. They need the issuing
+# key to sign with and the certificates to publish; they do not need the root
+# key, and a two-tier CA whose root key is readable by an online service is a
+# single-tier CA with extra steps.
+chown root:root ca
+chmod 750 ca
+
+for f in anchor.crt chain.pem issuing.crt issuing.p12 root.crl; do
+    [[ -f "ca/$f" ]] || continue
+    chown "root:$BLINKY_GID" "ca/$f"
+    chmod 640 "ca/$f"
+done
+
+chgrp "$BLINKY_GID" ca
+
+for f in root.key anchor.srl issuing.key; do
+    [[ -f "ca/$f" ]] || continue
+    chown root:root "ca/$f"
+    chmod 600 "ca/$f"
+done
+
+note "ca/     issuing material readable by blinky, root key not"
+note "pki/    writable by blinky - the published revocation list lives here"
+
+if [[ -d certs ]]; then
+    chown -R "root:$BLINKY_GID" certs
+    chmod 750 certs
+    chmod 640 certs/* 2>/dev/null || true
+    note "certs/  readable by blinky"
+fi
+
+# --------------------------------------------------------------- 5. the app
+
+if [[ $SKIP_UP -eq 1 ]]; then
+    say "5/6  skipped (--no-start)"
+else
+    say "5/6  starting"
+
+    docker compose up -d --build 2>&1 | grep -E "Started|Error" | sed 's/^/  /' || true
+fi
+
+# ----------------------------------------------------------------- 6. check
+
+say "6/6  checking"
+
+ok=0
+fail=0
+
+check() {
+    local what="$1" got="$2" want="$3"
+
+    if [[ "$got" == "$want" ]]; then
+        printf '  ok    %-46s %s\n' "$what" "$got"
+        ok=$((ok + 1))
+    else
+        printf '  FAIL  %-46s got %s, wanted %s\n' "$what" "$got" "$want"
+        fail=$((fail + 1))
+    fi
+}
+
+if [[ $SKIP_UP -eq 0 ]]; then
+    # Given a moment: the API validates its schema and the worker publishes its
+    # first list before either answers usefully.
+    sleep 20
+
+    check "the console answers" \
+        "$(curl -sk -o /dev/null -w '%{http_code}' "https://localhost:${CONSOLE_PORT:-8443}/health")" 200
+
+    check "the CA certificate is published" \
+        "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PKI_PORT:-80}/pki/issuing.crt")" 200
+
+    check "the revocation list is published" \
+        "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PKI_PORT:-80}/pki/issuing.crl")" 200
+
+    check "the root's list is published" \
+        "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PKI_PORT:-80}/pki/root.crl")" 200
+
+    # The one that catches today's mistake: a container that cannot read the CA
+    # reports "does not hold a CA", which sends somebody to look at the CA.
+    check "the API can read the CA" \
+        "$(docker compose exec -T api sh -c 'head -c1 /etc/blinky/ca/issuing.p12 >/dev/null 2>&1 && echo yes || echo no')" yes
+
+    check "the API cannot read the root key" \
+        "$(docker compose exec -T api sh -c 'head -c1 /etc/blinky/ca/root.key >/dev/null 2>&1 && echo yes || echo no')" no
+
+    check "the worker can write the revocation list" \
+        "$(docker compose exec -T worker sh -c 'test -w /var/lib/blinky/pki && echo yes || echo no')" yes
+fi
+
+echo
+if [[ $fail -eq 0 ]]; then
+    printf '  \033[1mall %d checks passed\033[0m\n' "$ok"
+else
+    printf '  \033[1m%d of %d checks failed\033[0m\n' "$fail" "$((ok + fail))"
+fi
+
+cat <<EOF
+
+Secrets are in $root/.env, readable by root only. To read one:
+
+    sudo grep ^BOOTSTRAP_TOKEN= $root/.env
+
+Nothing else on this machine needs them, and nothing prints them. If one has to
+travel - a bootstrap token to a workstation - it travels once and the agent
+never needs it again.
+
+The certificate authority in use:
+
+    $(if [[ -f ca/root.key ]]; then
+        echo "Blinky's own, both tiers. It signs the issuing CA's revocation"
+        echo "    list and the root's, and publishes both under /pki."
+      else
+        echo "an issuing CA from elsewhere. Blinky signs and publishes its"
+        echo "    revocation list; the root's belongs to whoever holds the root,"
+        echo "    and /pki/root.crl answers 404 here on purpose."
+      fi)
+
+What this did not do, because it needs a domain controller:
+
+    publish the chain into the directory    scripts/blinky-samba-setup.sh
+    give the KDC a certificate              scripts/sign-kdc-cert.sh
+    keep the directory's CRLs current       scripts/publish-crl-to-directory.sh
+
+EOF
+
+[[ $fail -eq 0 ]] || exit 1
