@@ -707,6 +707,62 @@
       "owner": "cloud-ai"
     },
     {
+      "id": "0045a",
+      "phase": 4,
+      "title": "Escrow for the 9D key",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "The encryption key is generated centrally, escrowed and imported onto the card - the opposite of 9A and 9C and correct for the opposite reason. A key that only ever existed on a card makes every message encrypted to it unreadable the moment the card is lost, and rotation does not bring it back. Needs a key import path in Blinky.Piv, which does not exist at all today."
+    },
+    {
+      "id": "0046",
+      "phase": 4,
+      "title": "Tray-resident agent UI and the certificate list",
+      "state": "done",
+      "owner": "cloud-ai",
+      "proof": "The tray lists what is on the token beside what the backend holds, in Polish and English, light and dark. It holds no PC/SC handle and caches no card state between openings. Two defects found by running it that no test caught: a refresh dropped while another was in flight, and a window closed rather than hidden, which WPF will not show again."
+    },
+    {
+      "id": "0047",
+      "phase": 4,
+      "title": "PIN set and change from the workstation, with a complexity policy",
+      "state": "done",
+      "owner": "cloud-ai",
+      "proof": "The policy travels from the backend and is enforced in the service, never only in the window. A refusal for being too simple consumes no card attempt and is worded differently from a mismatch and from 63CN."
+    },
+    {
+      "id": "0048",
+      "phase": 4,
+      "title": "Unblock from the workstation: just-in-time PUK, used once, rotated after",
+      "state": "done",
+      "owner": "cloud-ai",
+      "proof": "The PUK reaches the service and never the UI or the disk; the disclosure is audited and the PUK rotated immediately after use."
+    },
+    {
+      "id": "0048a",
+      "phase": 4,
+      "title": "Unblock over a telephone, for a workstation with no network",
+      "state": "done",
+      "owner": "cloud-ai",
+      "proof": "Verified on hardware over two cycles: the agent shows a challenge, an operator answers it, and both sides derive the replacement PUK without exchanging it. A mistyped code is refused before it reaches the card, with the attempt counter untouched. Unreachable from the logon screen, which is what 0049a is for."
+    },
+    {
+      "id": "0049",
+      "phase": 4,
+      "title": "Renewal requested by the user",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "The new certificate has to be on the card and read back before the old credential is superseded and revoked, with supersedes_id linking them."
+    },
+    {
+      "id": "0049a",
+      "phase": 4,
+      "title": "A recovery tile on the logon screen",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "0048a's challenge and response are reachable before anybody logs in. Today they are not: the tray draws them, the tray lives in a logged-on session, and a user whose PIN is blocked cannot log on - so the mechanism built for that situation is available only to people who do not need it. One tile that authenticates nothing, not a credential provider replacement: replacing the machine's provider means a bug locks everybody out, administrator included."
+    },
+    {
       "id": "0050",
       "phase": 5,
       "title": "Angular shell, nginx proxy, auth",
