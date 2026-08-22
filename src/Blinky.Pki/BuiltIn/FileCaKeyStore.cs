@@ -20,11 +20,20 @@ public sealed class FileCaKeyStore : ICaKeyStore
     {
         this.certificate = certificate;
         Description = $"file: {path}";
+        Custody = KeyCustody.OfFile(path);
     }
 
     public X509Certificate2 Certificate => certificate;
 
     public string Description { get; }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Reported as not production-ready, deliberately and every time. A console
+    /// that looks the same whether the key is in a file or in a device is a
+    /// console that lets a laboratory arrangement reach a fleet unnoticed.
+    /// </remarks>
+    public KeyCustody Custody { get; private set; } = KeyCustody.OfFile("(not opened)");
 
     /// <summary>
     /// Opens a PKCS#12 holding the CA certificate and its key.

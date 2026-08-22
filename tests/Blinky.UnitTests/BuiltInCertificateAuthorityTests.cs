@@ -409,6 +409,8 @@ public sealed class BuiltInCertificateAuthorityTests
 
         public string Description => "test";
 
+        public KeyCustody Custody => KeyCustody.OfFile("test");
+
         public X509SignatureGenerator CreateSignatureGenerator() =>
             certificate.GetRSAPrivateKey() is { } rsa
                 ? X509SignatureGenerator.CreateForRSA(rsa, RSASignaturePadding.Pkcs1)

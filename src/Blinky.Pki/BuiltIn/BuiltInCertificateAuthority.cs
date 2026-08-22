@@ -58,6 +58,9 @@ public sealed class BuiltInCertificateAuthority(
     /// </summary>
     public X509Certificate2 Issuer => keyStore.Certificate;
 
+    /// <summary>Where this CA's signing key lives.</summary>
+    public KeyCustody Custody => keyStore.Custody;
+
     public Task<CaCapabilities> DescribeAsync(CancellationToken ct = default) =>
         Task.FromResult(new CaCapabilities(
             CaBackend.BuiltIn,

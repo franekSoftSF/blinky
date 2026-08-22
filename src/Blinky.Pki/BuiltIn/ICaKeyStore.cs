@@ -21,6 +21,16 @@ public interface ICaKeyStore : IDisposable
     string Description { get; }
 
     /// <summary>
+    /// Where the key lives, in terms a console can render and an operator can
+    /// act on.
+    /// </summary>
+    /// <remarks>
+    /// In the model before there is more than one tier, so that the shape the
+    /// console reads does not change when SoftHSM and a real device arrive.
+    /// </remarks>
+    KeyCustody Custody { get; }
+
+    /// <summary>
     /// Signs a certificate. The generator is what .NET's
     /// <c>CertificateRequest.Create</c> needs, and returning one rather than a
     /// key is what keeps the private key inside the store.

@@ -329,6 +329,145 @@ app.MapPost("/api/credentials/issue",
 // Taking a token out of service, from the console, about a card nobody can
 // necessarily reach - which is the situation that makes it necessary. A card
 // reported lost is not going to be presented for a recycle job.
+// ------------------------------------------------------------- deployment
+//
+// One view of what this installation is made of, for the console's status
+// page: which CA, where its key lives, whether the revocation list is current,
+// whether there is a directory, and whether the worker has been heard from.
+//
+// Assembled here rather than left to the console to infer from five calls,
+// because "is this deployment healthy" is one question and answering it from
+// pieces is how a console ends up saying yes while one piece says no.
+app.MapGet("/api/system/status",
+    async (HttpContext context, Blinky.Pki.ICertificateAuthority ca,
+        Blinky.Directory.IDirectory directory, IConfiguration configuration,
+        Database database, CancellationToken ct) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        var capabilities = await ca.DescribeAsync(ct);
+
+        var built = ca as Blinky.Pki.BuiltIn.BuiltInCertificateAuthority;
+
+        // The CRL is read from the file the worker writes rather than built
+        // here: one producer, so the status reports what is actually published
+        // rather than what this process would publish if asked.
+        var crlPath = configuration["Blinky:Ca:CrlFile"] ?? "/var/lib/blinky/pki/issuing.crl";
+
+        DateTimeOffset? crlThisUpdate = null;
+        DateTimeOffset? crlNextUpdate = null;
+        var crlPublished = File.Exists(crlPath);
+
+        if (crlPublished)
+        {
+            // From the file's timestamp and the configured validity rather than
+            // by parsing the list. The worker writes the file at the moment it
+            // builds the CRL, so the two agree - and a parse that has to reach
+            // into an ASN.1 structure for one field is a thing that breaks
+            // quietly on a runtime upgrade.
+            crlThisUpdate = File.GetLastWriteTimeUtc(crlPath);
+
+            crlNextUpdate = crlThisUpdate.Value.AddHours(
+                configuration.GetValue("Blinky:Ca:CrlValidityHours", 8));
+        }
+
+        using var session = database.OpenSession();
+
+        var agents = session.Query<Agent>().ToList();
+        var lastHeartbeat = agents.Count == 0
+            ? (DateTime?)null
+            : agents.Max(a => a.LastHeartbeatAt);
+
+        return Results.Ok(new
+        {
+            certificateAuthority = new
+            {
+                name = ca.Name,
+                backend = capabilities.Backend.ToString(),
+                topology = built?.Topology.ToString(),
+                issuer = built?.Issuer.Subject,
+                anchor = built?.TrustAnchor.Subject,
+                anchorNotAfter = built?.TrustAnchor.NotAfter,
+
+                // Whether this configuration can produce a certificate a domain
+                // controller will accept for logon. False is not a defect - it
+                // means the configuration cannot, and says so before anybody
+                // enrols.
+                canIssueLogonCredentials = capabilities.CanIssueSmartCardLogon,
+                capabilities.SupportsRevocation,
+                capabilities.PublishesCrl,
+            },
+
+            // Where the signing key lives. Present now, with one tier
+            // implemented, so the shape does not change when SoftHSM and a
+            // device arrive - see docs/04-pki-backends.md.
+            keyCustody = built is null ? null : new
+            {
+                tier = built.Custody.Tier.ToString(),
+                built.Custody.Description,
+                built.Custody.ProductionReady,
+                built.Custody.Detail,
+
+                // What this deployment could move to. Listed rather than
+                // hardcoded in the console, so the console does not have to
+                // know which tiers exist.
+                available = new[]
+                {
+                    new { tier = "File", implemented = true,
+                          detail = "An encrypted PKCS#12 on a volume." },
+                    new { tier = "SoftHsm", implemented = false,
+                          detail = "PKCS#11 against SoftHSM: the interface of a device, on a "
+                                   + "disk. A rehearsal for the real thing rather than a "
+                                   + "protection against somebody with root here." },
+                    new { tier = "Hsm", implemented = false,
+                          detail = "A PKCS#11 device that will not export the key at all." },
+                },
+            },
+
+            revocationList = new
+            {
+                published = crlPublished,
+                path = crlPath,
+                thisUpdate = crlThisUpdate,
+                nextUpdate = crlNextUpdate,
+
+                // The one that matters. An expired CRL does not fail open: it
+                // breaks every chain built under it, and the client reports
+                // that as a problem with trust.
+                expired = crlNextUpdate is { } until && until <= DateTimeOffset.UtcNow,
+                url = configuration["Blinky:Ca:PublicUrl"] is { Length: > 0 } published
+                    ? $"{published.TrimEnd('/')}/pki/issuing.crl"
+                    : null,
+            },
+
+            directory = new
+            {
+                configured = directory is not Blinky.Directory.NoDirectory,
+                source = directory.Source.ToString(),
+                host = configuration["Blinky:Directory:Host"],
+                baseDn = configuration["Blinky:Directory:BaseDn"],
+                boundAs = configuration["Blinky:Directory:BindDn"] is { Length: > 0 } bind
+                    ? bind
+                    : "the container's own Kerberos credentials",
+
+                // Never the password, not even masked. It is not sent here and
+                // must not look as though it could be.
+                writesAnything = false,
+            },
+
+            agents = new
+            {
+                total = agents.Count,
+                enrolled = agents.Count(a => a.State == Blinky.Domain.AgentState.Enrolled),
+                lastHeartbeatAt = lastHeartbeat,
+            },
+        });
+    });
+
 // ---------------------------------------------------------- the directory
 //
 // Gap 5 of doc 11. A smartcard-logon certificate is refused without a resolved
