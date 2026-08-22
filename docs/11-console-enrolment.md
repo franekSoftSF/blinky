@@ -151,3 +151,64 @@ see, chooses `smartcard-logon`, searches for a person, confirms, and watches
 the job reach `Installed` — without a terminal, and without anybody typing a
 SID into a JSON body. A profile that needs a SID against a person who has none
 is refused in the dialog, in words.
+
+## The help-desk screen
+
+Added 22 August 2026, after a screenshot of a commercial CMS's help-desk view.
+The shape is not the interesting part, and getting it wrong costs the console a
+rewrite — so it is copied deliberately.
+
+**`GET /api/tokens/{serial}/helpdesk`** answers the whole screen in one call.
+A person on a telephone should not be assembling it from four requests while
+somebody waits. It returns:
+
+- `cardholder` — who holds it, or `null`. Null rather than an empty person.
+- `device` — serial, state, firmware, form factor, attestation thumbprint,
+  when it was last seen, and `manageable`: false once the management key is
+  `Lost`, because every write needs it and the console should grey the actions
+  out rather than offer ones that fail at the card.
+- `pin`, `puk`, `biometric` — each with its state and its retries left, the way
+  a card holds them: applications with policies, not properties of the device.
+  `puk.unblockable` is false when the PUK is itself blocked, deleted or absent.
+- `slots` — what is physically in each one.
+- `credentials` — serial, subject, issuer, validity, revocation, and `expired`
+  worked out here rather than in a browser from two dates and a clock nobody
+  trusts.
+
+**`POST /api/credentials/{id}/suspend`** puts one credential on hold. Distinct
+from blocking the token: a card with two credentials can have one suspended
+while the other keeps working, which is what "suspend this application" means
+on that screen. Hold is the only revocation reason X.509 allows to be taken
+back, which is what makes this reversible and the rest of the actions
+permanent — the response says `reversible` rather than leaving it to be
+discovered.
+
+### The actions on that screen, and where they are
+
+| On the screen | Endpoint |
+|---|---|
+| Terminate | `POST /api/tokens/{serial}/block` with `Terminated` |
+| Hold | the same, with `Suspended` — and `unblock` lifts it |
+| Suspend (one application) | `POST /api/credentials/{id}/suspend` |
+| Revoke (one application) | `POST /api/credentials/{id}/revoke` |
+| Create Unlock Request | `POST /api/tokens/{serial}/puk/checkout`, or `offline-unblock` for a workstation with no network |
+| Replace, Request Re-Issuance | `POST /api/jobs/enrol` with a new `reason` |
+| Request Applications Update | `POST /api/jobs/inventory` |
+
+### Two that are deliberately missing
+
+**View Certificate.** The database holds the serial number, subject, issuer and
+validity — not the certificate. Nothing stored it, because until now nothing
+needed it. Showing one means either keeping the issued certificate (a column, a
+migration, and the honest answer) or fetching it from the card through the
+agent, which needs the card to be present to look at a record. The first is
+right and is not done yet.
+
+**Get Initial PIN.** Not missing by accident and not coming. The commercial
+product generates the first PIN centrally and shows it to a help desk, which
+means it existed on a server, in a database, and on somebody's screen. This
+project's rule is older than this screen: a PIN is typed by the person who owns
+it, into a window the service cannot draw, and is never stored, never logged
+and never carried in a job. A card is issued with the PIN unset and the holder
+sets it; if that is unacceptable for some deployment, the thing to change is
+the deployment.

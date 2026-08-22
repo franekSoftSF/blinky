@@ -300,6 +300,159 @@ app.MapPost("/api/credentials/issue",
 // Taking a token out of service, from the console, about a card nobody can
 // necessarily reach - which is the situation that makes it necessary. A card
 // reported lost is not going to be presented for a recycle job.
+// Everything a help desk needs about one token, in one call: who holds it,
+// what state it is in, and what is on it - a person on a telephone should not
+// be assembling that from four requests while somebody waits.
+//
+// Shaped after what a commercial CMS puts on that screen, because the shape is
+// not the interesting part and getting it wrong costs the console a rewrite.
+app.MapGet("/api/tokens/{serial:long}/helpdesk",
+    (long serial, HttpContext context, Database database) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        using var session = database.OpenSession();
+
+        var token = session.Query<Token>().SingleOrDefault(t => t.Serial == serial);
+        if (token is null)
+        {
+            return Results.NotFound(new { error = $"no token with serial {serial}" });
+        }
+
+        var slots = session.Query<Slot>()
+            .Where(s => s.Token.Serial == serial)
+            .ToList();
+
+        var credentials = session.Query<Credential>()
+            .Where(c => c.Token.Serial == serial)
+            .ToList()
+            .OrderBy(c => c.SlotId)
+            .ThenByDescending(c => c.CreatedAt)
+            .ToList();
+
+        var holder = token.Cardholder;
+
+        return Results.Ok(new
+        {
+            // Who it belongs to. Null until somebody is enrolled onto it, and
+            // said as null rather than as an empty person.
+            cardholder = holder is null ? null : new
+            {
+                holder.Id,
+                holder.DisplayName,
+                holder.Upn,
+                holder.ObjectSid,
+                holder.DistinguishedName,
+                source = holder.DirectorySource.ToString(),
+                state = holder.State.ToString(),
+            },
+
+            device = new
+            {
+                token.Serial,
+                state = token.State.ToString(),
+                token.FirmwareVersion,
+                formFactor = token.FormFactor,
+                token.AttestationThumbprint,
+                token.LastSeenAt,
+
+                // What can and cannot be done to it, and why - so the console
+                // greys out an action rather than offering one that fails.
+                managementKeyState = token.ManagementKeyState.ToString(),
+                manageable = token.ManagementKeyState is not Blinky.Domain.ManagementKeyState.Lost,
+            },
+
+            // The card's own applications, in the order a person reads them.
+            // The PIN is one, exactly as it is on a card: a thing with a policy
+            // and a retry count rather than a property of the device.
+            pin = new
+            {
+                state = token.PinState.ToString(),
+                retriesLeft = token.PinRetriesLeft,
+                policy = PinComplexityPolicy.Default,
+            },
+
+            puk = new
+            {
+                state = token.PukState.ToString(),
+                retriesLeft = token.PukRetriesLeft,
+
+                // Whether an unblock is even possible. A PUK that is itself
+                // blocked, deleted, or never existed is not a route back, and
+                // offering the action is worse than saying so - the console
+                // should grey it out rather than fail at the card.
+                unblockable = token.PukState
+                    is Blinky.Domain.CredentialSecretState.Default
+                    or Blinky.Domain.CredentialSecretState.Set,
+            },
+
+            biometric = new
+            {
+                state = token.BiometricState.ToString(),
+                attemptsLeft = token.BiometricAttemptsLeft,
+            },
+
+            slots = slots.Select(s => new
+            {
+                s.SlotId,
+                state = s.State.ToString(),
+                s.KeyAlgorithm,
+                s.PinPolicy,
+                s.TouchPolicy,
+                credentialId = s.Credential?.Id,
+            }),
+
+            credentials = credentials.Select(c => new
+            {
+                c.Id,
+                c.SlotId,
+                state = c.State.ToString(),
+                c.SerialNumber,
+                c.SubjectDn,
+                c.IssuerDn,
+                c.NotBefore,
+                c.NotAfter,
+                c.RevokedAt,
+                c.RevocationReason,
+
+                // Said here rather than worked out in the browser from two
+                // dates and a clock nobody trusts.
+                expired = c.NotAfter is { } until && until <= DateTime.UtcNow,
+                supersedes = c.Supersedes?.Id,
+            }),
+        });
+    });
+
+// One credential put on hold, and taken off it. Distinct from revoking the
+// whole token: a card with two credentials on it can have one suspended while
+// the other keeps working, which is what "suspend this application" means on a
+// help-desk screen.
+app.MapPost("/api/credentials/{id:guid}/suspend",
+    async (Guid id, HttpContext context, CredentialIssuanceService credentials,
+        CancellationToken ct) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        // Hold, and only hold. It is the one revocation reason X.509 allows to
+        // be taken back, which is what makes this reversible and everything
+        // else on this screen permanent.
+        var suspended = await credentials.RevokeAsync(id,
+            Blinky.Pki.X509RevocationReason.CertificateHold, "suspended by an operator", ct);
+
+        return suspended
+            ? Results.Ok(new { id, state = "Revoked", reason = "CertificateHold", reversible = true })
+            : Results.Json(new { error = "no such credential, or it is already revoked" },
+                statusCode: 404);
+    });
+
 app.MapPost("/api/tokens/{serial:long}/block",
     async (long serial, BlockTokenRequest request, HttpContext context,
         CredentialIssuanceService credentials, CancellationToken ct) =>
