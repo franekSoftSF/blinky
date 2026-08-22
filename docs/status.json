@@ -594,7 +594,7 @@
       "title": "Enrol on behalf of, for the built-in CA",
       "state": "open",
       "owner": "cloud-ai",
-      "proof": "An operator asking for a certificate in somebody else's name is the normal case, and today the only thing between that request and a certificate asserting a stranger's identity is a shared token in a header. ADCS answers this with an enrolment agent's signature on the request, which 0030 uses; the built-in CA has no equivalent. Depends on 0053a, because an enrolment agent is a certificate."
+      "proof": "Essential. An operator asking for a certificate in somebody else's name is the normal case, and today the only thing between that request and a certificate asserting a stranger's identity is a shared token in a header - with a record of who asked that the same token could have written. ADCS answers this with an enrolment agent's signature on the request, which 0030 uses; the built-in CA has no equivalent. Buildable before 0053a and worth less until it lands: the format, the signature check and the EKU rule can exist now, but naming which operator asked waits for operators to hold certificates."
     },
     {
       "id": "0024",
