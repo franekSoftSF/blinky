@@ -2,30 +2,106 @@
   <aside class="sidebar" [class.open]="menuOpen()">
     <a class="brand" routerLink="/" (click)="menuOpen.set(false)">
       <img src="/blinky-server.png" alt="" />
-      <span><strong>Blinky CMS</strong><small>{{ i18n.t('credentialConsole') }}</small></span>
+      <span
+        ><strong>Blinky CMS</strong><small>{{ i18n.t('credentialConsole') }}</small></span
+      >
     </a>
     <nav aria-label="Nawigacja główna">
       @for (item of navigation(); track item.path) {
-        <a [routerLink]="item.path" routerLinkActive="active"
-           [routerLinkActiveOptions]="{ exact: item.path === '/' }" (click)="menuOpen.set(false)">
-          <span class="nav-icon" aria-hidden="true">{{ item.icon }}</span>{{ item.label }}
+        <a
+          [routerLink]="item.path"
+          routerLinkActive="active"
+          [routerLinkActiveOptions]="{ exact: item.path === '/' }"
+          (click)="menuOpen.set(false)"
+        >
+          <span class="nav-icon" aria-hidden="true">{{ item.icon }}</span
+          >{{ item.label }}
         </a>
       }
+      <div class="nav-group" aria-label="{{ i18n.t('administration') }}">
+        <button
+          class="nav-group-toggle"
+          type="button"
+          [attr.aria-expanded]="administrationOpen()"
+          aria-controls="administration-menu"
+          (click)="administrationOpen.update((value) => !value)"
+        >
+          <span>{{ i18n.t('administration') }}</span
+          ><span class="group-chevron" aria-hidden="true">⌄</span>
+        </button>
+        @if (administrationOpen()) {
+          <div id="administration-menu" class="nav-group-items">
+            @for (item of administration(); track item.path) {
+              <a
+                class="subnav-link"
+                [routerLink]="item.path"
+                routerLinkActive="active"
+                (click)="menuOpen.set(false)"
+              >
+                <span class="nav-icon" aria-hidden="true">{{ item.icon }}</span
+                >{{ item.label }}
+              </a>
+            }
+          </div>
+        }
+      </div>
     </nav>
     <div class="sidebar-footer">
       <span class="status-dot" [class.offline]="!apiOnline()"></span>
-      <span><strong>{{ apiOnline() ? i18n.t('apiOnline') : i18n.t('apiOffline') }}</strong><small>{{ environment() }}</small></span>
+      <span
+        ><strong>{{ apiOnline() ? i18n.t('apiOnline') : i18n.t('apiOffline') }}</strong
+        ><small>{{ environment() }}</small></span
+      >
     </div>
   </aside>
   <section class="workspace">
     <header class="topbar">
-      <button class="icon-button menu" type="button" aria-label="Otwórz menu" (click)="menuOpen.update(v => !v)">☰</button>
-      <div class="page-title"><span>{{ section() }}</span><small>{{ i18n.t('subtitle') }}</small></div>
+      <button
+        class="icon-button menu"
+        type="button"
+        aria-label="Otwórz menu"
+        (click)="menuOpen.update((v) => !v)"
+      >
+        ☰
+      </button>
+      <div class="page-title">
+        <span>{{ section() }}</span
+        ><small>{{ i18n.t('subtitle') }}</small>
+      </div>
       <div class="top-actions">
-        <button class="icon-button" type="button" (click)="theme.toggle()" [attr.aria-label]="theme.current() === 'dark' ? i18n.t('lightTheme') : i18n.t('darkTheme')">{{ theme.current() === 'dark' ? '☀' : '☾' }}</button>
-        <button class="icon-button language" type="button" (click)="i18n.toggle()" [attr.aria-label]="i18n.t('language')">{{ i18n.language() === 'pl' ? 'EN' : 'PL' }}</button>
-        <button class="icon-button" type="button" [attr.aria-label]="i18n.t('refresh')" (click)="refresh()">↻</button>
-        <div class="operator"><span>OP</span><div><strong>{{ i18n.t('operator') }}</strong><small>{{ i18n.t('administrator') }}</small></div></div>
+        <button
+          class="icon-button"
+          type="button"
+          (click)="theme.toggle()"
+          [attr.aria-label]="
+            theme.current() === 'dark' ? i18n.t('lightTheme') : i18n.t('darkTheme')
+          "
+        >
+          {{ theme.current() === 'dark' ? '☀' : '☾' }}
+        </button>
+        <button
+          class="icon-button language"
+          type="button"
+          (click)="i18n.toggle()"
+          [attr.aria-label]="i18n.t('language')"
+        >
+          {{ i18n.language() === 'pl' ? 'EN' : 'PL' }}
+        </button>
+        <button
+          class="icon-button"
+          type="button"
+          [attr.aria-label]="i18n.t('refresh')"
+          (click)="refresh()"
+        >
+          ↻
+        </button>
+        <div class="operator">
+          <span>OP</span>
+          <div>
+            <strong>{{ i18n.t('operator') }}</strong
+            ><small>{{ i18n.t('administrator') }}</small>
+          </div>
+        </div>
       </div>
     </header>
     <main><router-outlet /></main>

@@ -35,6 +35,7 @@
               "src/actions.scss",
               "src/theme.scss",
               "src/pages.scss",
+              "src/settings.scss",
               "src/refresh-action.scss"
             ]
           },
