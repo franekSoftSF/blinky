@@ -5,7 +5,9 @@
 #     sudo bash scripts/install-server.sh
 #     sudo bash scripts/install-server.sh --hostname by-ca-cms.blinky.lab
 #
-#     sudo bash scripts/install-server.sh #         --issuing-p12 issuing.p12 --anchor corporate-root.crt #         --edge-cert wildcard.crt --edge-key wildcard.key
+#     sudo bash scripts/install-server.sh \
+#         --issuing-p12 issuing.p12 --anchor corporate-root.crt \
+#         --edge-cert wildcard.crt --edge-key wildcard.key
 #
 # Creates the service account, generates every secret, sets up the CA, starts
 # the stack and checks it. Idempotent: run it again and it changes what is
