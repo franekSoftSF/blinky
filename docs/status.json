@@ -589,6 +589,14 @@
       "proof": "Proved on two tokens: mutual management-key authentication with AES-192 and 3DES, key generated on card, attestation verified, card signed its own request"
     },
     {
+      "id": "0023a",
+      "phase": 2,
+      "title": "Enrol on behalf of, for the built-in CA",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "An operator asking for a certificate in somebody else's name is the normal case, and today the only thing between that request and a certificate asserting a stranger's identity is a shared token in a header. ADCS answers this with an enrolment agent's signature on the request, which 0030 uses; the built-in CA has no equivalent. Depends on 0053a, because an enrolment agent is a certificate."
+    },
+    {
       "id": "0024",
       "phase": 2,
       "title": "Certificate write-back, Issued to Installed",
@@ -797,9 +805,50 @@
     {
       "id": "0053",
       "phase": 5,
-      "title": "RBAC",
+      "title": "Who an operator is, and what they may do",
       "state": "open",
-      "owner": "codex"
+      "owner": "codex",
+      "proof": "Five patches. The shared X-Blinky-Operator token is one secret for everybody: the audit trail cannot say who revoked a credential, there are no roles, nothing expires, and it leaks. It stays while the lab is being tested and goes when 0053e lands."
+    },
+    {
+      "id": "0053a",
+      "phase": 5,
+      "title": "Operator authentication by certificate",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "mTLS on the console listener against the CA that issues user certificates, not the agent CA - two populations, two anchors. The operator's identity arrives in its own header: X-Client-Verify and X-Client-Cert stay blanked on 8443, because the smoke test checks that a browser cannot forge an agent identity and passing them through would undo it."
+    },
+    {
+      "id": "0053b",
+      "phase": 5,
+      "title": "A session that can be ended",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "A JWT cannot be revoked, which for an administrative console is the wrong trade. A server-side session gives log-out-everywhere, an accurate answer to who is signed in, and a way to cut somebody off the moment their card reaches a revocation list."
+    },
+    {
+      "id": "0053c",
+      "phase": 5,
+      "title": "Roles",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "operator, auditor, administrator. From directory group membership where there is a directory - the LDAP client already reads it and needs nothing but read - and from a local table where there is not."
+    },
+    {
+      "id": "0053d",
+      "phase": 5,
+      "title": "The first super-admin, and the way back in",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Bound by the public key's thumbprint, the same strong binding demanded of certificate mappings in 0035. The bootstrap path closes after first use. And a break-glass needing physical access to the server: without one a lost super-admin card locks everybody out of the console, which is the blast radius 0049a refuses for the logon screen."
+    },
+    {
+      "id": "0053e",
+      "phase": 5,
+      "title": "Named service credentials, and the shared token retired",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "One credential per caller, so the audit trail says which script acted rather than \"an operator\". The shared token goes here and not before: fifteen call sites and every script in scripts/ use it today."
     },
     {
       "id": "0054",
@@ -837,6 +886,14 @@
       "title": "Documentation pass and screenshots",
       "state": "open",
       "owner": "cloud-ai"
+    },
+    {
+      "id": "0064",
+      "phase": 6,
+      "title": "The agent CA belongs to the deployment, and revocation is enforced at the edge",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "dev-certs.sh writes the agent CA unencrypted next to the certificates, which is right for a laptop and must never reach a customer. And a revocation list for it: an agent whose state is not Enrolled is already refused by AgentAuthenticationMiddleware - that is the defence and it works - but nothing checks a CRL at the TLS layer, so a withdrawn certificate still completes a handshake before being turned away."
     }
   ],
   "notVerified": [

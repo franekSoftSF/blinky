@@ -63,6 +63,7 @@ back at its factory state.
 | 0021 | Built-in CA: generation script, issuing CA, `file` and `softhsm` key tiers | `scripts/new-ca.sh` produces a CA; the stack starts with an issuing CA under SoftHSM; `file` refuses to start without the explicit opt-in |
 | 0022 | Certificate profiles incl. smart-card logon extensions and the SID extension | Issued certificate contains Client Auth + Smart Card Logon EKUs, UPN SAN and `1.3.6.1.4.1.311.25.2`, verified by `certutil -dump` |
 | 0023 | Key generation, on-card CSR signing, attestation-gated submission | The PKCS#10 verifies against the attested public key; a CSR whose key does not match its attestation is rejected server-side |
+| 0023a | Enrol on behalf of, for the built-in CA | An operator asking for a certificate in somebody else's name is the normal case, not an exception, and today the only thing standing between that request and a certificate asserting a stranger's identity is a shared token in a header. ADCS has an answer and 0030 uses it: the request carries an **enrolment agent's signature**, so the CA enforces who was allowed to ask and the audit trail is cryptographic rather than a log line. The built-in CA has no equivalent. Give it one — a request signed by an identified enrolment agent, refused when the signature is missing, from a certificate that says it may do this (`1.3.6.1.4.1.311.20.2.1`). Depends on 0053a: an enrolment agent is a certificate, and operators do not have certificates until then. The agent runs the ceremony on the cardholder's machine and never becomes the requester |
 | 0024 | Certificate write-back, `Issued`→`Installed`, Windows store refresh | Certificate appears in the user's personal store without unplugging the token |
 | 0025 | Personalisation: management-key diversification, PUK escrow, PIN policy | A factory token ends the job with `mgmt_key_state=Diversified`, an escrowed PUK, and a user-set PIN. Issuance onto a token still holding the default key is refused with that reason. A Bio token personalises with `puk_state=NotApplicable` and no escrow step; a non-Bio token with a deleted PUK is refused unless `AllowUnrecoverableTokens` is set |
 | 0026 | Job engine: leases, watchdog, `AwaitingUser`, per-step results | Killing the agent mid-job returns the job to `Pending` after the lease expires; a touch-policy job does not get reaped while waiting for a finger |
@@ -112,7 +113,12 @@ the profile's CA instance differing.
 | 0050 | Angular shell, nginx `/api` proxy, auth | Same bundle runs in dev and compose with no rebuild |
 | 0051 | Token and cardholder inventory, search, detail | Every state in [02](02-data-model.md) is visible and explained in the UI, including `Unknown` and `Stale` |
 | 0052 | Enrolment, renewal, revocation, unblock from the console | Each action creates a job and streams its per-step progress. Recycle landed; enrolment is blocked on the API rather than on the page - the console cannot see profiles, cannot see cardholders, and cannot see why a job failed. Spelled out in [11](11-console-enrolment.md) |
-| 0053 | RBAC: operator, auditor, administrator | An auditor cannot issue; a PUK disclosure requires the operator role; both are tested |
+| 0053 | Who an operator is, and what they may do | Five patches. The shared `X-Blinky-Operator` token is one secret for everybody: the audit trail cannot say *who* revoked a credential, there are no roles, nothing expires, and it leaks — into shell history, onto a memory stick, into a chat window. It stays while the lab is being tested and goes when 0053e lands |
+| 0053a | Operator authentication by certificate | mTLS on the console listener, against the CA that issues user certificates rather than the agent CA — two populations, two anchors. **The operator's identity arrives in its own header.** `X-Client-Verify` and `X-Client-Cert` stay blanked on 8443 exactly as they are today, because the smoke test checks that a browser cannot forge an agent identity and passing them through would undo it. A system for managing smart cards whose operators sign in with smart cards is the only honest arrangement |
+| 0053b | A session that can be ended | A JWT cannot be revoked, which for an administrative console is the wrong trade: a server-side session gives "log out everywhere", an accurate answer to "who is signed in now", and a way to cut somebody off the moment their card reaches a revocation list. If a JWT, then fifteen minutes, refreshed against the certificate, with the CRL checked at each refresh — otherwise a revoked card keeps working until the token expires |
+| 0053c | Roles | operator, auditor, administrator. From directory group membership where there is a directory — the LDAP client already reads it and needs nothing but read — and from a local table where there is not. An auditor cannot issue; a PUK disclosure needs the operator role; both are tested |
+| 0053d | The first super-admin, and the way back in | Bound by the public key's thumbprint, not by a name: the same strong binding demanded of certificate mappings in 0035. Minted from Blinky's own PKI, or recorded by thumbprint when the certificate comes from an ADCS nobody here controls. The bootstrap path closes after first use. **And a break-glass that needs physical access to the server** — a command on the host that adds a thumbprint. Without one, a lost super-admin card locks everybody out of the console, which is the same blast radius that 0049a refuses for the logon screen |
+| 0053e | Named service credentials, and the shared token retired | Scripts and the CRL publisher need to authenticate too, and giving them the human path would mean a card in a server. Named credentials, one per caller, so the audit trail says "the revocation list publisher" rather than "an operator". The shared token is removed here and not before: fifteen call sites and every script in `scripts/` use it today |
 | 0054 | Audit browser | Every state change in a credential's life is reconstructable from the audit view alone |
 
 ## Phase 6 — Ship it
@@ -123,13 +129,44 @@ the profile's CA instance differing.
 | 0061 | `blinky-samba-setup` | Publishes the CA into a fresh Samba4 provision, issues the KDC PKINIT certificate, prints what it changed |
 | 0062 | Production compose profile | Real TLS, PKCS#11 tier, no default credentials, health checks, documented backup of the HSM and database |
 | 0063 | Documentation pass and screenshots | A stranger can go from clone to smart-card logon using only the repository |
+| 0064 | The agent CA belongs to the deployment, and revocation is enforced at the edge | `scripts/dev-certs.sh` writes the agent CA unencrypted next to the certificates, which is right for a laptop and must never reach a customer. `install-server.sh` mints it, or takes one that already exists. **And a revocation list for it**: an agent whose state is not `Enrolled` is already refused by [the middleware](../src/Blinky.Api/Security/AgentAuthenticationMiddleware.cs) — that is the defence and it works today — but nothing checks a CRL at the TLS layer, so a withdrawn certificate still completes a handshake before being turned away. `ssl_crl` on the agent listener, fed by the same publisher as everything else, closes that and makes the certificate worthless to anything else that trusts the same CA |
 
 ## Later
 
-Named so they are not mistaken for oversights: OCSP responder, Windows
-credential provider for logon-screen PIN reset (liftable from CredLoop),
-SCP03/SCP11 secure channel, dual control for privileged profiles, hash-linked
-audit chain, non-Yubico token support.
+Named so they are not mistaken for oversights: OCSP responder, SCP03/SCP11
+secure channel, dual control for privileged profiles, hash-linked audit chain,
+non-Yubico token support. The Windows credential provider has moved up to 0049a
+now that there is a reason for it.
+
+### FIDO2, and why it is three tasks rather than one
+
+A YubiKey runs PIV and FIDO2 as **separate applications, with separate PINs and
+separate resets**. `ykman piv reset` does not touch FIDO and the reverse is
+equally true — so a CMS that manages only PIV will tell an operator a returned
+key is clean while it still holds somebody's passkeys. That alone is an
+argument for the first two of these, before any identity provider is involved.
+
+They are listed apart because FIDO is not an extension of what exists: PIV
+speaks APDUs over PC/SC, CTAP2 speaks its own protocol over HID. The agent, the
+job engine, the inventory model and the console all carry over. The transport
+and everything about how a credential comes into being do not.
+
+1. **See it.** Read the FIDO application: whether a PIN is set, how many
+   attempts remain, how many discoverable credentials there are and which
+   relying parties they belong to. Reuses the sweep and the console, and closes
+   the "is this returned key actually empty" question.
+2. **Control it.** Set and change the FIDO PIN; reset the FIDO application when
+   a key is returned or reassigned. Real lifecycle value that needs no identity
+   provider at all, and the half most likely to be wanted first.
+3. **Provision it.** Here the answer stops being symmetric and the honest
+   version has to be said out loud. A WebAuthn credential is created by the
+   authenticator in a ceremony with the relying party — a CMS cannot mint one
+   server-side and write it to a slot the way it writes a certificate. Entra ID
+   has a provisioning API for exactly this case, which needs enterprise
+   attestation and keys that support it. Okta's equivalent is narrower and may
+   come down to a guided browser ceremony rather than server-side
+   provisioning. So this task is per-provider, and step 3 for one provider
+   proves nothing about the next.
 
 ## Open questions
 
