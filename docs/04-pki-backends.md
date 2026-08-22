@@ -332,3 +332,71 @@ Both are configured at once in a mixed estate: `CaInstance` rows are per-CA, and
 a `CertificateProfile` names the instance it issues from. Nothing prevents slot
 `9A` coming from ADCS while `9D` comes from the built-in CA, and in an
 organisation migrating between the two, that is exactly what happens.
+
+## Writing to the directory — deferred, and why
+
+Patch 0035. Blinky reads the directory and does not write to it. Two things
+would want that to change, and they are not the same request.
+
+### `userCertificate`
+
+Publishing an issued certificate onto the user object. Useful, conventional,
+and not needed for logon: a domain controller validates the certificate the
+card presents, it does not look this attribute up. It is for the things that
+encrypt to somebody — Outlook finding a recipient's certificate, chiefly.
+
+### `altSecurityIdentities`
+
+An explicit mapping from a certificate to an account, instead of relying on the
+UPN inside it. This is the one worth being careful about.
+
+**Only the strong forms**, and this is not a preference:
+
+| Mapping | |
+|---|---|
+| `X509IssuerSerialNumber` | allowed |
+| `X509SKI` | allowed |
+| `X509SHA1PublicKey` | allowed |
+| `X509IssuerSubject` | **refused** |
+| `X509SubjectOnly` | **refused** |
+| `X509RFC822` | **refused** |
+
+The bottom three are what KB5014754 disabled by default. A product that exists
+to make smart-card logon trustworthy has no business writing one back in,
+whatever the deployment asks for.
+
+### It is not the way to put two identities on one card
+
+The obvious use — an administrative account signed into with the ordinary
+user's card — sounds like a mapping and is not one.
+
+The `smartcard-logon` profile embeds the holder's SID in
+`1.3.6.1.4.1.311.25.2`. That extension exists precisely so that A's certificate
+cannot be used to log on as B, and a domain controller validates it when it is
+present. A mapping on the administrative account does not sidestep that
+validation; it collides with it, and the refusal reads as a problem with trust.
+
+**Two certificates, in two slots, each telling the truth about who it is.** No
+mapping, no delegation, nothing to configure — and it fails closed if somebody
+gets it wrong. The cost is a slot and a second PIN prompt, and the ceiling is
+what the minidriver exposes: the inbox Windows one offers `9A`, `9C`, `9D` and
+`9E`, so two or three authenticating certificates on a card. The retired slots
+`82`–`95` need Yubico's own minidriver.
+
+0035 is for the certificate that **cannot** carry the right identity: one from
+a CA nobody here controls, a card honoured across a forest boundary, a
+migration from an existing PKI. There, a mapping is the only route.
+
+### The privilege is the reason this is a separate patch
+
+Reading needs an account that can read. That is easy to ask a directory
+administrator for, easy to reason about, and easy to audit — and it is why
+[the LDAP client](../src/Blinky.Directory/LdapDirectory.cs) is read-only by
+construction rather than by intention.
+
+Writing these two attributes needs write access on user objects. Folding it
+into the same credential would throw away the property that makes the read
+design defensible. So: a second credential, delegation narrowed to one
+organisational unit and those two attributes, an audit entry per write, and
+disabled unless configured — so that turning the feature off means the writes
+are impossible rather than merely not attempted.

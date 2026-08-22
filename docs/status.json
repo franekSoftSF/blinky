@@ -665,6 +665,14 @@
       "owner": "cloud-ai"
     },
     {
+      "id": "0035",
+      "phase": 3,
+      "title": "Writing to the directory: userCertificate and altSecurityIdentities",
+      "state": "deferred",
+      "owner": "cloud-ai",
+      "proof": "Someday, and off by default. Writing needs a second credential with write access to user objects; the read path stays on the account that has none, which is the whole value of the read design - a read-only account is easy to ask for and easy to audit. Only strong mappings: X509IssuerSerialNumber, X509SKI, X509SHA1PublicKey. The weak forms are what KB5014754 disabled and writing one would be this product undoing the protection it exists to enforce. Not the route to a second identity on one card: the smartcard-logon profile embeds the holder's SID, which is the extension that stops A's certificate logging on as B, so a mapping on an administrative account collides with it rather than sidestepping it. Two certificates in two slots need no mapping and no delegation. This is for the certificate that cannot carry the right identity - an external CA, a forest boundary, a migration."
+    },
+    {
       "id": "0040",
       "phase": 4,
       "title": "Expiry scanner and scheduled renewal",
