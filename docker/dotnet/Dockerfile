@@ -13,6 +13,21 @@ FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS final
 ARG ASSEMBLY
 WORKDIR /app
 COPY --from=build /app .
+# LDAP, for the directory the API reads people out of.
+# System.DirectoryServices.Protocols is a thin wrapper over the platform's own
+# client, and on Linux that client is a package rather than something shipped
+# with the runtime. Without it the assembly loads and the first search throws
+# about a missing library, which reads like a bug in this code.
+#
+# The package was renamed between Debian releases, so both names are tried and
+# neither is fatal: an image without it still runs everything that is not the
+# directory.
+RUN apt-get update \
+    && (apt-get install -y --no-install-recommends libldap-2.5-0 \
+        || apt-get install -y --no-install-recommends libldap2 \
+        || true) \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin blinky \
     && chown -R blinky /app
 USER blinky

@@ -212,3 +212,52 @@ it, into a window the service cannot draw, and is never stored, never logged
 and never carried in a job. A card is issued with the PIN unset and the holder
 sets it; if that is unacceptable for some deployment, the thing to change is
 the deployment.
+
+## The directory
+
+Gaps 2 and 5, written 22 August 2026.
+
+**LDAP, not a Windows connector.** Samba4 and Windows AD answer the same LDAP
+with the same attributes for everything read here — display name, account name,
+UPN, `objectSid`, DN — so one implementation serves both and the configured
+`DirectorySource` is a label for the record rather than a branch in the code. A
+Windows-native connector earns its place where LDAP falls short, not because
+the directory happens to run on Windows.
+
+**Read-only, and that is the point.** Nothing writes to the directory.
+Publishing into `userCertificate` or touching `altSecurityIdentities` is a
+different privilege and a different decision — so the account this binds as
+needs nothing but read, which is an easy thing to ask a directory
+administrator for and an easy thing to audit. Leave the bind DN empty to bind
+with Kerberos from the container's own credentials instead: better still,
+because then there is no password anywhere.
+
+```
+GET  /api/directory/users?q=admin
+GET  /api/cardholders?q=admin
+POST /api/cardholders   { "directoryAccount": "admin" }
+POST /api/cardholders   { "displayName": "...", "upn": "...", "objectSid": "..." }
+```
+
+Both search endpoints return **`issuable`** per person: true only when they are
+enabled and hold both a UPN and a SID. The console should grey the choice out
+rather than posting a job the issuance service will refuse — the refusal is
+correct and arrives too far from the click.
+
+`POST /api/cardholders` with a `directoryAccount` takes everything from the
+directory and **ignores** anything else the caller sent, rather than merging:
+half a person from each source is the worst of both. An account that matches
+more than one person is refused rather than resolved — picking the first would
+issue a logon credential to whoever the server happened to return first.
+
+A SID that is typed rather than read is checked at the boundary. Stored, it
+fails at a logon three weeks later, and the message then is about trust rather
+than about a field somebody mistyped.
+
+### Not configured
+
+The endpoints exist and answer `501` with "no directory is configured" rather
+than an empty list. "Nobody matched" and "there is nowhere to look" are
+different answers, and the console should be able to tell an operator which one
+it got. A deployment with no directory is a normal deployment: cardholders are
+entered by hand and `DirectorySource.Local` says so.

@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      LDAP over the platform's own client rather than a third-party library.
+      One protocol answers both directories this project has to speak to -
+      Samba4 and Windows AD are the same wire for everything read here - and
+      the dependency it needs on Linux is libldap, which is a package rather
+      than a supply chain.
+    -->
+    <PackageReference Include="System.DirectoryServices.Protocols" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Blinky.Domain\Blinky.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

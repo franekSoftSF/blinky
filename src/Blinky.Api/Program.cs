@@ -53,6 +53,35 @@ builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
         Blinky.Pki.BuiltIn.CaPublication.FromBaseUrl(
             builder.Configuration["Blinky:Ca:PublicUrl"])));
 
+// The directory, or an honest absence of one. Registered either way so the
+// endpoints exist and answer "there is no directory here" rather than failing
+// to resolve a service - a deployment without one is a normal deployment, with
+// cardholders entered by hand.
+builder.Services.AddSingleton<Blinky.Directory.IDirectory>(_ =>
+{
+    var directoryHost = builder.Configuration["Blinky:Directory:Host"];
+
+    if (string.IsNullOrWhiteSpace(directoryHost))
+    {
+        return new Blinky.Directory.NoDirectory();
+    }
+
+    return new Blinky.Directory.LdapDirectory(new Blinky.Directory.LdapDirectoryOptions(
+        directoryHost,
+        builder.Configuration.GetValue("Blinky:Directory:Port", 389),
+        builder.Configuration["Blinky:Directory:BaseDn"]
+            ?? throw new InvalidOperationException(
+                "Blinky:Directory:BaseDn is required when a directory host is configured. "
+                + "A search with no base searches nothing."),
+        Enum.TryParse<Blinky.Domain.DirectorySource>(
+            builder.Configuration["Blinky:Directory:Source"], true, out var directorySource)
+            ? directorySource
+            : Blinky.Domain.DirectorySource.ActiveDirectory,
+        builder.Configuration["Blinky:Directory:BindDn"],
+        builder.Configuration["Blinky:Directory:BindPassword"],
+        builder.Configuration.GetValue("Blinky:Directory:UseTls", true)));
+});
+
 builder.Services.AddSingleton<CredentialIssuanceService>();
 
 
@@ -300,6 +329,211 @@ app.MapPost("/api/credentials/issue",
 // Taking a token out of service, from the console, about a card nobody can
 // necessarily reach - which is the situation that makes it necessary. A card
 // reported lost is not going to be presented for a recycle job.
+// ---------------------------------------------------------- the directory
+//
+// Gap 5 of doc 11. A smartcard-logon certificate is refused without a resolved
+// objectSid, and that refusal is right: since KB5014754 a domain controller
+// ignores a certificate mapped by name alone. So the SID is read from the
+// directory that will later be asked to honour it, rather than typed by an
+// operator who can only produce a plausible one.
+
+app.MapGet("/api/directory/users",
+    async (string? q, HttpContext context, Blinky.Directory.IDirectory directory,
+        CancellationToken ct) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        if (directory is Blinky.Directory.NoDirectory)
+        {
+            // Said plainly rather than as an empty list. "Nobody matched" and
+            // "there is nowhere to look" are different answers, and a console
+            // should be able to tell an operator which one it got.
+            return Results.Json(new
+            {
+                error = "no directory is configured",
+                detail = "Set Blinky:Directory:Host and BaseDn, or add cardholders by hand.",
+            }, statusCode: 501);
+        }
+
+        if (string.IsNullOrWhiteSpace(q) || q.Trim().Length < 2)
+        {
+            return Results.Json(new { error = "give at least two characters to search for" },
+                statusCode: 400);
+        }
+
+        var found = await directory.SearchAsync(q.Trim(), 20, ct);
+
+        return Results.Ok(new
+        {
+            source = directory.Source.ToString(),
+            users = found.Select(u => new
+            {
+                u.DisplayName,
+                u.SamAccountName,
+                u.Upn,
+                u.ObjectSid,
+                u.DistinguishedName,
+                u.Enabled,
+
+                // Whether this person can be given a logon credential at all,
+                // answered here so the console greys the choice out rather than
+                // posting a job the issuance service will refuse.
+                issuable = u.Enabled && !string.IsNullOrEmpty(u.Upn)
+                           && !string.IsNullOrEmpty(u.ObjectSid),
+            }),
+        });
+    });
+
+// ------------------------------------------------------------ cardholders
+//
+// Gap 2. The entity has existed all along and nothing exposed it, so
+// Job.CardholderId was never set and no credential could be traced to a person
+// afterwards.
+
+app.MapGet("/api/cardholders",
+    (string? q, HttpContext context, Database database) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        using var session = database.OpenSession();
+
+        var people = session.Query<Cardholder>().ToList();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var needle = q.Trim();
+
+            people = people.Where(c =>
+                c.DisplayName.Contains(needle, StringComparison.OrdinalIgnoreCase)
+                || (c.Upn ?? string.Empty).Contains(needle, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        return Results.Ok(people.Take(50).Select(c => new
+        {
+            c.Id,
+            c.DisplayName,
+            c.Upn,
+            c.ObjectSid,
+            c.DistinguishedName,
+            source = c.DirectorySource.ToString(),
+            state = c.State.ToString(),
+            issuable = c.State == Blinky.Domain.CardholderState.Active
+                       && !string.IsNullOrEmpty(c.Upn)
+                       && !string.IsNullOrEmpty(c.ObjectSid),
+        }));
+    });
+
+app.MapPost("/api/cardholders",
+    async (CardholderRequest request, HttpContext context, Database database,
+        Blinky.Directory.IDirectory directory, CancellationToken ct) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        var displayName = request.DisplayName;
+        var upn = request.Upn;
+        var sid = request.ObjectSid;
+        var dn = request.DistinguishedName;
+        var source = Blinky.Domain.DirectorySource.Local;
+
+        // Named in the directory rather than typed out, which is the point.
+        // When an account name is given everything else comes from there, and
+        // anything the caller also sent is ignored rather than merged: half a
+        // person from each source is the worst of both.
+        if (!string.IsNullOrWhiteSpace(request.DirectoryAccount))
+        {
+            var person = await directory.FindAsync(request.DirectoryAccount.Trim(), ct);
+
+            if (person is null)
+            {
+                return Results.Json(new
+                {
+                    error = "that account matched no one, or matched more than one person",
+                    account = request.DirectoryAccount,
+                }, statusCode: 404);
+            }
+
+            displayName = person.DisplayName;
+            upn = person.Upn;
+            sid = person.ObjectSid;
+            dn = person.DistinguishedName;
+            source = directory.Source;
+        }
+
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return Results.Json(new { error = "a cardholder needs a display name" },
+                statusCode: 400);
+        }
+
+        // Checked at the boundary. A malformed SID stored here fails at a logon
+        // three weeks later, which is the worst possible moment to find out,
+        // and the message then is about trust rather than about this field.
+        if (!string.IsNullOrEmpty(sid)
+            && !Blinky.Directory.SecurityIdentifier.LooksValid(sid))
+        {
+            return Results.Json(new
+            {
+                error = "that is not a security identifier",
+                detail = "Expected the S-1-5-21 form. Read it from the directory rather than "
+                         + "typing it: a plausible SID produces a certificate that asserts an "
+                         + "identity nobody issued.",
+            }, statusCode: 400);
+        }
+
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        // One person, once. A second row for the same UPN is a second identity
+        // as far as everything downstream is concerned.
+        if (!string.IsNullOrEmpty(upn)
+            && session.Query<Cardholder>().ToList().Any(c =>
+                string.Equals(c.Upn, upn, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Results.Json(new { error = "that UPN is already a cardholder", upn },
+                statusCode: 409);
+        }
+
+        var createdAt = DateTime.UtcNow;
+
+        var cardholder = new Cardholder
+        {
+            DisplayName = displayName,
+            Upn = upn,
+            ObjectSid = sid,
+            DistinguishedName = dn,
+            DirectorySource = source,
+            State = Blinky.Domain.CardholderState.Active,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+        };
+
+        session.Save(cardholder);
+        transaction.Commit();
+
+        return Results.Ok(new
+        {
+            cardholder.Id,
+            cardholder.DisplayName,
+            cardholder.Upn,
+            cardholder.ObjectSid,
+            source = source.ToString(),
+            issuable = !string.IsNullOrEmpty(upn) && !string.IsNullOrEmpty(sid),
+        });
+    });
+
 // Everything a help desk needs about one token, in one call: who holds it,
 // what state it is in, and what is on it - a person on a telephone should not
 // be assembling that from four requests while somebody waits.
@@ -948,6 +1182,17 @@ internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
 internal sealed record PukRefused(long TokenSerial);
 
 /// <summary>An operator taking a credential back off a token.</summary>
+/// <summary>
+/// A person to issue to. Either named in the directory, which is the point, or
+/// spelled out for a deployment that has none.
+/// </summary>
+internal sealed record CardholderRequest(
+    string? DirectoryAccount = null,
+    string? DisplayName = null,
+    string? Upn = null,
+    string? ObjectSid = null,
+    string? DistinguishedName = null);
+
 /// <summary>An operator taking a token out of service.</summary>
 internal sealed record BlockTokenRequest(string State, string? Comment = null);
 

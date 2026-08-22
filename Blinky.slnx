@@ -8,6 +8,7 @@
     <Project Path="src/Blinky.Domain/Blinky.Domain.csproj" />
     <Project Path="src/Blinky.Infrastructure/Blinky.Infrastructure.csproj" />
     <Project Path="src/Blinky.Piv/Blinky.Piv.csproj" />
+    <Project Path="src/Blinky.Directory/Blinky.Directory.csproj" />
     <Project Path="src/Blinky.Pki/Blinky.Pki.csproj" />
     <Project Path="src/Blinky.Worker/Blinky.Worker.csproj" />
   </Folder>

@@ -39,6 +39,22 @@ services:
       Blinky__AgentCa__KeyPath: /etc/blinky/certs/agent-ca.key
       Blinky__Ca__Directory: /etc/blinky/ca
 
+      # The directory people are read out of. Unset, the endpoints answer
+      # "no directory is configured" and cardholders are entered by hand,
+      # which is a normal way to run this.
+      #
+      # Read-only by design: nothing writes to the directory, so the account
+      # this binds as needs nothing but read. Leave BindDn empty to bind with
+      # Kerberos from the container's own credentials instead, which is better
+      # where it is possible - no password anywhere.
+      Blinky__Directory__Host: ${DIRECTORY_HOST:-}
+      Blinky__Directory__Port: ${DIRECTORY_PORT:-389}
+      Blinky__Directory__BaseDn: ${DIRECTORY_BASE_DN:-}
+      Blinky__Directory__Source: ${DIRECTORY_SOURCE:-Samba4}
+      Blinky__Directory__BindDn: ${DIRECTORY_BIND_DN:-}
+      Blinky__Directory__BindPassword: ${DIRECTORY_BIND_PASSWORD:-}
+      Blinky__Directory__UseTls: ${DIRECTORY_USE_TLS:-true}
+
       # The address written into every certificate as its CRL distribution
       # point and authority information access. Has to be one the relying
       # party can reach - not localhost, not a container name - and HTTP
