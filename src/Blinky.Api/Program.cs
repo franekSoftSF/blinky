@@ -337,6 +337,170 @@ app.MapPost("/api/credentials/issue",
 // directory that will later be asked to honour it, rather than typed by an
 // operator who can only produce a plausible one.
 
+// The button in the settings page. "It does not work" is not a useful answer to
+// somebody who has just filled in six fields, so this says which of them was
+// wrong - the host was unreachable, the bind was refused, the base was not
+// there - and how long it took.
+app.MapPost("/api/directory/test",
+    async (HttpContext context, Blinky.Directory.IDirectory directory, CancellationToken ct) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        var probe = await directory.TestAsync(ct);
+
+        return Results.Ok(new
+        {
+            probe.Succeeded,
+            probe.Reachable,
+            probe.BaseDnFound,
+            probe.BoundAs,
+            probe.Encrypted,
+            probe.Milliseconds,
+            probe.Detail,
+            source = directory.Source.ToString(),
+        });
+    });
+
+// The test that matters more than the connection: take the people who would
+// actually be issued to, and say which of them can be. A directory that binds
+// perfectly and holds nobody with a UPN is a working connection and a failed
+// rollout, and finding that out one enrolment at a time is the slow way.
+app.MapPost("/api/directory/test-resolve",
+    async (ResolveTestRequest request, HttpContext context,
+        Blinky.Directory.IDirectory directory, CancellationToken ct) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        var people = new List<Blinky.Directory.DirectoryUser>();
+        var missing = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(request.Group))
+        {
+            people.AddRange(await directory.MembersOfAsync(request.Group.Trim(), 200, ct));
+        }
+
+        foreach (var account in request.Accounts ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(account))
+            {
+                continue;
+            }
+
+            // Named separately from "found but not issuable". An account that
+            // does not exist and one that exists without a UPN are different
+            // problems with different fixes.
+            if (await directory.FindAsync(account.Trim(), ct) is { } person)
+            {
+                people.Add(person);
+            }
+            else
+            {
+                missing.Add(account.Trim());
+            }
+        }
+
+        var resolved = people.Select(u => new
+        {
+            u.DisplayName,
+            u.SamAccountName,
+            u.Upn,
+            u.ObjectSid,
+            u.Enabled,
+            issuable = u.Enabled && !string.IsNullOrEmpty(u.Upn)
+                       && !string.IsNullOrEmpty(u.ObjectSid),
+
+            // Why not, in the words somebody can act on. A smartcard-logon
+            // certificate is refused without a SID, and that refusal arrives
+            // at issuance unless it is said here first.
+            blockedBy = !u.Enabled ? "the account is disabled"
+                : string.IsNullOrEmpty(u.Upn) ? "no userPrincipalName"
+                : string.IsNullOrEmpty(u.ObjectSid) ? "no objectSid could be read"
+                : null,
+        }).ToList();
+
+        return Results.Ok(new
+        {
+            source = directory.Source.ToString(),
+            found = resolved.Count,
+            issuable = resolved.Count(r => r.issuable),
+            notFound = missing,
+            users = resolved,
+        });
+    });
+
+// Whether the account this binds as could do more than read. Asked of the
+// directory, never attempted: writing something to a real person's account to
+// see whether it sticks is a change nobody asked for, made in order to find
+// something out.
+app.MapPost("/api/directory/test-write-access",
+    async (WriteAccessTestRequest request, HttpContext context,
+        Blinky.Directory.IDirectory directory, CancellationToken ct) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        var subject = request.DistinguishedName;
+
+        // Permissions in a directory are per object, so an account name is
+        // resolved to somebody first rather than the question being asked in
+        // general - there is no answer in general.
+        if (string.IsNullOrWhiteSpace(subject) && !string.IsNullOrWhiteSpace(request.Account))
+        {
+            var person = await directory.FindAsync(request.Account.Trim(), ct);
+
+            if (person?.DistinguishedName is null)
+            {
+                return Results.Json(new
+                {
+                    error = "that account could not be resolved, so there is nobody to ask about",
+                    account = request.Account,
+                }, statusCode: 404);
+            }
+
+            subject = person.DistinguishedName;
+        }
+
+        if (string.IsNullOrWhiteSpace(subject))
+        {
+            return Results.Json(new
+            {
+                error = "give an account or a distinguished name to ask about",
+                detail = "Permissions are per object; there is no answer in general.",
+            }, statusCode: 400);
+        }
+
+        var access = await directory.CanWriteAsync(subject, ct);
+
+        return Results.Ok(new
+        {
+            subject,
+            access.Determined,
+            access.UserCertificate,
+            access.AltSecurityIdentities,
+            access.AnythingExtra,
+            access.Detail,
+
+            // What it would unlock, said here so the console does not have to
+            // know the patch numbers. Nothing writes today - see 0035 - and
+            // this answers whether it could, not whether it does.
+            wouldEnable = access.AnythingExtra
+                ? "Publishing issued certificates, and explicit certificate mappings (0035). "
+                  + "Neither is implemented yet; this only says the account would be allowed."
+                : "Nothing beyond reading, which is all Blinky needs today.",
+        });
+    });
+
 app.MapGet("/api/directory/users",
     async (string? q, HttpContext context, Blinky.Directory.IDirectory directory,
         CancellationToken ct) =>
@@ -1182,6 +1346,16 @@ internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
 internal sealed record PukRefused(long TokenSerial);
 
 /// <summary>An operator taking a credential back off a token.</summary>
+/// <summary>
+/// People a rollout would cover, to be resolved before anybody is issued to.
+/// </summary>
+internal sealed record ResolveTestRequest(string? Group = null, string[]? Accounts = null);
+
+/// <summary>Somebody to ask the directory about, for the permission probe.</summary>
+internal sealed record WriteAccessTestRequest(
+    string? Account = null,
+    string? DistinguishedName = null);
+
 /// <summary>
 /// A person to issue to. Either named in the directory, which is the point, or
 /// spelled out for a deployment that has none.

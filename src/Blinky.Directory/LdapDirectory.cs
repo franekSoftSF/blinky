@@ -82,6 +82,151 @@ public sealed class LdapDirectory(LdapDirectoryOptions options) : IDirectory, ID
         return found.Count == 1 ? found[0] : null;
     }
 
+    public Task<DirectoryProbe> TestAsync(CancellationToken ct = default) =>
+        Task.Run(() =>
+        {
+            var started = System.Diagnostics.Stopwatch.StartNew();
+
+            LdapConnection ldap;
+
+            try
+            {
+                ldap = Connect();
+            }
+            catch (Exception ex)
+            {
+                // Named as specifically as the exception allows. Somebody who
+                // has just filled in six fields deserves to be told which one
+                // is wrong, not that it did not work.
+                return new DirectoryProbe(false, false, null, options.UseTls,
+                    (int)started.ElapsedMilliseconds,
+                    $"Could not connect or bind to {options.Host}:{options.Port}: {ex.Message}");
+            }
+
+            try
+            {
+                // The base itself, one entry, no attributes. Cheap, and it is
+                // the second thing that goes wrong after the bind: a base DN
+                // with a typo binds perfectly and finds nobody, which reads
+                // like an empty directory.
+                var request = new SearchRequest(options.BaseDn, "(objectClass=*)",
+                    SearchScope.Base, "1.1");
+
+                ldap.SendRequest(request);
+            }
+            catch (Exception ex)
+            {
+                return new DirectoryProbe(true, false, options.BindDn, options.UseTls,
+                    (int)started.ElapsedMilliseconds,
+                    $"Bound, but the base '{options.BaseDn}' could not be read: {ex.Message}");
+            }
+
+            var who = string.IsNullOrEmpty(options.BindDn)
+                ? "the container's own Kerberos credentials"
+                : options.BindDn;
+
+            return new DirectoryProbe(true, true, who, options.UseTls,
+                (int)started.ElapsedMilliseconds,
+                $"Bound as {who} and read {options.BaseDn}.");
+        }, ct);
+
+    public Task<IReadOnlyList<DirectoryUser>> MembersOfAsync(string group, int limit = 200,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(group))
+        {
+            return Task.FromResult<IReadOnlyList<DirectoryUser>>([]);
+        }
+
+        var escaped = Escape(group.Trim());
+
+        // memberOf on the people rather than member on the group: it reads the
+        // same set, and it does not have to be paged when a group has more
+        // members than the server will return in one attribute.
+        //
+        // Not recursive. A nested group would need
+        // LDAP_MATCHING_RULE_IN_CHAIN, and a rollout tried against a group
+        // whose real membership is somewhere else is worse than one that says
+        // plainly what it looked at.
+        var filter =
+            $"(&(objectCategory=person)(objectClass=user)"
+            + $"(|(memberOf={escaped})(memberOf=CN={escaped},{options.BaseDn})))";
+
+        return RunAsync(filter, limit, ct);
+    }
+
+    public Task<DirectoryWriteAccess> CanWriteAsync(string subjectDn,
+        CancellationToken ct = default) =>
+        Task.Run(() =>
+        {
+            if (string.IsNullOrWhiteSpace(subjectDn))
+            {
+                return DirectoryWriteAccess.Unknown(
+                    "Permissions are per object, so this needs somebody to ask about.");
+            }
+
+            try
+            {
+                // Constructed by the server, for the principal that is bound,
+                // on that object. Asking is the whole trick: the alternative
+                // is writing something to a real person's account to see
+                // whether it sticks.
+                var request = new SearchRequest(subjectDn, "(objectClass=*)",
+                    SearchScope.Base, "allowedAttributesEffective");
+
+                var response = (SearchResponse)Connect().SendRequest(request);
+
+                if (response.Entries.Count == 0)
+                {
+                    return DirectoryWriteAccess.Unknown($"{subjectDn} could not be read.");
+                }
+
+                var allowed = response.Entries[0].Attributes["allowedAttributesEffective"];
+
+                if (allowed is null || allowed.Count == 0)
+                {
+                    // Either the server does not compute it, or it computed an
+                    // empty set. Both mean the same thing here and neither is
+                    // a "no": reporting one would be a guess wearing an
+                    // answer's clothes.
+                    return DirectoryWriteAccess.Unknown(
+                        "This directory did not report effective permissions, so whether the "
+                        + "account may write cannot be determined without attempting a write "
+                        + "- which this will not do.");
+                }
+
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var value in allowed)
+                {
+                    if (value?.ToString() is { } name)
+                    {
+                        names.Add(name);
+                    }
+                }
+
+                var certificates = names.Contains("userCertificate");
+                var mappings = names.Contains("altSecurityIdentities");
+
+                return new DirectoryWriteAccess(true, certificates, mappings,
+                    (certificates, mappings) switch
+                    {
+                        (true, true) => "This account may write both userCertificate and "
+                                        + "altSecurityIdentities.",
+                        (true, false) => "This account may write userCertificate but not "
+                                         + "altSecurityIdentities.",
+                        (false, true) => "This account may write altSecurityIdentities but not "
+                                         + "userCertificate.",
+                        _ => "This account may read only, which is what Blinky needs today.",
+                    });
+            }
+            catch (Exception ex)
+            {
+                return DirectoryWriteAccess.Unknown(
+                    $"Effective permissions could not be read: {ex.Message}");
+            }
+        }, ct);
+
     private Task<IReadOnlyList<DirectoryUser>> RunAsync(string filter, int limit,
         CancellationToken ct) =>
         Task.Run<IReadOnlyList<DirectoryUser>>(() =>
