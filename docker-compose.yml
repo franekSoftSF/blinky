@@ -55,6 +55,21 @@ services:
       Blinky__Directory__BindPassword: ${DIRECTORY_BIND_PASSWORD:-}
       Blinky__Directory__UseTls: ${DIRECTORY_USE_TLS:-true}
 
+      # What the LDAP client verifies the directory's certificate against.
+      #
+      # On Linux, System.DirectoryServices.Protocols is OpenLDAP underneath,
+      # and OpenLDAP takes its trust from here or from /etc/ldap/ldap.conf -
+      # not from the .NET trust store, and not from any option on the
+      # connection object. Without it, StartTLS against a directory whose
+      # certificate this container cannot verify fails as "The LDAP server is
+      # unavailable": a message about reachability for a question of trust,
+      # returned in twenty milliseconds with the port wide open the whole time.
+      #
+      # Points at the CA this installation already mounts. A directory holding
+      # a certificate from somewhere else needs that anchor mounted and this
+      # pointed at it instead.
+      LDAPTLS_CACERT: ${LDAPTLS_CACERT:-/etc/blinky/ca/chain.pem}
+
       # The address written into every certificate as its CRL distribution
       # point and authority information access. Has to be one the relying
       # party can reach - not localhost, not a container name - and HTTP
