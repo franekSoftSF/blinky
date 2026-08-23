@@ -52,6 +52,11 @@ set -euo pipefail
 BLINKY_UID=10001
 BLINKY_GID=10001
 
+# The uid the edge container runs as. Not ours to choose: it comes from
+# owasp/modsecurity-crs:nginx, and it appears here as a bare number because a
+# number is all a bind mount carries across a container boundary.
+EDGE_GID="${EDGE_GID:-101}"
+
 HOSTNAME_FQDN=""
 CA_NAME="${CA_NAME:-Blinky}"
 IMPORT_P12=""
@@ -421,9 +426,27 @@ note "pki/    writable by blinky - the published revocation list lives here"
 
 if [[ -d certs ]]; then
     chown -R "root:$BLINKY_GID" certs
-    chmod 750 certs
     chmod 640 certs/* 2>/dev/null || true
-    note "certs/  readable by blinky"
+
+    # Traversable but not listable. The edge opens its files by path and never
+    # reads the directory, so nothing here needs to be enumerable.
+    chmod 751 certs
+
+    # The edge is a third-party image - owasp/modsecurity-crs:nginx - and runs
+    # as its own uid, nginx 101, which is neither root nor blinky. It is not
+    # ours to change, so the three files it opens are granted to it by number.
+    #
+    # Without this, nginx fails at startup with "cannot load certificate ...
+    # Permission denied", the whole edge exits, and every check that follows
+    # reports 000 rather than a refusal - so the installation looks like a
+    # network fault instead of a file mode. Seen on BY-CACMS.
+    for f in edge.crt edge.key agent-ca.crt; do
+        [[ -f "certs/$f" ]] || continue
+        chown "root:$EDGE_GID" "certs/$f"
+        chmod 640 "certs/$f"
+    done
+
+    note "certs/  readable by blinky; the edge's three by nginx ($EDGE_GID)"
 fi
 
 # --------------------------------------------------------------- 5. the app
@@ -456,9 +479,36 @@ check() {
 }
 
 if [[ $SKIP_UP -eq 0 ]]; then
-    # Given a moment: the API validates its schema and the worker publishes its
-    # first list before either answers usefully.
-    sleep 20
+    # Waited for rather than slept through. The API validates its schema and
+    # the worker publishes its first list before either answers usefully, and
+    # how long that takes depends on the machine.
+    for _ in $(seq 1 30); do
+        [[ "$(curl -sk -o /dev/null -w '%{http_code}'             "https://localhost:${CONSOLE_PORT:-8443}/health" 2>/dev/null)" == "200" ]] && break
+        sleep 2
+    done
+
+    # Anything that exited, named before the checks run.
+    #
+    # curl reports 000 for "nothing answered", which is the same code for a
+    # container that never started, one still starting, and a firewall. Every
+    # check below then fails with a number that describes none of them - and
+    # the installation reads as a network fault when it is a container that
+    # died with a perfectly clear message in its own log.
+    #
+    # Seen on BY-CACMS: nginx could not read its certificate and the edge
+    # exited, so four checks reported 000 and none of them said so.
+    dead="$(docker compose ps -a --format '{{.Service}} {{.Status}}' 2>/dev/null |
+        awk '/Exited|Restarting/ {print $1}' || true)"
+
+    if [[ -n "$dead" ]]; then
+        echo
+        for svc in $dead; do
+            printf '  %s is not running. Its last words:
+' "$svc"
+            docker compose logs --tail 3 "$svc" 2>&1 | sed 's/^/      /'
+        done
+        echo
+    fi
 
     check "the console answers" \
         "$(curl -sk -o /dev/null -w '%{http_code}' "https://localhost:${CONSOLE_PORT:-8443}/health")" 200

@@ -30,8 +30,21 @@ cd "$(dirname "$0")/.."
 topology="two-tier"
 name="Blinky"
 outdir="ca"
-password="blinky"
 force=""
+
+# The password that protects the issuing key's PKCS#12, from the environment.
+#
+# install-server.sh generates one per installation and hands it over this way
+# rather than as an argument, because an argument is visible in ps for as long
+# as this runs and stays in shell history afterwards.
+#
+# It used to pass CA_PASSWORD in the environment while this script read only
+# --password and quietly fell back to the literal below. Every CA built by the
+# installer was therefore protected by the word "blinky" while its .env
+# recorded a strong generated password that opened nothing. The services could
+# not read their own signing key, and the failure named a password without
+# saying which one.
+password="${CA_PASSWORD:-}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -48,6 +61,21 @@ case "$topology" in
     single|two-tier) ;;
     *) echo "--topology must be single or two-tier" >&2; exit 2 ;;
 esac
+
+# A default exists so that a throwaway CA in a test needs no ceremony, but it
+# is announced rather than assumed. A signing key protected by a word written
+# in this file is not protected, and the one thing that must never happen
+# quietly is that.
+if [ -z "$password" ]; then
+    password="blinky"
+    cat >&2 <<'WARN'
+
+  This CA's private key is protected by the built-in password "blinky".
+  That is fine for a throwaway and is not protection anywhere else.
+  Set CA_PASSWORD to choose one.
+
+WARN
+fi
 
 mkdir -p "$outdir"
 

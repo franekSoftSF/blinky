@@ -2,7 +2,12 @@
 #
 # Blinky lab - join a Linux machine to the domain.
 #
-#     sudo bash join-lab.sh by-dc01.blinky.lab
+#     sudo bash join-lab.sh 172.16.5.10
+#
+# The controller is named by address. It has to be: this runs before the
+# machine can resolve anything in the realm, and the address it is given goes
+# straight into systemd-resolved's DNS= - which takes an address and silently
+# does nothing useful with a name.
 #
 # For every machine in the lab that is not the domain controller: the Docker
 # host, the Ubuntu client, anything added later. Run it before installing
@@ -30,6 +35,15 @@ say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 if [[ -z "$DC_IP" ]]; then
     echo "usage: sudo bash join-lab.sh <domain controller address>" >&2
+    exit 2
+fi
+
+# Refused here rather than accepted and written into DNS=, where it produces no
+# error at all - just a resolver that never answers for the realm, and a join
+# that fails several steps later talking about trust.
+if [[ ! "$DC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "'$DC_IP' is a name, and this argument has to be an address." >&2
+    echo "The realm does not resolve yet - that is what this script is fixing." >&2
     exit 2
 fi
 

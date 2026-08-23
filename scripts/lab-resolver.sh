@@ -150,8 +150,18 @@ say "what resolves now"
 
 fail=false
 
+# "Current DNS Server" only appears once something has been asked, so the line
+# is absent on a resolver that was restarted a moment ago and reads as unknown
+# when it is in fact fine. Falling back to the configured list says the same
+# thing without the false alarm.
 current="$(resolvectl status 2>/dev/null | awk '/Current DNS Server:/ {print $4; exit}')"
-note "current resolver  ${current:-unknown}"
+
+if [[ -z "$current" ]]; then
+    current="$(resolvectl status 2>/dev/null |
+        awk '/DNS Servers:/ {print $3; exit}')"
+fi
+
+note "resolver          ${current:-unknown}"
 
 if host -t SRV "_ldap._tcp.$realm_lower" >/dev/null 2>&1; then
     note "realm             _ldap._tcp.$realm_lower answers"
