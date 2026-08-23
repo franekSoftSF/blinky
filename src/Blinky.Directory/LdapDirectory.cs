@@ -107,6 +107,9 @@ public sealed class LdapDirectory(LdapDirectoryOptions options) : IDirectory, ID
         return $"{described} ({ex.GetType().Name})";
     }
 
+    /// <summary>The port LDAPS answers on.</summary>
+    private const int LdapsPort = 636;
+
     public Task<DirectoryProbe> TestAsync(CancellationToken ct = default) =>
         Task.Run(() =>
         {
@@ -345,11 +348,24 @@ public sealed class LdapDirectory(LdapDirectoryOptions options) : IDirectory, ID
 
         ldap.SessionOptions.ProtocolVersion = 3;
 
-        if (options.UseTls)
+        if (options.UseTls && options.Port == LdapsPort)
         {
-            // StartTLS on the plain port rather than LDAPS on 636. Both work;
-            // this one is what a Samba4 domain offers without extra setup, and
-            // a simple bind must not cross an unencrypted connection.
+            // LDAPS: the connection is encrypted before anything is said on
+            // it, rather than starting in the clear and upgrading.
+            //
+            // This is the path that works on Linux. StartTLS below is
+            // implemented in this library on Windows; on Linux the same call
+            // returns LDAP_SERVER_DOWN immediately - in zero milliseconds,
+            // without a packet - which reads as a directory that is not
+            // answering while ldapwhoami against that same host, with those
+            // same credentials and the same anchor, binds perfectly.
+            ldap.SessionOptions.SecureSocketLayer = true;
+        }
+        else if (options.UseTls)
+        {
+            // StartTLS on the plain port. What a Samba4 domain offers without
+            // extra setup, and correct - but see above before choosing it for
+            // a deployment that runs on Linux.
             ldap.SessionOptions.StartTransportLayerSecurity(null);
         }
         else if (!string.IsNullOrEmpty(options.BindDn))
@@ -396,6 +412,16 @@ public sealed class LdapDirectory(LdapDirectoryOptions options) : IDirectory, ID
 /// A service account, or empty to bind with Kerberos from this process's own
 /// credentials. Empty is better where it is possible.
 /// </param>
+/// <summary>
+/// The port LDAPS answers on. Encryption is established before the first
+/// message rather than negotiated on a plain connection.
+/// </summary>
+/// <remarks>
+/// Worth choosing on Linux, and not as a preference: StartTLS on 389 is not
+/// implemented in System.DirectoryServices.Protocols there, and its failure is
+/// indistinguishable from a directory that is down. Samba answers on 636 with
+/// the same certificate it offers to StartTLS, so the choice costs nothing.
+/// </remarks>
 public sealed record LdapDirectoryOptions(
     string Host,
     int Port,

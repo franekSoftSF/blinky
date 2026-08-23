@@ -48,7 +48,14 @@ services:
       # Kerberos from the container's own credentials instead, which is better
       # where it is possible - no password anywhere.
       Blinky__Directory__Host: ${DIRECTORY_HOST:-}
-      Blinky__Directory__Port: ${DIRECTORY_PORT:-389}
+      # 636, not 389. LDAPS establishes encryption before the first message;
+      # StartTLS on 389 starts in the clear and upgrades, and that upgrade is
+      # not implemented in System.DirectoryServices.Protocols on Linux - it
+      # returns "the LDAP server is unavailable" in zero milliseconds, without
+      # sending a packet, while ldapwhoami against the same host with the same
+      # credentials binds perfectly. Samba answers on both with the same
+      # certificate, so this costs nothing.
+      Blinky__Directory__Port: ${DIRECTORY_PORT:-636}
       Blinky__Directory__BaseDn: ${DIRECTORY_BASE_DN:-}
       Blinky__Directory__Source: ${DIRECTORY_SOURCE:-Samba4}
       Blinky__Directory__BindDn: ${DIRECTORY_BIND_DN:-}

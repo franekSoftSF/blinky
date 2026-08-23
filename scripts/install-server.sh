@@ -66,6 +66,7 @@ EDGE_CERT=""
 EDGE_CERT_REPLACED=0
 EDGE_KEY=""
 DIRECTORY_HOST=""
+DIRECTORY_PORT="636"
 DIRECTORY_BASE_DN=""
 DIRECTORY_BIND_DN=""
 DIRECTORY_BIND_PASSWORD=""
@@ -101,6 +102,11 @@ while [[ $# -gt 0 ]]; do
         # something fails for a reason that names neither the value nor the
         # file - which is the failure this whole script exists to prevent.
         --directory-host) DIRECTORY_HOST="$2"; shift 2 ;;
+
+        # 636 by default: LDAPS rather than StartTLS on 389. The upgrade
+        # StartTLS performs is not implemented on Linux by the client this
+        # runs on, and fails as though the directory were down.
+        --directory-port) DIRECTORY_PORT="$2"; shift 2 ;;
         --directory-base-dn) DIRECTORY_BASE_DN="$2"; shift 2 ;;
         --directory-bind-dn) DIRECTORY_BIND_DN="$2"; shift 2 ;;
         # A file, not a value. A password given as an argument is visible in
@@ -263,6 +269,7 @@ if [[ -n "$DIRECTORY_HOST" ]]; then
     fi
 
     set_value DIRECTORY_HOST "$DIRECTORY_HOST"
+    set_value DIRECTORY_PORT "$DIRECTORY_PORT"
     set_value DIRECTORY_BASE_DN "$DIRECTORY_BASE_DN"
     set_value DIRECTORY_SOURCE "$DIRECTORY_SOURCE"
     set_value DIRECTORY_BIND_DN "$DIRECTORY_BIND_DN"
