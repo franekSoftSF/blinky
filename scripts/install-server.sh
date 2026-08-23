@@ -483,13 +483,30 @@ if [[ -d certs ]]; then
     # Permission denied", the whole edge exits, and every check that follows
     # reports 000 rather than a refusal - so the installation looks like a
     # network fault instead of a file mode. Seen on BY-CACMS.
-    for f in edge.crt edge.key agent-ca.crt; do
+    # Only the edge's private key is the edge's alone.
+    if [[ -f certs/edge.key ]]; then
+        chown "root:$EDGE_GID" certs/edge.key
+        chmod 640 certs/edge.key
+    fi
+
+    # Certificates are public material, and readable accordingly.
+    #
+    # Granting them to the edge's group alone was wrong in a way that took a
+    # while to see: agent-ca.crt is read by the API as well, and moving it to
+    # nginx's group took it away from the service that validates agent
+    # certificates against it. That surfaced as an unhandled
+    # UnauthorizedAccessException on an endpoint about something else
+    # entirely.
+    #
+    # A CA certificate is the thing everyone is meant to have. The secret in
+    # this directory is the key beside it.
+    for f in edge.crt agent-ca.crt dev-ca.crt; do
         [[ -f "certs/$f" ]] || continue
-        chown "root:$EDGE_GID" "certs/$f"
-        chmod 640 "certs/$f"
+        chown "root:$BLINKY_GID" "certs/$f"
+        chmod 644 "certs/$f"
     done
 
-    note "certs/  readable by blinky; the edge's three by nginx ($EDGE_GID)"
+    note "certs/  keys to their owners, certificates readable"
 fi
 
 # --------------------------------------------------------------- 5. the app
