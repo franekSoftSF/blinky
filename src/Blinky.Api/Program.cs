@@ -120,6 +120,12 @@ else
 }
 
 app.UseSerilogRequestLogging();
+// Explicitly, and before the middleware below, because that middleware asks
+// which route was matched. Without this call routing runs at the end of the
+// pipeline, GetEndpoint() returns null on the way in, and every parameterised
+// operator route falls through to the certificate check.
+app.UseRouting();
+
 app.UseMiddleware<AgentAuthenticationMiddleware>();
 
 app.MapGet("/health", () => Results.Ok(new

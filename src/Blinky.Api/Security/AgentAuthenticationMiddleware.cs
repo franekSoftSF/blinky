@@ -23,14 +23,29 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
     public const string EnrolmentPath = "/api/agents/enroll";
 
     /// <summary>
-    /// Paths an operator reaches rather than an agent. They are exempt from
+    /// Routes an operator reaches rather than an agent. They are exempt from
     /// mTLS because the caller is a person at a console, not a machine - and
     /// they carry their own check, because an unauthenticated write endpoint
     /// is not a smaller problem than the wrong kind of authentication.
     /// </summary>
+    /// <remarks>
+    /// This has to name every route whose handler calls IsOperator, and the two
+    /// drifted: twelve of eighteen operator endpoints were missing, so the
+    /// console was refused its own API with "a verified client certificate is
+    /// required" - an answer about certificates for a request that never
+    /// involved one. Every status card in the console read as a broken
+    /// deployment instead.
+    ///
+    /// Missing an entry fails closed, which is the right direction, but it
+    /// fails in a way that reads as an outage rather than as a missing line
+    /// here. Whoever adds an operator endpoint adds it here too; the tests in
+    /// OperatorRouteTests hold that.
+    /// </remarks>
     public static readonly string[] OperatorPaths =
     [
         "/api/console/overview",
+        "/api/system/status",
+
         "/api/jobs/inventory",
         "/api/jobs/enrol",
         "/api/jobs/recycle",
@@ -39,15 +54,44 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         // token is being rescued is the one that cannot call anybody.
         "/api/tokens/offline-unblock",
         "/api/tokens/puk/refused",
+
+        "/api/directory/test",
+        "/api/directory/test-resolve",
+        "/api/directory/test-write-access",
+        "/api/directory/users",
+
+        "/api/cardholders",
+
+        // Route patterns, not paths. A help desk request arrives as
+        // /api/tokens/12345/helpdesk and matches nothing written literally,
+        // which is why these could not be listed at all before the comparison
+        // below started asking the router what it matched.
+        "/api/tokens/{serial:long}/helpdesk",
+        "/api/tokens/{serial:long}/block",
+        "/api/tokens/{serial:long}/unblock",
+        "/api/credentials/{id:guid}/suspend",
+        "/api/credentials/{id:guid}/revoke",
     ];
 
     public async Task InvokeAsync(HttpContext context, Database database)
     {
         var path = context.Request.Path;
 
+        // What the router matched, not what the caller typed. A parameterised
+        // route - /api/tokens/{serial:long}/block - arrives as a path with a
+        // number in it and can never be compared against the pattern as
+        // written, so the list above could only ever hold literal routes.
+        // Falls back to the raw path when nothing matched, which keeps an
+        // unroutable request on the guarded side.
+        var pattern = (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText;
+
+        bool IsOperatorRoute() => OperatorPaths.Any(p =>
+            string.Equals(p, pattern, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(p, StringComparison.OrdinalIgnoreCase));
+
         if (!path.StartsWithSegments("/api")
             || path.Equals(EnrolmentPath, StringComparison.OrdinalIgnoreCase)
-            || OperatorPaths.Any(p => path.Equals(p, StringComparison.OrdinalIgnoreCase)))
+            || IsOperatorRoute())
         {
             await next(context);
             return;
