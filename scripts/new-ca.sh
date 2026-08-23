@@ -133,6 +133,50 @@ authorityKeyIdentifier=keyid:always
     rm -f "$outdir/issuing.csr" "$outdir/issuing.ext"
 
     cat "$outdir/issuing.crt" "$outdir/anchor.crt" > "$outdir/chain.pem"
+
+    # The root's revocation list, signed here because here is the only place it
+    # can ever be signed.
+    #
+    # The root key does not go to an online service - that is the entire reason
+    # for having two tiers - so no worker, no scheduled job and no API call can
+    # produce this file. It is made at the moment the root exists, and remade by
+    # hand on the rare day an issuing CA is revoked.
+    #
+    # It is empty, and that is the point. Windows and PKINIT both refuse a chain
+    # whose revocation status cannot be established, and Samba's AD wants
+    # authorityRevocationList present and non-empty as DER. An empty list that
+    # verifies answers "has this been revoked" with a signed "no"; no list at
+    # all answers "I cannot tell", which is refused.
+    #
+    # Without it the CDP named in the issuing certificate returns 404, and on a
+    # workstation that surfaces as a logon refused for revocation reasons, three
+    # steps away from this file.
+    : > "$outdir/root-index.txt"
+    echo 1000 > "$outdir/root-crlnumber"
+
+    cat > "$outdir/root-crl.cnf" <<CNF
+[ ca ]
+default_ca = root_ca
+
+[ root_ca ]
+database         = $outdir/root-index.txt
+crlnumber        = $outdir/root-crlnumber
+certificate      = $outdir/anchor.crt
+private_key      = $outdir/root.key
+default_md       = sha256
+
+# Long, because refreshing it means bringing the root key back out. Short
+# enough that a list nobody maintains announces itself by expiring rather than
+# staying silently trusted for a decade.
+default_crl_days = 180
+CNF
+
+    openssl ca -config "$outdir/root-crl.cnf" -gencrl -out "$outdir/root.crl.pem" 2>/dev/null
+
+    openssl crl -in "$outdir/root.crl.pem" -outform DER -out "$outdir/root.crl"
+
+    rm -f "$outdir"/root.crl.pem "$outdir"/root-crl.cnf "$outdir"/root-index.txt*
+    rm -f "$outdir"/root-crlnumber*
 fi
 
 openssl pkcs12 -export -out "$outdir/issuing.p12" \
@@ -146,6 +190,14 @@ openssl x509 -in "$outdir/anchor.crt" -noout -subject -issuer
 echo
 openssl verify -CAfile "$outdir/anchor.crt" "$outdir/issuing.crt" \
     || echo "WARNING: the issuing certificate does not verify against the anchor"
+
+if [ "$topology" = "two-tier" ]; then
+    if [ -s "$outdir/root.crl" ]; then
+        echo "root revocation list valid until $(openssl crl -in "$outdir/root.crl" -inform DER -noout -nextupdate | cut -d= -f2-)"
+    else
+        echo "WARNING: no root revocation list - the root's distribution point will 404"
+    fi
+fi
 
 echo
 if [ "$topology" = "two-tier" ]; then
