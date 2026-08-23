@@ -76,6 +76,23 @@ EOF
 
 dns() { samba-tool dns "$@" -U Administrator --password="$PASSWORD"; }
 
+# "Is there already a record?" - a question whose answer may legitimately be no.
+#
+# samba-tool exits non-zero when a name does not exist. Under set -e with
+# pipefail that turns an ordinary "no" into a fatal error at the very
+# assignment that asks the question, and because the query's stderr is
+# discarded the script dies immediately after announcing what it was about to
+# do. It reads as a success that quietly did nothing.
+#
+# Seen creating the first record for BY-CACMS: the header printed, no record
+# was created, and the exit status was swallowed by a pipe to tail.
+lookup() {
+    local zone="$1" name="$2" type="$3"
+
+    dns query 127.0.0.1 "$zone" "$name" "$type" 2>/dev/null |
+        awk -v t="$type: " 'index($0, t) {print $2; exit}' | cut -d' ' -f1 || true
+}
+
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 # --------------------------------------------------------------------- list
@@ -98,8 +115,7 @@ NAME="${NAME%%.*}"
 if [[ "$ACTION" == "remove" ]]; then
     say "removing $NAME.$realm_lower"
 
-    existing="$(dns query 127.0.0.1 "$realm_lower" "$NAME" A 2>/dev/null |
-        awk '/A: /{print $2; exit}' | cut -d' ' -f1)"
+    existing="$(lookup "$realm_lower" "$NAME" A)"
 
     if [[ -z "$existing" ]]; then
         echo "  no such record"
@@ -123,8 +139,7 @@ say "$NAME.$realm_lower -> $ADDRESS"
 # Replaced rather than added when one exists. Two A records for one name is a
 # machine that answers on one address half the time, which is worse than either
 # address being wrong.
-existing="$(dns query 127.0.0.1 "$realm_lower" "$NAME" A 2>/dev/null |
-    awk '/A: /{print $2; exit}' | cut -d' ' -f1)"
+existing="$(lookup "$realm_lower" "$NAME" A)"
 
 if [[ -n "$existing" ]]; then
     if [[ "$existing" == "$ADDRESS" ]]; then
@@ -151,8 +166,7 @@ fi
 if dns zoneinfo 127.0.0.1 "$zone" >/dev/null 2>&1; then
     # Deleted first where one exists, because a PTR pointing at two names is a
     # reverse lookup that answers differently each time it is asked.
-    old="$(dns query 127.0.0.1 "$zone" "$o4" PTR 2>/dev/null |
-        awk '/PTR: /{print $2; exit}' | cut -d' ' -f1)"
+    old="$(lookup "$zone" "$o4" PTR)"
 
     if [[ -n "$old" ]]; then
         dns delete 127.0.0.1 "$zone" "$o4" PTR "$old" >/dev/null 2>&1 || true
@@ -166,8 +180,30 @@ fi
 
 # ------------------------------------------------------------------- check
 
+# Asked of the running server rather than of the database, because the record
+# that matters is the one a member machine can actually resolve.
+#
+# The previous form could not report a failure: host writes its error to stderr
+# and exits non-zero, but the awk downstream succeeds on empty input, so the
+# "|| echo not answering" fallback was unreachable. A check that has no way of
+# saying no is decoration.
+answer() {
+    local got
+    got="$(host "$1" 127.0.0.1 2>/dev/null | awk -v k="$2" 'index($0, k) {print $NF; exit}')"
+    printf '%s' "${got:-not answering}"
+}
+
+forward="$(answer "$NAME.$realm_lower" 'has address')"
+
 echo
-echo "  forward  $(host "$NAME.$realm_lower" 127.0.0.1 2>/dev/null |
-    awk '/has address/{print $NF; exit}' || echo 'not answering')"
-echo "  reverse  $(host "$ADDRESS" 127.0.0.1 2>/dev/null |
-    awk '/domain name pointer/{print $NF; exit}' || echo 'not answering')"
+echo "  forward  $forward"
+echo "  reverse  $(answer "$ADDRESS" 'domain name pointer')"
+
+# Non-zero when the name does not resolve, so a caller running this as one step
+# of a sequence stops here instead of three steps further on, where the error
+# will be about a trust or a certificate and not about a missing name.
+if [[ "$forward" == "not answering" ]]; then
+    echo
+    echo "  $NAME.$realm_lower was not created - nothing will find it." >&2
+    exit 1
+fi

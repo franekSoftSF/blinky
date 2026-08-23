@@ -136,7 +136,21 @@ ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
 systemctl restart systemd-resolved
 
 # Samba forwards everything that is not the realm.
-if ! grep -q 'dns forwarder' /etc/samba/smb.conf; then
+#
+# Replaced where one exists, not merely added when absent. samba-tool domain
+# provision writes a forwarder of its own, copied from whatever
+# /etc/resolv.conf said at the moment it ran - and on Ubuntu that is
+# systemd-resolved's stub on 127.0.0.53, which the block above has just
+# switched off to give Samba port 53. An "add it only if missing" test finds
+# that line, steps aside, and leaves the DC forwarding into a dead address:
+# the realm resolves perfectly, nothing else resolves at all, and apt stops
+# working on the machine this script exists to build.
+#
+# Seen on BY-DC01. detect_forwarder had chosen the right address; it was
+# simply never written down.
+if grep -q '^[[:space:]]*dns forwarder' /etc/samba/smb.conf; then
+    sed -i "s|^[[:space:]]*dns forwarder =.*|        dns forwarder = $FORWARDER|" /etc/samba/smb.conf
+else
     sed -i "/^\[global\]/a\\        dns forwarder = $FORWARDER" /etc/samba/smb.conf
 fi
 
