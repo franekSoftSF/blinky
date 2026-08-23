@@ -82,6 +82,31 @@ public sealed class LdapDirectory(LdapDirectoryOptions options) : IDirectory, ID
         return found.Count == 1 ? found[0] : null;
     }
 
+    /// <summary>
+    /// An exception, said in a way that distinguishes it from the others that
+    /// arrive wearing the same words.
+    /// </summary>
+    private static string Describe(Exception ex)
+    {
+        var described = ex switch
+        {
+            System.DirectoryServices.Protocols.LdapException ldap =>
+                $"{ldap.Message} (LDAP error {ldap.ErrorCode})",
+            PlatformNotSupportedException =>
+                $"{ex.Message} - this is the client library, not the directory",
+            _ => ex.Message,
+        };
+
+        // The inner one carries the reason often enough to be worth the line:
+        // a TLS failure arrives as an outer exception about a connection.
+        if (ex.InnerException is { } inner)
+        {
+            described += $" [{inner.GetType().Name}: {inner.Message}]";
+        }
+
+        return $"{described} ({ex.GetType().Name})";
+    }
+
     public Task<DirectoryProbe> TestAsync(CancellationToken ct = default) =>
         Task.Run(() =>
         {
@@ -98,9 +123,18 @@ public sealed class LdapDirectory(LdapDirectoryOptions options) : IDirectory, ID
                 // Named as specifically as the exception allows. Somebody who
                 // has just filled in six fields deserves to be told which one
                 // is wrong, not that it did not work.
+                //
+                // The type and the LDAP result code as well as the message,
+                // because the messages collide where the causes do not.
+                // "The LDAP server is unavailable" is what this reports for a
+                // directory that is down, for a client library that is not
+                // installed, and for a TLS handshake the client would not
+                // complete - three problems, one sentence, and only one of
+                // them is about the server. Hours went into the wrong two.
                 return new DirectoryProbe(false, false, null, options.UseTls,
                     (int)started.ElapsedMilliseconds,
-                    $"Could not connect or bind to {options.Host}:{options.Port}: {ex.Message}");
+                    $"Could not connect or bind to {options.Host}:{options.Port}: "
+                    + $"{Describe(ex)}");
             }
 
             try
