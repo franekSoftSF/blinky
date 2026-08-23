@@ -45,6 +45,35 @@ looks: without it, anything that canonicalises a host name waits for a timeout
 rather than failing, and the symptom is slowness in things with no obvious
 connection to DNS.
 
+## The accounts
+
+```
+sudo bash scripts/lab-accounts.sh --user jkowalski --display "Jan Kowalski"
+```
+
+Two, and the first is the one that gets skipped.
+
+**A service account that reads the directory.** Blinky resolves a UPN and a SID
+out of AD and never writes, and an ordinary domain user can already read what it
+needs — Authenticated Users have read on those attributes. So the right account
+is a plain one with **no rights added at all**: the easiest account in the world
+to ask a directory administrator for, and the easiest to audit. Its password
+never expires, because a service account whose password ages out takes the
+integration down some weeks later, at a moment nobody connects to a password
+policy.
+
+**A cardholder who is not an administrator.** The first live issuance in this
+lab went to `Administrator`, because that was the account that existed. It
+proved the mechanism and proved nothing about the policy — an administrator is a
+member of everything, so a certificate that works for one tells you very little.
+
+The script also sets the **userPrincipalName**, which `samba-tool` does not.
+A certificate without a UPN in its subject alternative name is refused for
+logon, and by then the missing attribute is three steps behind the error.
+
+Both passwords are generated and written to `/root/blinky-lab-accounts.txt`,
+readable by root only. Neither is printed.
+
 ## Order of setup
 
 Each step depends on the one before it, and skipping ahead produces failures
