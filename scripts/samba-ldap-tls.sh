@@ -138,9 +138,15 @@ set_global() {
     local key="$1" value="$2"
 
     if grep -qE "^[[:space:]]*$key[[:space:]]*=" /etc/samba/smb.conf; then
-        sed -i "s|^[[:space:]]*$key[[:space:]]*=.*|\t$key = $value|" /etc/samba/smb.conf
+        sed -i "s|^[[:space:]]*$key[[:space:]]*=.*|    $key = $value|" /etc/samba/smb.conf
     else
-        sed -i "/^\[global\]/a\\t$key = $value" /etc/samba/smb.conf
+        # Spaces, not a tab. sed's "a" command strips the backslash from
+        # 	 and leaves a bare t glued to the parameter name, so "tls
+        # certfile" is written as "ttls certfile" - which Samba ignores as
+        # an unknown parameter, in its own log, while everything here
+        # reports success. Cost an installation that looked done and was
+        # still presenting the self-signed certificate.
+        sed -i "/^\[global\]/a\\    $key = $value" /etc/samba/smb.conf
     fi
 
     note "$key = $value"

@@ -348,7 +348,10 @@ chmod 644 /etc/krb5.conf
 # The revocation list smbd checks, once one has been published here.
 if [[ -f "$private/issuing.crl" ]] &&
         ! grep -q "tls crlfile" /etc/samba/smb.conf; then
-    sed -i "/^\[global\]/a\\ttls crlfile = $private/issuing.crl" /etc/samba/smb.conf
+    # Spaces rather than a tab: sed's "a" strips the backslash and leaves
+    # the letter, which would write "ttls crlfile" and be ignored as an
+    # unknown parameter.
+    sed -i "/^\[global\]/a\\    tls crlfile = $private/issuing.crl" /etc/samba/smb.conf
     say "smb.conf now points at the revocation list"
 fi
 
