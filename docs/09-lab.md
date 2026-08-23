@@ -21,7 +21,7 @@ architecture; it tests a special case of it.
 | **BY-CACMS** | `172.16.5.11` | Docker host: `api`, `worker`, `postgres`, `edge` | That the backend works when it is not on the same machine as anything else |
 | **BY-DC01** | `172.16.5.10` | Samba4 AD DC | That a certificate Blinky issued authenticates against a real KDC — the Phase 2 gate |
 | **BY-WIN-CLIENT01** | `172.16.5.51` | Windows client, VMware, with the reader | Smart-card logon as a user actually experiences it, and the agent as a Windows service |
-| **BY-LX-CLIENT01** | `172.16.5.50` | Linux client | PKINIT without Windows in the way, and the pcsc-lite transport (patch 0017) |
+| **BY-LX-Client01** | `172.16.5.150` | Linux client | PKINIT without Windows in the way, and the pcsc-lite transport (patch 0017) |
 
 ## Names and addresses
 
@@ -39,6 +39,30 @@ So, on the controller, once it is up:
 ```
 sudo bash scripts/lab-dns.sh --add by-cacms 172.16.5.11
 ```
+
+## The resolver, on every machine
+
+A VMware or cloud image ships a public resolver in netplan, and the per-link
+setting beats the global one for anything routed over that link. A perfectly
+correct `/etc/systemd/resolved.conf` is then read and ignored: the realm
+resolves only by luck, and reverse lookups go to a resolver that will never
+answer for RFC 1918 space — so lookups do not fail, they wait, and the symptom
+is slowness in things with no visible connection to DNS.
+
+All three machines of the `172.16.5.0/24` build shipped with `8.8.8.8`. On each
+of them, before anything else:
+
+```
+sudo bash scripts/lab-resolver.sh 172.16.5.10
+```
+
+It is safe on the controller too, where it leaves the controller's own resolver
+alone and fixes only the per-link setting.
+
+The check at the end separates two failures that look alike and are not: the
+realm can resolve perfectly while forwarding to the outside world is dead. The
+second one shows up as apt breaking, several steps later, on a machine nobody
+associates with DNS.
 
 That writes the A record and the PTR. The reverse half matters more than it
 looks: without it, anything that canonicalises a host name waits for a timeout
