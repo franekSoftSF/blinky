@@ -3,6 +3,13 @@
 # Blinky lab - stand up the CA and the CMS on this machine.
 #
 #     sudo bash provision-cms.sh
+#     sudo bash provision-cms.sh \
+#         --directory-host by-dc01.blinky.lab \
+#         --directory-base-dn DC=blinky,DC=lab \
+#         --directory-bind-dn "CN=svc-blinky-ldap,CN=Users,DC=blinky,DC=lab" \
+#         --directory-bind-password-file /root/svc-ldap.password
+#
+# Arguments beyond the first are handed to scripts/install-server.sh.
 #
 # Docker, the repository, and the certificates this machine answers to. Then
 # scripts/install-server.sh, which does everything Blinky-specific.
@@ -111,7 +118,12 @@ say "4/4  Blinky"
 # point. A machine provisioned that way reproduces, from scratch, every
 # problem of 21 August - and the failures it produces name none of their
 # causes.
-bash scripts/install-server.sh --hostname "$FQDN"
+# Anything else this was given goes straight through. Without that, the
+# directory arguments - and every other option install-server.sh grew -
+# are unreachable from the script people actually run, and the settings
+# they configure end up hand-edited into .env after the fact. Which is the
+# failure install-server.sh exists to prevent.
+bash scripts/install-server.sh --hostname "$FQDN" "$@"
 
 cat <<EOF
 
