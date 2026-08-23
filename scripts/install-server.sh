@@ -583,7 +583,14 @@ if [[ $SKIP_UP -eq 0 ]]; then
     # discovery from a workstation's logon refusal to this line.
     crl_ok=no
     if curl -s "http://localhost:${PKI_PORT:-80}/pki/issuing.crl" -o /tmp/blinky-check.crl 2>/dev/null; then
-        openssl crl -in /tmp/blinky-check.crl -inform DER -CAfile ca/issuing.crt -noout 2>/dev/null && crl_ok=yes
+        # The text, not the exit status. "openssl crl -CAfile" prints
+        # "verify failure" and then exits 0 - so a check written the obvious
+        # way passes on a list that verifies against nothing, which is the
+        # exact failure this check was added to catch. It did, on the first
+        # run of this very block.
+        case "$(openssl crl -in /tmp/blinky-check.crl -inform DER -CAfile ca/issuing.crt -noout 2>&1)" in
+            *"verify OK"*) crl_ok=yes ;;
+        esac
     fi
     rm -f /tmp/blinky-check.crl
 
