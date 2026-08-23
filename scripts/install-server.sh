@@ -393,8 +393,33 @@ elif [[ ! -f certs/edge.crt ]]; then
     # The name agents and browsers actually use has to be in the certificate,
     # or every connection fails on the name rather than on the trust - and the
     # message says the certificate is invalid, which sends people to the CA.
+    # dev-certs.sh first, because it also mints the CA the edge trusts for
+    # agent client certificates and one test client - neither of which the
+    # issuing CA produces. Its edge certificate is then replaced.
     bash scripts/dev-certs.sh --host "$HOSTNAME_FQDN" >/dev/null 2>&1 || true
-    note "edge certificates generated for $HOSTNAME_FQDN"
+
+    # The edge's own certificate, from the CA this installation uses.
+    #
+    # What dev-certs.sh leaves behind is signed by a throwaway called "Blinky
+    # development CA", unrelated to the issuing CA everything else chains to.
+    # The lab then has two trust roots, and the one protecting the agent's
+    # connection is the one nobody manages or revokes. It also hands nginx a
+    # bare leaf, so every client reports "unable to verify the first
+    # certificate" - a missing intermediate, which adding the anchor to the
+    # client's store does not fix.
+    #
+    # Only when this installation has its own CA. An external issuing CA gets
+    # asked for the edge certificate through --edge-cert instead; nothing here
+    # can sign on its behalf.
+    if [[ -f ca/issuing.p12 ]]; then
+        if CA_PASSWORD="$ca_password" bash scripts/issue-edge-cert.sh                 --host "$HOSTNAME_FQDN" --host "$(hostname -I | awk '{print $1}')"                 --public-url "$public_url" 2>&1 | sed 's/^/  /'; then
+            note "edge certificate issued by $CA_NAME Issuing CA, chain included"
+        else
+            note "could not issue an edge certificate - the development one stands"
+        fi
+    else
+        note "edge certificates generated for $HOSTNAME_FQDN (development CA)"
+    fi
 else
     if ! openssl x509 -in certs/edge.crt -noout -text 2>/dev/null |
             grep -q "$HOSTNAME_FQDN"; then
