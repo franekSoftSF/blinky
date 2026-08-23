@@ -16,12 +16,34 @@ until the moment the machines were separated: the edge certificate said
 test had `localhost` written into it. A single-box lab does not test the
 architecture; it tests a special case of it.
 
-| Machine | Role | What only it can prove |
-|---|---|---|
-| **blinky** | Docker host: `api`, `worker`, `postgres`, `edge` | That the backend works when it is not on the same machine as anything else |
-| **dc** | Samba4 AD DC | That a certificate Blinky issued authenticates against a real KDC — the Phase 2 gate |
-| **win** | Windows client, VMware, with the reader | Smart-card logon as a user actually experiences it, and the agent as a Windows service |
-| **ubuntu** | Linux client | PKINIT without Windows in the way, and the pcsc-lite transport (patch 0017) |
+| Machine | Address | Role | What only it can prove |
+|---|---|---|---|
+| **BY-CACMS** | `172.16.5.11` | Docker host: `api`, `worker`, `postgres`, `edge` | That the backend works when it is not on the same machine as anything else |
+| **BY-DC01** | `172.16.5.10` | Samba4 AD DC | That a certificate Blinky issued authenticates against a real KDC — the Phase 2 gate |
+| **BY-WIN-CLIENT01** | `172.16.5.51` | Windows client, VMware, with the reader | Smart-card logon as a user actually experiences it, and the agent as a Windows service |
+| **BY-LX-CLIENT01** | `172.16.5.50` | Linux client | PKINIT without Windows in the way, and the pcsc-lite transport (patch 0017) |
+
+## Names and addresses
+
+Static, on `172.16.5.0/24`, and in the domain's DNS. The controller registers
+itself when it is provisioned; the others do not, each for its own reason:
+
+- **BY-CACMS** is a Docker host and not a domain member, so nothing ever
+  registers it. Its name is what every certificate names as a distribution
+  point, so a missing record here is a revocation check that cannot be made.
+- **Windows and Linux clients** register themselves when they join — but not
+  before, and the join needs the controller by address.
+
+So, on the controller, once it is up:
+
+```
+sudo bash scripts/lab-dns.sh --add by-cacms 172.16.5.11
+```
+
+That writes the A record and the PTR. The reverse half matters more than it
+looks: without it, anything that canonicalises a host name waits for a timeout
+rather than failing, and the symptom is slowness in things with no obvious
+connection to DNS.
 
 ## Order of setup
 
@@ -89,7 +111,7 @@ are manual LDAP writes, described in
 ### Every other machine
 
 ```bash
-sudo bash scripts/join-lab.sh 172.16.1.10
+sudo bash scripts/join-lab.sh 172.16.5.10
 ```
 
 DNS at the DC, clock from the DC, then the join. The first two are checked

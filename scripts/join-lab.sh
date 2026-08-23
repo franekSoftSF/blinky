@@ -2,7 +2,7 @@
 #
 # Blinky lab - join a Linux machine to the domain.
 #
-#     sudo bash join-lab.sh 172.16.1.10
+#     sudo bash join-lab.sh by-dc01.blinky.lab
 #
 # For every machine in the lab that is not the domain controller: the Docker
 # host, the Ubuntu client, anything added later. Run it before installing
@@ -53,6 +53,49 @@ EOF
 
 systemctl restart systemd-resolved
 
+# The per-link nameserver, which beats the global one for anything routed over
+# that link. A cloud image or a VMware customisation leaves a public resolver
+# there, and then the file above is entirely correct and entirely ignored: the
+# realm resolves through the DC only by luck, and reverse lookups go to a
+# resolver that will never answer for RFC 1918 space.
+#
+# Found on BY-LX-Client01, where netplan carried 8.8.8.8 and every SMB
+# canonicalisation waited five seconds for it.
+for plan in /etc/netplan/*.yaml; do
+    [[ -f "$plan" ]] || continue
+
+    if grep -qE '^\s+addresses:\s*$' "$plan" &&
+            grep -A 3 'nameservers:' "$plan" | grep -qE '^\s+- ' &&
+            ! grep -A 3 'nameservers:' "$plan" | grep -q "$DC_IP"; then
+
+        cp "$plan" "$plan.before-blinky"
+
+        # Only the nameserver lines under nameservers:, and only the addresses -
+        # the search domain is left alone, and so is everything else in the file.
+        python3 - "$plan" "$DC_IP" <<'PY' || echo "  could not rewrite $plan - check it by hand"
+import re, sys
+
+path, dc = sys.argv[1], sys.argv[2]
+text = open(path, encoding="utf-8").read()
+
+def fix(match):
+    head, body = match.group(1), match.group(2)
+    indent = re.match(r"\s*", body).group(0)
+    return head + indent + "- " + dc + "\n"
+
+new = re.sub(r"(nameservers:\n(?:\s+search:\n(?:\s+- .*\n)+)?\s+addresses:\n)((?:\s+- .*\n)+)",
+             fix, text)
+
+if new != text:
+    open(path, "w", encoding="utf-8").write(new)
+PY
+
+        echo "  $plan pointed at $DC_IP (was something else; copy kept)"
+        netplan apply 2>/dev/null || true
+        sleep 2
+    fi
+done
+
 # Checked rather than assumed: everything below depends on this working, and a
 # failure here is cheap to explain and expensive to discover later.
 if ! host -t SRV "_ldap._tcp.$realm_lower" >/dev/null 2>&1; then
@@ -90,7 +133,7 @@ elif [[ ! -t 0 ]]; then
     # Piped in, so this can run unattended:
     #
     #     ssh dc 'sudo sed -n "s/^password *//p" /root/blinky-lab-dc.txt' |
-    #         ssh member 'sudo bash join-lab.sh 172.16.1.10'
+    #         ssh member 'sudo bash join-lab.sh by-dc01.blinky.lab'
     #
     # The value goes from one root-only file into one command and is never
     # echoed, never stored here, and never reaches a scrollback.
@@ -110,6 +153,31 @@ pam-auth-update --enable mkhomedir >/dev/null 2>&1 || true
 sed -i 's/^use_fully_qualified_names = True/use_fully_qualified_names = False/' \
     /etc/sssd/sssd.conf 2>/dev/null || true
 systemctl restart sssd
+
+# The one realmd does not write. It leaves /etc/krb5.conf as the stock MIT
+# sample - ATHENA.MIT.EDU, Stanford, CMU - with default_realm patched in and no
+# [domain_realm] at all. kinit works, because a principal carries its own
+# realm; anything that has to work a realm out from a *host name* asks DNS and
+# waits five seconds per lookup that nobody answers.
+#
+# The visible failure was a console login accepted and then refused a minute
+# later, because SSSD's ad access provider reads GPOs over SMB and SMB needs a
+# service ticket for cifs/<dc>. See configure-krb5-client.sh.
+if [[ -x "$(dirname "$0")/configure-krb5-client.sh" ]] ||
+        [[ -f "$(dirname "$0")/configure-krb5-client.sh" ]]; then
+    bash "$(dirname "$0")/configure-krb5-client.sh" \
+    # No --kdc: it finds one by SRV record, and the check above already
+    # proved those resolve. Naming the KDC by address would work and would
+    # put an address in a file that outlives the machine.
+    bash "$(dirname "$0")/configure-krb5-client.sh" \
+        --realm "$REALM" 2>&1 | sed 's/^/  /'
+else
+    cat >&2 <<EOF
+
+  configure-krb5-client.sh is not beside this script, so /etc/krb5.conf is
+  whatever realmd left. Run it before expecting a console login to work.
+EOF
+fi
 
 say "5/5  check"
 

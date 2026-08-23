@@ -4,7 +4,8 @@
 #
 #     sudo bash provision-cms.sh
 #
-# Docker, the repository, the certificates, the secrets, the CA and the stack.
+# Docker, the repository, and the certificates this machine answers to. Then
+# scripts/install-server.sh, which does everything Blinky-specific.
 # Run on a machine that is going to be nothing but Blinky.
 #
 # The secrets are generated here and never committed. .env is written with
@@ -38,7 +39,7 @@ say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 [[ $EUID -eq 0 ]] || { echo "Run this with sudo." >&2; exit 2; }
 
-say "1/6  docker"
+say "1/4  docker"
 
 if ! command -v docker >/dev/null 2>&1; then
     apt-get update -qq
@@ -71,7 +72,7 @@ fi
 
 docker --version
 
-say "2/6  repository"
+say "2/4  repository"
 
 if [[ -d "$TARGET/.git" ]]; then
     git -C "$TARGET" pull --ff-only
@@ -81,80 +82,51 @@ fi
 
 cd "$TARGET"
 
-say "3/6  secrets"
+say "3/4  certificates for $FQDN and $ADDRESS"
 
-if [[ -f .env ]]; then
-    echo ".env exists - keeping it. Delete it to start over."
-else
-    # Generated, never committed, and root-only. This file holds the database
-    # password, the bootstrap token, the operator token, and the key that
-    # protects every escrowed PUK.
-    umask 077
-    cat > .env <<EOF
-POSTGRES_DB=blinky
-POSTGRES_USER=blinky
-POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')
-CONSOLE_PORT=8443
-AGENT_PORT=9443
-BOOTSTRAP_TOKEN=$(openssl rand -base64 24 | tr -d '/+=')
-OPERATOR_TOKEN=$(openssl rand -base64 24 | tr -d '/+=')
-CA_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=')
-PUK_KEK=$(openssl rand -base64 32)
-EOF
-    echo "written, root only"
-fi
-
-# Reset, and this line is load-bearing. Left at 077 it follows into the
-# certificate generation below, and nginx in the edge container does not run as
-# root: it fails to start with "cannot load certificate ... Permission denied",
-# every port stays closed, and twelve of thirteen smoke checks return 000.
-# The same leak made /etc/krb5.conf root-only on the domain controller.
-umask 022
-
-say "4/6  certificates for $FQDN and $ADDRESS"
-
-# The IP is in there because until the DC is serving the realm, the name does
-# not resolve and the address is the only way in.
-# Development certificates: the edge container reads these, so they are
-# readable. The CA's own key is a different matter and new-ca.sh keeps it so.
+# Before install-server.sh, because it will keep whatever it finds and the
+# names have to be right the first time. Every name and address anything
+# will use to reach this machine has to be in the certificate: one missing
+# here surfaces much later as an agent that will not connect, with an error
+# about trust rather than about a name.
+#
+# The IP is in there because until the DC is serving the realm, the name
+# does not resolve and the address is the only way in.
 bash scripts/dev-certs.sh --force \
     --host "$FQDN" \
     --host "$ADDRESS" \
     --host "$(hostname -s)" \
     --host localhost
 
-say "5/6  certificate authority"
+say "4/4  Blinky"
 
-if [[ -f ca/issuing.p12 ]]; then
-    echo "ca/ exists - keeping it. A new CA would orphan every certificate issued so far."
-else
-    # Two tiers, because that is the shape a real deployment has and the one
-    # where pathlen is easy to get wrong - better to have it wrong here than in
-    # production. See docs/04-pki-backends.md.
-    bash scripts/new-ca.sh --topology two-tier \
-        --name "Blinky Lab" \
-        --password "$(grep '^CA_PASSWORD=' .env | cut -d= -f2-)"
-fi
-
-say "6/6  start"
-
-docker compose up -d --build
-
-sleep 5
-docker compose ps --format '{{.Service}}\t{{.Status}}'
+# Delegated rather than repeated. install-server.sh creates the service
+# account, generates every secret, sets up and re-signs the CA, fixes the
+# ownership that decides whether a container can read its own key material,
+# starts the stack and checks it.
+#
+# This script used to do all of that itself, differently: an .env without a
+# publication address or CRL settings, no blinky account, no pki directory,
+# and an issuing CA with no subject key identifier and no distribution
+# point. A machine provisioned that way reproduces, from scratch, every
+# problem of 21 August - and the failures it produces name none of their
+# causes.
+bash scripts/install-server.sh --hostname "$FQDN"
 
 cat <<EOF
 
   console   https://$FQDN:8443   (also https://$ADDRESS:8443)
   agents    https://$FQDN:9443
+  pki       http://$FQDN/pki/    (revocation list and CA certificate)
   secrets   $TARGET/.env         (root only)
 
-Copy the CA that signs this machine's own certificate to every client - without
-it nothing will trust the backend:
+Copy the CA that signs this machine's own certificate to every client -
+without it nothing will trust the backend:
 
     scp $TARGET/certs/dev-ca.crt <client>:/tmp/
 
-Smoke test:
+Then, on the domain controller:
 
-    cd $TARGET && BLINKY_HOST=$ADDRESS ./smoke-test.sh
+    sudo bash scripts/blinky-samba-setup.sh --from-url http://$FQDN
+
 EOF

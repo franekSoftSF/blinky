@@ -62,7 +62,7 @@ it has to be one a relying party can reach: a name their DNS resolves, over
 HTTP rather than HTTPS. A client fetching revocation cannot be asked to
 validate a certificate first.
 
-    bash scripts/resign-issuing-ca.sh --public-url http://by-ca-cms.blinky.lab
+    bash scripts/resign-issuing-ca.sh --public-url http://by-cacms.blinky.lab
 EOF
     exit 2
 }

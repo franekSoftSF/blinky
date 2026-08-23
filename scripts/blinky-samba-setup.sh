@@ -3,6 +3,7 @@
 # Blinky - publish the CA into a Samba4 directory and give the KDC a
 # certificate. Patch 0061.
 #
+#     sudo bash blinky-samba-setup.sh --from-url http://by-cacms.blinky.lab
 #     sudo bash blinky-samba-setup.sh --chain chain.pem
 #     sudo bash blinky-samba-setup.sh --chain chain.pem --kdc-cert kdc.crt
 #
@@ -34,6 +35,7 @@
 set -euo pipefail
 
 CHAIN=""
+FROM_URL=""
 KDC_CERT=""
 CRL_ROOT=""
 CRL_ISSUING=""
@@ -42,6 +44,12 @@ REALM="${REALM:-$(hostname -d | tr '[:lower:]' '[:upper:]')}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --chain) CHAIN="$2"; shift 2 ;;
+
+        # Everything from the CMS host over HTTP, instead of three files
+        # somebody has to copy. The same addresses the certificates name as
+        # their distribution point, so if this works the clients will be able
+        # to fetch them too - which is worth knowing here rather than later.
+        --from-url) FROM_URL="$2"; shift 2 ;;
         --crl-root) CRL_ROOT="$2"; shift 2 ;;
         --crl-issuing) CRL_ISSUING="$2"; shift 2 ;;
         --kdc-cert) KDC_CERT="$2"; shift 2 ;;
@@ -51,6 +59,49 @@ while [[ $# -gt 0 ]]; do
 done
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+
+# ---------------------------------------------------------------- from url
+
+if [[ -n "$FROM_URL" ]]; then
+    FROM_URL="${FROM_URL%/}"
+
+    downloads="$(mktemp -d)"
+    trap 'rm -rf "$downloads"' EXIT
+
+    echo "fetching from $FROM_URL/pki/"
+
+    get() {
+        local name="$1" out="$2" required="$3"
+
+        if curl -fsS --max-time 30 "$FROM_URL/pki/$name" -o "$out"; then
+            echo "  $name"
+            return 0
+        fi
+
+        if [[ "$required" == "required" ]]; then
+            echo "  $name could not be fetched, and nothing works without it" >&2
+            echo "  Is the CMS up, and does this machine resolve that name?" >&2
+            exit 4
+        fi
+
+        echo "  $name is not published - carrying on without it"
+        return 1
+    }
+
+    get chain.pem "$downloads/chain.pem" required && CHAIN="$downloads/chain.pem"
+    get issuing.crl "$downloads/issuing.crl" required && CRL_ISSUING="$downloads/issuing.crl"
+
+    # The root's list is absent when the root is somebody else's, which is a
+    # supported arrangement rather than a fault - see install-server.sh.
+    if get root.crl "$downloads/root.crl" optional; then
+        CRL_ROOT="$downloads/root.crl"
+    else
+        # Samba's schema makes authorityRevocationList mandatory and rejects it
+        # empty, so the issuing list stands in. It is a true statement about a
+        # list that exists, which an empty one would not be.
+        CRL_ROOT="$downloads/issuing.crl"
+    fi
+fi
 
 [[ $EUID -eq 0 ]] || { echo "Run this with sudo." >&2; exit 2; }
 
@@ -80,9 +131,12 @@ CRL from each tier has to come along with the certificates - Samba will not
 create the object without one, and the error it gives names the attribute
 rather than the reason.
 
-Produce them where the CA keys are:
+Fetch them from the CMS instead of copying files about:
 
-    bash scripts/export-ca-for-directory.sh
+    sudo bash blinky-samba-setup.sh --from-url http://<cms-host>
+
+That reads the same addresses the certificates name as their distribution
+point, so if it works here the clients will manage it too.
 EOF
         exit 2
     }

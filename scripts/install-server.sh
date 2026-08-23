@@ -3,7 +3,7 @@
 # Blinky - install the server on a fresh machine.
 #
 #     sudo bash scripts/install-server.sh
-#     sudo bash scripts/install-server.sh --hostname by-ca-cms.blinky.lab
+#     sudo bash scripts/install-server.sh --hostname by-cacms.blinky.lab
 #
 #     sudo bash scripts/install-server.sh \
 #         --issuing-p12 issuing.p12 --anchor corporate-root.crt \

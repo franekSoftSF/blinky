@@ -2,7 +2,7 @@
 #
 # Blinky - keep the revocation lists in the Samba directory current.
 #
-#     sudo bash publish-crl-to-directory.sh --url http://by-ca-cms.blinky.lab
+#     sudo bash publish-crl-to-directory.sh --url http://by-cacms.blinky.lab
 #     sudo bash publish-crl-to-directory.sh --url http://... --install-timer
 #
 # Run on the domain controller. Fetches both lists from the distribution point

@@ -41,6 +41,7 @@ detect_forwarder() {
 FORWARDER="${FORWARDER:-$(detect_forwarder || echo 1.1.1.1)}"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+say_note() { printf '  %s\n' "$*"; }
 
 [[ $EUID -eq 0 ]] || { echo "Run this with sudo." >&2; exit 2; }
 
@@ -145,9 +146,14 @@ fi
 # cannot reach it. Seen on the first provision of BY-DC01.
 if ! grep -q 'bind interfaces only' /etc/samba/smb.conf; then
     nic="$(ip -4 route show default | awk '{print $5; exit}')"
-    printf '	interfaces = lo %s
+    # Written with a here-document rather than a printf carrying literal
+    # newlines and a stray backslash: the old form worked by accident,
+    # which is not a property to rely on in the file that decides whether
+    # the domain answers at all.
+    cat > /tmp/blinky-bind.$$ <<EOF
+	interfaces = lo ${nic:-eth0}
 	bind interfaces only = yes
-' "${nic:-eth0}" \n        > /tmp/blinky-bind.$$
+EOF
     sed -i "/^\[global\]/r /tmp/blinky-bind.$$" /etc/samba/smb.conf
     rm -f /tmp/blinky-bind.$$
 fi
@@ -157,6 +163,38 @@ say "5/6  start"
 systemctl enable --now samba-ad-dc >/dev/null
 sleep 3
 systemctl is-active samba-ad-dc
+
+# ------------------------------------------------------------ reverse zone
+
+# A domain without one resolves forwards perfectly and answers nothing
+# backwards, which is invisible until something asks. Samba's own tools do,
+# smbclient does when it canonicalises a host, and a query that goes unanswered
+# waits for a timeout rather than failing - so the symptom is slowness in
+# things that have no obvious connection to DNS.
+#
+# Created here rather than left for later, because it is one command at
+# provision time and an afternoon once machines are joined.
+address="$(ip -4 -o addr show scope global | awk '{print $4; exit}' | cut -d/ -f1)"
+
+if [[ -n "$address" ]]; then
+    IFS=. read -r o1 o2 o3 _ <<< "$address"
+    zone="$o3.$o2.$o1.in-addr.arpa"
+
+    if ! samba-tool dns zonelist 127.0.0.1 -U Administrator --password="$password" 2>/dev/null |
+            grep -q "$zone"; then
+        samba-tool dns zonecreate 127.0.0.1 "$zone" \
+            -U Administrator --password="$password" >/dev/null 2>&1 &&
+            say_note "reverse zone $zone"
+    fi
+
+    # The controller's own PTR. Members add theirs when they join, if dynamic
+    # updates are working; this one is the one that has to exist first.
+    host_octet="${address##*.}"
+
+    samba-tool dns add 127.0.0.1 "$zone" "$host_octet" PTR "$(hostname -f)." \
+        -U Administrator --password="$password" >/dev/null 2>&1 || true
+fi
+
 
 say "6/6  check"
 
@@ -180,6 +218,16 @@ for record in "_ldap._tcp" "_kerberos._udp"; do
         failed=1
     fi
 done
+
+# The reverse zone, checked the same way. Not fatal: forward resolution is what
+# joins a machine, and a missing PTR shows up later as things being slow rather
+# than as things being broken. Worth naming now rather than hunting then.
+if host "$address" "$address" >/dev/null 2>&1; then
+    echo "  reverse for $address  ok"
+else
+    echo "  reverse for $address  not answering - things that canonicalise a"
+    echo "                        host name will wait for a timeout"
+fi
 
 if [[ $failed -eq 1 ]]; then
     cat >&2 <<EOF

@@ -3,6 +3,7 @@
 # Blinky lab - everything a Linux client needs to test with a smart card.
 #
 #     sudo bash install-linux-client.sh
+#     sudo bash install-linux-client.sh --desktop --anchors chain.pem
 #
 # Run after join-lab.sh. This is the reader stack, the PIV tooling, and the two
 # pieces that make a token useful for logging in rather than only for looking
@@ -14,12 +15,31 @@
 set -euo pipefail
 
 REALM="${REALM:-BLINKY.LAB}"
+DESKTOP=0
+ANCHORS=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        # A machine with no desktop has no logon screen, and a smart-card logon
+        # is a thing that happens at one. Found the hard way: the client was
+        # joined, correct, and had nothing but a text console to prove it on.
+        --desktop) DESKTOP=1; shift ;;
+
+        # The CA chain, so PKINIT can check the KDC's certificate. Without it
+        # the client refuses its own KDC and reports "No pkinit_anchors
+        # supplied" - even when the real problem was a mistyped password.
+        --anchors) ANCHORS="$2"; shift 2 ;;
+
+        --realm) REALM="$2"; shift 2 ;;
+        *) echo "unknown argument: $1" >&2; exit 2 ;;
+    esac
+done
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 [[ $EUID -eq 0 ]] || { echo "Run this with sudo." >&2; exit 2; }
 
-say "1/4  the reader"
+say "the reader"
 
 # pcscd is the daemon everything else talks to; libccid is the driver for
 # essentially every USB reader, including the one inside a YubiKey. Without the
@@ -31,14 +51,14 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 
 systemctl enable --now pcscd >/dev/null 2>&1 || true
 
-say "2/4  PIV tooling"
+say "PIV tooling"
 
 # opensc gives pkcs11-tool and the PKCS#11 module; yubikey-manager gives ykman,
 # which is the independent oracle this project checks its own reads against.
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     opensc opensc-pkcs11 yubikey-manager yubico-piv-tool gnutls-bin >/dev/null
 
-say "3/4  Kerberos with a certificate"
+say "Kerberos packages"
 
 # PKINIT is the cheaper rung of the phase 2 gate: it proves the certificate on
 # the card is one the KDC accepts, without needing a Windows client to blame
@@ -46,7 +66,38 @@ say "3/4  Kerberos with a certificate"
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
     krb5-pkinit libpam-pkcs11 >/dev/null
 
-say "4/4  check"
+if [[ $DESKTOP -eq 1 ]]; then
+    say "a desktop to log into"
+
+    # ubuntu-desktop-minimal rather than the full one: this is a machine for
+    # proving a card works, not somebody's workstation, and the difference is
+    # about a gigabyte of things nobody here will open.
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+        ubuntu-desktop-minimal >/dev/null
+
+    systemctl set-default graphical.target >/dev/null
+
+    # gdm lists local accounts and offers "Not listed?" for everybody else. A
+    # domain user types their name there; without this note somebody stares at
+    # a list their account is not on and concludes the join failed.
+    cat <<'EOF'
+
+  A domain user does not appear in the list on the greeter. Choose
+  "Not listed?" and type the account name.
+
+EOF
+fi
+
+if [[ -n "$ANCHORS" ]]; then
+    say "PKINIT anchors"
+
+    [[ -f "$ANCHORS" ]] || { echo "No such file: $ANCHORS" >&2; exit 2; }
+
+    bash "$(dirname "$0")/configure-krb5-client.sh" \
+        --realm "$REALM" --anchors "$ANCHORS" 2>&1 | sed 's/^/  /'
+fi
+
+say "check"
 
 systemctl is-active pcscd || true
 
@@ -72,7 +123,15 @@ Installed. What this gets you:
         user@$REALM
 
 The last one is the phase 2 gate's cheaper rung: it proves the certificate on
-the card is one the KDC accepts. It needs the KDC to hold a PKINIT certificate
-and to trust Blinky's CA - both manual LDAP writes until patch 0061, described
-in docs/04-pki-backends.md.
+the card is one the KDC accepts, without needing a Windows client to blame when
+it does not.
+
+It needs the KDC to hold a PKINIT certificate and to trust the CA. Both are
+done on the domain controller by:
+
+    sudo bash blinky-samba-setup.sh --from-url http://<cms-host>
+    sudo bash blinky-samba-setup.sh --kdc-cert kdc.crt
+
+and the second of those is what turns PKINIT on. A KDC holding a certificate
+that nothing reads is a KDC that does not do PKINIT.
 EOF

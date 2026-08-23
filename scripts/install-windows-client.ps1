@@ -23,7 +23,7 @@
 .PARAMETER BootstrapToken
     From BOOTSTRAP_TOKEN in .env on the CMS host, which is root-only:
 
-        ssh sysadmin@172.16.1.11 'sudo grep ^BOOTSTRAP_TOKEN= ~/blinky/.env'
+        ssh sysadmin@by-cacms.blinky.lab 'sudo grep ^BOOTSTRAP_TOKEN= ~/blinky/.env'
 
 .EXAMPLE
     .\install-windows-client.ps1 -BootstrapToken abc123
@@ -59,7 +59,7 @@ function Prefer($given, $remembered, $fallback) {
     return $fallback
 }
 
-$Backend = Prefer $Backend $existing.BackendUrl 'https://by-ca-cms.blinky.lab:9443'
+$Backend = Prefer $Backend $existing.BackendUrl 'https://by-cacms.blinky.lab:9443'
 $Domain  = Prefer $Domain  $existing.Domain     'blinky.lab'
 
 # The token buys an identity and is useless afterwards. An agent that already
@@ -78,7 +78,7 @@ This machine has no agent identity and no bootstrap token to get one with.
 Pass -BootstrapToken on the first install. It is remembered afterwards, and an
 upgrade then needs no arguments at all:
 
-    ssh sysadmin@172.16.1.11 "sudo grep ^BOOTSTRAP_TOKEN= ~/blinky/.env"
+    ssh sysadmin@by-cacms.blinky.lab "sudo grep ^BOOTSTRAP_TOKEN= ~/blinky/.env"
 '@
     }
 }
