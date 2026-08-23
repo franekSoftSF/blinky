@@ -3,13 +3,27 @@
     Installs the Blinky agent on a domain-joined Windows client in the lab.
 
 .DESCRIPTION
-    Run elevated, from the folder holding blinky-agent-*.msi and dev-ca.crt.
+    Run elevated, from the folder holding blinky-agent-*.msi.
+
+    The chain is downloaded; nothing has to be placed next to this script.
 
     Three things, in an order that matters:
 
-      1. The lab CA into the machine's trusted roots. Without it the agent
-         refuses to talk to the backend - and refusing is correct, so the
-         failure looks like a broken agent rather than a missing certificate.
+      1. The chain, from http://<cms>/pki/ - the same unauthenticated listener
+         that serves the revocation list. Both halves go in, and to different
+         places: the root into LocalMachine\Root, the issuing CA into
+         LocalMachine\CA.
+
+         Both matter, for different reasons. Without the root the agent refuses
+         to talk to the backend, and refusing is correct - so the failure looks
+         like a broken agent rather than a missing certificate. Without the
+         issuing CA, TLS still works, because a server sends its own chain -
+         but smart-card logon does not, because the workstation has to build a
+         path for a certificate on the card and nobody sends it the
+         intermediate. certutil -scinfo then calls the chain incomplete and the
+         logon is refused for a reason that names trust.
+
+         They are checked against each other before either is trusted.
 
       2. The MSI, with the backend, the realm and the bootstrap token as
          properties. The token is passed as an MSI property that is already
@@ -35,7 +49,17 @@ param(
     [string] $Backend,
     [string] $Domain,
     [string] $Msi = "$PSScriptRoot\blinky-agent-0.2.9.msi",
-    [string] $CaCertificate = "$PSScriptRoot\dev-ca.crt"
+
+    # Where the chain comes from. Plain HTTP on purpose: this is the same
+    # listener that serves the revocation list, and a machine fetching the
+    # certificates it needs in order to trust anything cannot be asked to
+    # validate a certificate first. What protects these is that they are
+    # checked after they arrive, not how they travelled.
+    [string] $PkiUrl = 'http://by-cacms.blinky.lab',
+
+    # For a workstation with no route to the CMS: a copy of root.crt taken
+    # there by hand. issuing.crt is then expected beside it.
+    [string] $CaCertificate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,18 +107,98 @@ upgrade then needs no arguments at all:
     }
 }
 
-foreach ($file in $Msi, $CaCertificate) {
-    if (-not (Test-Path $file)) { throw "Not found: $file" }
+if (-not (Test-Path $Msi)) { throw "Not found: $Msi" }
+
+if ($CaCertificate -and -not (Test-Path $CaCertificate)) {
+    throw "Not found: $CaCertificate"
 }
 
 Write-Host "`n1/3  trusting the lab CA"
 
+# Fetched rather than carried. The chain used to have to be copied next to this
+# script by hand, and the file it looked for - dev-ca.crt - stopped being the
+# CA that signs anything the moment the edge started using the real issuing CA.
+# A stale anchor placed by hand fails as "the agent will not connect", which
+# reads as a broken agent.
+$work = Join-Path $env:TEMP "blinky-chain"
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+
+$rootFile    = Join-Path $work 'root.crt'
+$issuingFile = Join-Path $work 'issuing.crt'
+
+if ($CaCertificate) {
+    Copy-Item $CaCertificate $rootFile -Force
+
+    $beside = Join-Path (Split-Path -Parent $CaCertificate) 'issuing.crt'
+    if (Test-Path $beside) { Copy-Item $beside $issuingFile -Force }
+
+    Write-Host "     from $CaCertificate"
+}
+else {
+    Write-Host "     from $PkiUrl/pki/"
+
+    try {
+        Invoke-WebRequest "$PkiUrl/pki/root.crt"    -OutFile $rootFile    -UseBasicParsing
+        Invoke-WebRequest "$PkiUrl/pki/issuing.crt" -OutFile $issuingFile -UseBasicParsing
+    }
+    catch {
+        throw @"
+Could not fetch the chain from $PkiUrl/pki/.
+
+    $($_.Exception.Message)
+
+That address is plain HTTP on port 80 of the CMS host and needs no
+credentials. If this machine cannot reach it, take root.crt and issuing.crt
+there by hand and pass -CaCertificate.
+"@
+    }
+}
+
+$root = [Security.Cryptography.X509Certificates.X509Certificate2]::new($rootFile)
+
+# Checked before it is trusted. Importing into LocalMachine\Root tells this
+# machine to believe everything the holder of that key ever signs, so the one
+# thing worth doing first is confirming the two files are actually a pair -
+# a fetch that silently returned a login page or somebody else's CA would
+# otherwise be installed as an anchor without a word.
+if (Test-Path $issuingFile) {
+    $issuing = [Security.Cryptography.X509Certificates.X509Certificate2]::new($issuingFile)
+
+    $chain = [Security.Cryptography.X509Certificates.X509Chain]::new()
+    $chain.ChainPolicy.RevocationMode    = 'NoCheck'
+    $chain.ChainPolicy.VerificationFlags = 'AllowUnknownCertificateAuthority'
+    $chain.ChainPolicy.ExtraStore.Add($root) | Out-Null
+
+    if (-not $chain.Build($issuing) -or
+            $chain.ChainElements[$chain.ChainElements.Count - 1].Certificate.Thumbprint -ne $root.Thumbprint) {
+        throw "issuing.crt does not chain to root.crt. Refusing to trust either."
+    }
+}
+
 # LocalMachine\Root, because the service runs as LocalSystem and a root in the
 # installing user's store would be invisible to it.
-Import-Certificate -FilePath $CaCertificate `
+Import-Certificate -FilePath $rootFile `
                    -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
 
-Write-Host "     $((Get-PfxCertificate $CaCertificate).Subject)"
+Write-Host "     root     $($root.Subject)"
+Write-Host "     thumb    $($root.Thumbprint)"
+
+# The intermediate, into the intermediate store rather than Root.
+#
+# A server sends its own chain, so TLS works without this. Smart-card logon
+# does not: the workstation builds the path for a certificate on the card
+# itself, and nobody sends it the issuing CA. Without this, certutil -scinfo
+# reports the chain as incomplete and the logon is refused for a reason that
+# names trust and not a missing certificate.
+if (Test-Path $issuingFile) {
+    Import-Certificate -FilePath $issuingFile `
+                       -CertStoreLocation Cert:\LocalMachine\CA | Out-Null
+
+    Write-Host "     issuing  $($issuing.Subject)"
+}
+else {
+    Write-Host "     issuing  not present - smart-card logon will fail on chain building"
+}
 
 Write-Host "`n2/3  installing the agent"
 Write-Host "     backend  $Backend"
@@ -112,7 +216,7 @@ $arguments = @(
     '/l*v', "`"$log`"",
     "BACKEND=$Backend",
     "DOMAIN=$Domain",
-    "SERVERCA=$CaCertificate"
+    "SERVERCA=$rootFile"
 )
 
 # Only when there is one. Passing an empty property writes an empty registry
