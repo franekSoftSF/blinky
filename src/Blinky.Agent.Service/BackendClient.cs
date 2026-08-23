@@ -30,14 +30,46 @@ public sealed class BackendClient : IDisposable
 
         if (!string.IsNullOrWhiteSpace(serverCertificateAuthorityPath))
         {
-            // CreateFromPem, not CreateFromPemFile: the File overload wants a
-            // private key in the same file and fails with "the key does not
-            // match the certificate" when handed a plain CA certificate, which
-            // is the only thing anyone would ever pin. Nothing here needs a
-            // key - this certificate is a trust anchor, not an identity.
-            pinnedRoots.Add(X509Certificate2.CreateFromPem(
-                File.ReadAllText(serverCertificateAuthorityPath)));
+            pinnedRoots.Add(LoadAnchor(serverCertificateAuthorityPath));
         }
+    }
+
+    /// <summary>
+    /// A trust anchor from a file, in whichever encoding it arrived in.
+    /// </summary>
+    /// <remarks>
+    /// Both, because both turn up and neither is wrong. A CA certificate
+    /// fetched from an authority information access address is DER - that is
+    /// what RFC 5280 asks for, and what Windows expects from a .crt - while
+    /// one copied out of a chain.pem or exported by hand is PEM.
+    ///
+    /// This used to read PEM only, and pinning a DER anchor failed at startup
+    /// with "the certificate contents do not contain a PEM with a CERTIFICATE
+    /// label". The service then did not start at all, so what an operator saw
+    /// was an agent that would not run, for a file that was perfectly valid.
+    ///
+    /// CreateFromPem rather than CreateFromPemFile for the PEM case: the File
+    /// overload wants a private key in the same file and fails with "the key
+    /// does not match the certificate" when handed a plain CA certificate,
+    /// which is the only thing anyone would ever pin. Nothing here needs a
+    /// key - this is a trust anchor, not an identity.
+    /// </remarks>
+    private static X509Certificate2 LoadAnchor(string path)
+    {
+        var bytes = File.ReadAllBytes(path);
+
+        // The PEM armour, looked for in the bytes rather than guessed from the
+        // extension: .crt is used for both encodings by different tools.
+        var looksLikePem = bytes.Length > 10
+            && System.Text.Encoding.ASCII.GetString(bytes, 0, 11) == "-----BEGIN ";
+
+        if (looksLikePem)
+        {
+            return X509Certificate2.CreateFromPem(
+                System.Text.Encoding.UTF8.GetString(bytes));
+        }
+
+        return X509CertificateLoader.LoadCertificate(bytes);
     }
 
     public Uri Backend => backend;

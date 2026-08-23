@@ -180,6 +180,22 @@ if (Test-Path $issuingFile) {
 Import-Certificate -FilePath $rootFile `
                    -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
 
+# The anchor the agent pins, written as PEM whatever arrived.
+#
+# /pki/root.crt is DER - that is what an authority information access address
+# is supposed to serve, and what Windows expects from a .crt. The agent read
+# PEM only and refused to start at all: "the certificate contents do not
+# contain a PEM with a CERTIFICATE label", for a file that was a perfectly good
+# certificate. Newer agents take either; this keeps the ones already installed
+# working, and costs four lines.
+$rootPem = Join-Path $work 'root.pem'
+
+@(
+    '-----BEGIN CERTIFICATE-----'
+    [Convert]::ToBase64String($root.RawData, 'InsertLineBreaks')
+    '-----END CERTIFICATE-----'
+) | Set-Content -Path $rootPem -Encoding ascii
+
 Write-Host "     root     $($root.Subject)"
 Write-Host "     thumb    $($root.Thumbprint)"
 
@@ -216,7 +232,7 @@ $arguments = @(
     '/l*v', "`"$log`"",
     "BACKEND=$Backend",
     "DOMAIN=$Domain",
-    "SERVERCA=$rootFile"
+    "SERVERCA=$rootPem"
 )
 
 # Only when there is one. Passing an empty property writes an empty registry
