@@ -354,6 +354,22 @@ else
         bash scripts/new-ca.sh --name "$CA_NAME" --topology two-tier >/dev/null
     note "two-tier CA created: $CA_NAME Root CA, $CA_NAME Issuing CA"
 
+    # Anything already published belongs to the CA that just stopped existing.
+    #
+    # A revocation list outlives the key that signed it as a file, and a
+    # replaced CA leaves one behind that fetches perfectly and verifies against
+    # nothing. That is worse than no list at all: a 404 makes a client say it
+    # cannot determine revocation, while a stale list is taken as an answer
+    # right up to the moment something checks the signature - and then the
+    # failure is about revocation, several steps away from this directory.
+    #
+    # Seen on BY-CACMS, where the installer called the list published because
+    # something answered on the URL.
+    if compgen -G "pki/*.crl" >/dev/null; then
+        rm -f pki/*.crl
+        note "cleared the lists the previous CA had published"
+    fi
+
     CA_PASSWORD="$ca_password" bash scripts/resign-issuing-ca.sh \
         --public-url "$public_url" 2>&1 |
         grep -E "issuing CA (was|now)|root CRL" | sed 's/^/  /' || true
@@ -518,6 +534,18 @@ if [[ $SKIP_UP -eq 0 ]]; then
 
     check "the revocation list is published" \
         "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PKI_PORT:-80}/pki/issuing.crl")" 200
+
+    # Fetched is not the same as valid. A list signed by a CA that has since
+    # been replaced still answers 200, and every client believes it until one
+    # verifies the signature. Asking here costs one openssl call and moves that
+    # discovery from a workstation's logon refusal to this line.
+    crl_ok=no
+    if curl -s "http://localhost:${PKI_PORT:-80}/pki/issuing.crl" -o /tmp/blinky-check.crl 2>/dev/null; then
+        openssl crl -in /tmp/blinky-check.crl -inform DER -CAfile ca/issuing.crt -noout 2>/dev/null && crl_ok=yes
+    fi
+    rm -f /tmp/blinky-check.crl
+
+    check "that list was signed by this CA" "$crl_ok" yes
 
     check "the root's list is published" \
         "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${PKI_PORT:-80}/pki/root.crl")" 200
