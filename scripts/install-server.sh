@@ -63,6 +63,7 @@ IMPORT_P12=""
 IMPORT_P12_PASSWORD=""
 IMPORT_ANCHOR=""
 EDGE_CERT=""
+EDGE_CERT_REPLACED=0
 EDGE_KEY=""
 DIRECTORY_HOST=""
 DIRECTORY_BASE_DN=""
@@ -414,6 +415,7 @@ elif [[ ! -f certs/edge.crt ]]; then
     if [[ -f ca/issuing.p12 ]]; then
         if CA_PASSWORD="$ca_password" bash scripts/issue-edge-cert.sh                 --host "$HOSTNAME_FQDN" --host "$(hostname -I | awk '{print $1}')"                 --public-url "$public_url" 2>&1 | sed 's/^/  /'; then
             note "edge certificate issued by $CA_NAME Issuing CA, chain included"
+            EDGE_CERT_REPLACED=1
         else
             note "could not issue an edge certificate - the development one stands"
         fi
@@ -498,6 +500,21 @@ else
     say "5/6  starting"
 
     docker compose up -d --build 2>&1 | grep -E "Started|Error" | sed 's/^/  /' || true
+
+    # nginx reads its certificate once, at startup, and the certificate lives
+    # on a bind mount. Replacing the file changes nothing that is already
+    # running, and "docker compose up -d" leaves a container alone when its
+    # configuration has not changed - so a freshly issued certificate sits on
+    # disk while the edge keeps presenting the old one, indefinitely.
+    #
+    # Caught with openssl s_client, which still showed the development
+    # certificate several minutes after the installer reported issuing a new
+    # one. Nothing in the output was wrong; the two facts simply belonged to
+    # different processes.
+    if [[ $EDGE_CERT_REPLACED -eq 1 ]]; then
+        docker compose restart edge >/dev/null 2>&1 &&
+            note "edge restarted so it picks up the new certificate"
+    fi
 fi
 
 # ----------------------------------------------------------------- 6. check
