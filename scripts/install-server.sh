@@ -9,6 +9,16 @@
 #         --issuing-p12 issuing.p12 --anchor corporate-root.crt \
 #         --edge-cert wildcard.crt --edge-key wildcard.key
 #
+#     sudo bash scripts/install-server.sh \
+#         --directory-host by-dc01.blinky.lab \
+#         --directory-base-dn DC=blinky,DC=lab \
+#         --directory-bind-dn "CN=svc-blinky-ldap,CN=Users,DC=blinky,DC=lab" \
+#         --directory-bind-password-file /root/svc-ldap.password
+#
+# scripts/lab-accounts.sh creates that account on the domain controller and
+# leaves its password in /root/blinky-lab-accounts.txt. Copy the one line, not
+# the file.
+#
 # Creates the service account, generates every secret, sets up the CA, starts
 # the stack and checks it. Idempotent: run it again and it changes what is
 # wrong and leaves what is right, including every secret it already generated.
@@ -49,6 +59,12 @@ IMPORT_P12_PASSWORD=""
 IMPORT_ANCHOR=""
 EDGE_CERT=""
 EDGE_KEY=""
+DIRECTORY_HOST=""
+DIRECTORY_BASE_DN=""
+DIRECTORY_BIND_DN=""
+DIRECTORY_BIND_PASSWORD=""
+DIRECTORY_SOURCE="Samba4"
+DIRECTORY_TLS="true"
 FORCE_SECRETS=0
 SKIP_UP=0
 
@@ -68,6 +84,36 @@ while [[ $# -gt 0 ]]; do
         # Infrastructure TLS from a real CA rather than the self-signed pair.
         --edge-cert) EDGE_CERT="$2"; shift 2 ;;
         --edge-key) EDGE_KEY="$2"; shift 2 ;;
+
+        # The directory Blinky reads people out of, so that a logon certificate
+        # can carry a SID somebody read rather than typed. Read-only: the
+        # account named here needs nothing but read, which is what makes it an
+        # easy thing to ask a directory administrator for.
+        #
+        # Set here rather than hand-edited into .env afterwards. A value added
+        # to that file a line at a time is a value that is missing until
+        # something fails for a reason that names neither the value nor the
+        # file - which is the failure this whole script exists to prevent.
+        --directory-host) DIRECTORY_HOST="$2"; shift 2 ;;
+        --directory-base-dn) DIRECTORY_BASE_DN="$2"; shift 2 ;;
+        --directory-bind-dn) DIRECTORY_BIND_DN="$2"; shift 2 ;;
+        # A file, not a value. A password given as an argument is visible in
+        # ps for as long as this runs and stays in shell history afterwards -
+        # and the whole point of the account it belongs to is that it is easy
+        # to hand over safely.
+        --directory-bind-password-file)
+            [[ -f "$2" ]] || { echo "No such file: $2" >&2; exit 2; }
+            DIRECTORY_BIND_PASSWORD="$(head -n1 "$2")"
+            shift 2 ;;
+
+        # Still accepted, because a pipeline sometimes has nowhere to put a
+        # file. Named so the cost is visible at the call site.
+        --directory-bind-password-unsafe) DIRECTORY_BIND_PASSWORD="$2"; shift 2 ;;
+        --directory-source) DIRECTORY_SOURCE="$2"; shift 2 ;;
+
+        # For a directory that does not offer StartTLS. Refused in combination
+        # with a bind password, because that is a password in the clear.
+        --directory-no-tls) DIRECTORY_TLS="false"; shift ;;
         --regenerate-secrets) FORCE_SECRETS=1; shift ;;
         --no-start) SKIP_UP=1; shift ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -153,6 +199,21 @@ ensure() {
     note "$key generated"
 }
 
+# For values passed on the command line. Unlike ensure, this replaces: a
+# directory host typed wrongly the first time has to be fixable by running the
+# script again, and "it keeps whatever is there" would make that impossible.
+set_value() {
+    local key="$1" value="$2"
+
+    if grep -q "^$key=" .env 2>/dev/null; then
+        # The delimiter is a vertical bar because a distinguished name is full
+        # of commas and equals signs and a base DN is full of neither of these.
+        sed -i "s|^$key=.*|$key=$value|" .env
+    else
+        printf '%s=%s\n' "$key" "$value" >> .env
+    fi
+}
+
 ensure POSTGRES_DB blinky
 ensure POSTGRES_USER blinky
 ensure POSTGRES_PASSWORD "$(secret 24)"
@@ -177,6 +238,37 @@ ensure CA_PUBLIC_URL "http://$HOSTNAME_FQDN"
 
 ensure CRL_VALIDITY_HOURS 8
 ensure CRL_REFRESH_HOURS 2
+
+if [[ -n "$DIRECTORY_HOST" ]]; then
+    [[ -n "$DIRECTORY_BASE_DN" ]] || {
+        echo "--directory-host needs --directory-base-dn: a search with no base" >&2
+        echo "searches nothing." >&2
+        exit 2
+    }
+
+    # A simple bind sends the password, so it may not cross an unencrypted
+    # connection. Refused here rather than at the first search, where the
+    # message would be about a bind and not about this decision.
+    if [[ -n "$DIRECTORY_BIND_PASSWORD" && "$DIRECTORY_TLS" != "true" ]]; then
+        echo "A bind password over an unencrypted connection would send it in the" >&2
+        echo "clear. Drop --directory-no-tls, or leave the bind DN empty and let it" >&2
+        echo "bind with Kerberos." >&2
+        exit 2
+    fi
+
+    set_value DIRECTORY_HOST "$DIRECTORY_HOST"
+    set_value DIRECTORY_BASE_DN "$DIRECTORY_BASE_DN"
+    set_value DIRECTORY_SOURCE "$DIRECTORY_SOURCE"
+    set_value DIRECTORY_BIND_DN "$DIRECTORY_BIND_DN"
+    set_value DIRECTORY_BIND_PASSWORD "$DIRECTORY_BIND_PASSWORD"
+    set_value DIRECTORY_USE_TLS "$DIRECTORY_TLS"
+
+    if [[ -n "$DIRECTORY_BIND_DN" ]]; then
+        note "directory $DIRECTORY_HOST, binding as $DIRECTORY_BIND_DN"
+    else
+        note "directory $DIRECTORY_HOST, binding with Kerberos - no password stored"
+    fi
+fi
 
 chown root:root .env
 chmod 600 .env

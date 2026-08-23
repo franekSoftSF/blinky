@@ -74,6 +74,20 @@ logon, and by then the missing attribute is three steps behind the error.
 Both passwords are generated and written to `/root/blinky-lab-accounts.txt`,
 readable by root only. Neither is printed.
 
+The service account's password then has to reach the CMS host once. Put that
+one line in a file and hand the file to the installer:
+
+```
+sudo bash scripts/install-server.sh --hostname by-cacms.blinky.lab     --directory-host by-dc01.blinky.lab     --directory-base-dn DC=blinky,DC=lab     --directory-bind-dn "CN=svc-blinky-ldap,CN=Users,DC=blinky,DC=lab"     --directory-bind-password-file /root/svc-ldap.password
+```
+
+A file rather than an argument, because a password on a command line is visible
+in `ps` for as long as the command runs and stays in shell history afterwards.
+
+Better still where it can be arranged: leave the bind DN out entirely and give
+the container a keytab, so it binds with Kerberos and no password travels or is
+stored at all.
+
 ## Order of setup
 
 Each step depends on the one before it, and skipping ahead produces failures
