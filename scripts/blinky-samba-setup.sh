@@ -113,6 +113,9 @@ config="CN=Configuration,$basedn"
 services="CN=Public Key Services,CN=Services,$config"
 dc_fqdn="$(hostname -f)"
 
+# Already ends in tls - Samba keeps its TLS material there. Uses below join
+# to it directly; adding another "tls/" produces /private/tls/tls, which is
+# created happily and then read by nothing.
 private=/var/lib/samba/private/tls
 SAM=/var/lib/samba/private/sam.ldb
 
@@ -268,19 +271,19 @@ chmod 644 "$private/kdc.crt"
 # does not already hold the issuing CA cannot build a path from a leaf alone -
 # which it reports as the KDC certificate being untrusted, sending everybody to
 # look at anchors instead of at what was sent.
-install -d -m 755 "$private/tls"
+install -d -m 755 "$private"
 
 if [[ -n "$CHAIN" && -f "$CHAIN" ]]; then
     cat "$private/kdc.crt" "$CHAIN" > "$private/kdc-chain.pem"
     chmod 644 "$private/kdc-chain.pem"
     identity="$private/kdc-chain.pem"
 
-    install -m 644 "$CHAIN" "$private/tls/ca-chain.pem"
+    install -m 644 "$CHAIN" "$private/ca-chain.pem"
 else
     identity="$private/kdc.crt"
 fi
 
-anchors="$private/tls/ca-chain.pem"
+anchors="$private/ca-chain.pem"
 
 [[ -f "$anchors" ]] || {
     echo "No anchor chain at $anchors. Pass --chain so PKINIT has something to" >&2
@@ -343,9 +346,9 @@ cp "$samba_krb5" /etc/krb5.conf
 chmod 644 /etc/krb5.conf
 
 # The revocation list smbd checks, once one has been published here.
-if [[ -f "$private/tls/issuing.crl" ]] &&
+if [[ -f "$private/issuing.crl" ]] &&
         ! grep -q "tls crlfile" /etc/samba/smb.conf; then
-    sed -i "/^\[global\]/a\\ttls crlfile = $private/tls/issuing.crl" /etc/samba/smb.conf
+    sed -i "/^\[global\]/a\\ttls crlfile = $private/issuing.crl" /etc/samba/smb.conf
     say "smb.conf now points at the revocation list"
 fi
 
