@@ -287,12 +287,19 @@ public sealed class BackendClient : IDisposable
         }
     }
 
-    public async Task<PukMaterial?> CheckoutPukAsync(long serial, CancellationToken ct)
+    /// <param name="reason">
+    /// What this is for, so the audit row says so. The escrow's disclosure
+    /// event is an alerting trigger, and a card being personalised should not
+    /// read as somebody rescuing a blocked PIN.
+    /// </param>
+    public async Task<PukMaterial?> CheckoutPukAsync(long serial, CancellationToken ct,
+        string reason = "unblock")
     {
         try
         {
             var response = await Authenticated()
-                .PostAsync($"/api/tokens/{serial}/puk/checkout", content: null, ct);
+                .PostAsync($"/api/tokens/{serial}/puk/checkout?reason={Uri.EscapeDataString(reason)}",
+                    content: null, ct);
 
             return response.IsSuccessStatusCode
                 ? await response.Content.ReadFromJsonAsync<PukMaterial>(ct)

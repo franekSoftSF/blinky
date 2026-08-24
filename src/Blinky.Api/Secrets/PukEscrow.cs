@@ -52,7 +52,14 @@ public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> 
     /// to the next one, inside the same transaction with the card. Two round
     /// trips would put a network between two APDUs that must not be separated.
     /// </remarks>
-    public PukCheckout? Checkout(long serial, string actor)
+    /// <param name="reason">
+    /// Why the PUK is being taken out, for the audit row. Not decoration: that
+    /// row is named in docs/06 as an alerting trigger, and "somebody unblocked
+    /// a PIN" and "a card was personalised" deserve different attention.
+    /// It was hard-coded to "unblock", which made a personalisation
+    /// indistinguishable from a desk-side rescue when reading the trail back.
+    /// </param>
+    public PukCheckout? Checkout(long serial, string actor, string reason = "unblock")
     {
         using var session = database.OpenSession();
         using var transaction = session.BeginTransaction();
@@ -92,7 +99,7 @@ public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> 
             // The disclosure is the event, never the value. This row is exempt
             // from retention precisely because it is the record that somebody
             // took a PUK out of escrow.
-            Detail = $$"""{"reason":"unblock","pending":"{{pending.Id}}"}""",
+            Detail = $$"""{"reason":"{{reason}}","pending":"{{pending.Id}}"}""",
         });
 
         transaction.Commit();

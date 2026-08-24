@@ -1128,13 +1128,18 @@ app.MapPost("/api/tokens/{serial:long}/management-key",
     });
 
 app.MapPost("/api/tokens/{serial:long}/puk/checkout",
-    (long serial, HttpContext context, PukEscrow escrow) =>
+    (long serial, string? reason, HttpContext context, PukEscrow escrow) =>
     {
         var agent = (Agent)context.Items["agent"]!;
 
         try
         {
-            var checkout = escrow.Checkout(serial, $"agent:{agent.Hostname}");
+            // Why, from the caller, because the two callers are doing different
+            // things: rescuing a blocked PIN at a desk, and personalising a card
+            // that still has the factory PUK. Recording both as an unblock makes
+            // the audit trail lie in the direction of alarm.
+            var checkout = escrow.Checkout(serial, $"agent:{agent.Hostname}",
+                string.IsNullOrWhiteSpace(reason) ? "unblock" : reason);
 
             return checkout is null
                 ? Results.NotFound(new { error = "no such token" })

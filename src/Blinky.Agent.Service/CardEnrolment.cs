@@ -437,7 +437,7 @@ public sealed class CardEnrolment(
     private async Task RotateFactoryPukAsync(PivSession session, long serial,
         BackendClient backend, CancellationToken ct)
     {
-        var material = await backend.CheckoutPukAsync(serial, ct);
+        var material = await backend.CheckoutPukAsync(serial, ct, "personalise");
 
         if (material is null)
         {
