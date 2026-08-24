@@ -254,7 +254,8 @@ app.MapPost("/api/jobs/inventory",
     });
 
 app.MapPost("/api/jobs/enrol",
-    (EnrolmentJobRequest request, HttpContext context, JobService jobs) =>
+    (EnrolmentJobRequest request, HttpContext context, JobService jobs,
+        Database database) =>
     {
         if (!IsOperator(context, operatorToken))
         {
@@ -273,10 +274,35 @@ app.MapPost("/api/jobs/enrol",
                   + $":{request.KeyAlgorithm ?? "default"}"
                   + $":{request.Reason ?? "initial"}";
 
+        // Whether the agent may generate over a key that is already in the
+        // slot. Decided here, from this server's own record, and never from
+        // the request - an operator asking for an enrolment is not thereby
+        // asking to destroy a key nobody has accounted for.
+        //
+        // KeyPresent means Blinky put a key there and the credential is gone:
+        // recycling deletes the certificate, and on some firmware the key does
+        // not go with it. Without this the slot is finished - every later
+        // enrolment stops on a key the operator already asked to have removed.
+        //
+        // Foreign is the case the refusal exists for and stays refused. So
+        // does a slot this server believes is empty: if it is not, its record
+        // is wrong, and acting on a wrong record by destroying a key is the
+        // worst available response.
+        var replaceKey = false;
+
+        using (var session = database.OpenSession())
+        {
+            var slot = session.Query<Slot>()
+                .FirstOrDefault(s => s.Token.Serial == request.TokenSerial
+                                     && s.SlotId == request.SlotId);
+
+            replaceKey = slot?.State == Blinky.Domain.SlotState.KeyPresent;
+        }
+
         var (job, created) = jobs.Create(JobType.Enroll, key,
             id => JobEnvelope.Enrolment(id, key, DateTimeOffset.UtcNow.AddHours(1),
                 request.TokenSerial, request.SlotId, request.ProfileName, request.DisplayName,
-                request.Upn, request.ObjectSid, request.KeyAlgorithm),
+                request.Upn, request.ObjectSid, request.KeyAlgorithm, replaceKey),
             request.AgentId);
 
         return Results.Ok(new { job.Id, created, state = job.State.ToString() });

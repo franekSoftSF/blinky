@@ -48,7 +48,12 @@ param(
     [string] $BootstrapToken,
     [string] $Backend,
     [string] $Domain,
-    [string] $Msi = "$PSScriptRoot\blinky-agent-0.2.9.msi",
+    # The newest one beside this script, rather than a version written here.
+    # A default naming one particular build is a line somebody has to remember
+    # to edit, and the failure when they do not is an installer that quietly
+    # deploys the previous agent.
+    [string] $Msi = (Get-ChildItem "$PSScriptRoot\blinky-agent-*.msi" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName,
 
     # Where the chain comes from. Plain HTTP on purpose: this is the same
     # listener that serves the revocation list, and a machine fetching the

@@ -28,4 +28,12 @@
     <Content Include="..\..\assets\branding\blinky-agent-256.png" Link="Assets\blinky-agent-256.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- So the tests can reach the small decisions that are not worth a public
+         surface. ParseAlgorithm is one: which key the card generates is a
+         choice worth pinning down in a test, and it was hard-coded once
+         already without anything noticing. -->
+    <InternalsVisibleTo Include="Blinky.UnitTests" />
+  </ItemGroup>
+
 </Project>

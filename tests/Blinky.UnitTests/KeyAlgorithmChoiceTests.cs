@@ -1,4 +1,6 @@
+using Blinky.Agent.Service;
 using Blinky.Contracts;
+using Blinky.Piv;
 
 namespace Blinky.UnitTests;
 
@@ -23,6 +25,63 @@ public class KeyAlgorithmChoiceTests
                 123, "9A", "smartcard-logon", "Jan Kowalski",
                 "jkowalski@blinky.lab", "S-1-5-21-1-2-3-1104", algorithm)
             .Steps[0];
+
+    /// <summary>
+    /// The default the agent falls back to, and the names it accepts.
+    /// </summary>
+    /// <remarks>
+    /// Windows-only, like the agent it belongs to: CardEnrolment talks to a
+    /// reader through winscard.dll and is marked accordingly.
+    /// </remarks>
+    [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    public void The_default_is_the_one_windows_accepts_unconfigured()
+    {
+        Assert.Equal(PivAlgorithm.Rsa2048, CardEnrolment.ParseAlgorithm(null));
+        Assert.Equal(PivAlgorithm.Rsa2048, CardEnrolment.ParseAlgorithm(""));
+        Assert.Equal(PivAlgorithm.EccP256, CardEnrolment.ParseAlgorithm("EccP256"));
+        Assert.Equal(PivAlgorithm.EccP256, CardEnrolment.ParseAlgorithm("eccp256"));
+
+        Assert.Throws<InvalidOperationException>(
+            () => CardEnrolment.ParseAlgorithm("Rsa9999"));
+    }
+
+    /// <summary>
+    /// And the generation actually uses it.
+    /// </summary>
+    /// <remarks>
+    /// Read from the source, because this is precisely what got past a build,
+    /// a full test run and a released MSI once already: an edit that added the
+    /// parser but never landed the call site left GenerateKeyPair holding a
+    /// literal PivAlgorithm.EccP256. Everything compiled - an unused private
+    /// method is not an error - and every test passed, because they all
+    /// checked the contract rather than the card. The agent went on generating
+    /// the algorithm nobody had asked for.
+    /// </remarks>
+    [Fact]
+    public void The_generation_call_takes_it_from_the_job()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        string? source = null;
+
+        while (directory is not null && source is null)
+        {
+            var candidate = Path.Combine(directory.FullName,
+                "src", "Blinky.Agent.Service", "CardEnrolment.cs");
+
+            if (File.Exists(candidate))
+            {
+                source = File.ReadAllText(candidate);
+            }
+
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(source);
+
+        Assert.DoesNotContain("GenerateKeyPair(slot, PivAlgorithm.", source);
+        Assert.Contains("GenerateKeyPair(slot, algorithm,", source);
+    }
 
     [Fact]
     public void The_choice_reaches_the_agent()

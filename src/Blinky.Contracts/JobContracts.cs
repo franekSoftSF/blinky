@@ -63,7 +63,7 @@ public sealed record JobEnvelope(
     public static JobEnvelope Enrolment(Guid jobId, string idempotencyKey,
         DateTimeOffset deadline, long tokenSerial, string slotId, string profile,
         string displayName, string? upn, string? objectSid,
-        string? keyAlgorithm = null) =>
+        string? keyAlgorithm = null, bool replaceKey = false) =>
         new(Protocol.SchemaVersion, jobId, JobType.Enroll, idempotencyKey, deadline,
             tokenSerial,
         [
@@ -79,6 +79,12 @@ public sealed record JobEnvelope(
                 // default, so an older agent that does not read this is not
                 // handed something it will ignore silently.
                 ["keyAlgorithm"] = keyAlgorithm ?? string.Empty,
+
+                // Permission to generate over a key that is already in the
+                // slot. Granted by the server only for a key the server put
+                // there and has since revoked - never for one it does not
+                // recognise.
+                ["replaceKey"] = replaceKey ? "true" : string.Empty,
             }),
         ]);
 }

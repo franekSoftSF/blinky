@@ -41,6 +41,8 @@ public sealed class CardEnrolment(
                      ?? throw new InvalidOperationException("An enrolment names its token.");
 
         var slotName = step.Argument("slot") ?? "9A";
+        var algorithm = ParseAlgorithm(step.Argument("keyAlgorithm"));
+        var replaceKey = step.Argument("replaceKey") == "true";
         var profile = step.Argument("profile") ?? "smartcard-logon";
 
         var slot = PivSlot.Credentials.FirstOrDefault(s =>
@@ -102,7 +104,8 @@ public sealed class CardEnrolment(
             using (connection)
             using (transaction)
             {
-                await RunAsync(session, slot, profile, serial, job, backend, attempt, ct);
+                await RunAsync(session, slot, profile, algorithm, replaceKey,
+                    serial, job, backend, attempt, ct);
             }
 
             return;
@@ -113,6 +116,7 @@ public sealed class CardEnrolment(
     }
 
     private async Task RunAsync(PivSession session, PivSlot slot, string profileName,
+        PivAlgorithm algorithm, bool replaceKey,
         long serial, JobEnvelope job, BackendClient backend, int attempt, CancellationToken ct)
     {
         await Report(backend, job, attempt, "AuthenticateManagementKey", ct);
@@ -151,7 +155,25 @@ public sealed class CardEnrolment(
         await Report(backend, job, attempt, "GenerateKey", ct);
 
         var existing = session.GetSlotMetadata(slot);
-        if (existing is not null)
+        if (existing is not null && replaceKey)
+        {
+            // Generating destroys what is there. Allowed here because the
+            // server said so, and it says so only for a key it put in this
+            // slot itself and has since revoked.
+            //
+            // That case is not rare and has no other way out. Recycling a
+            // credential deletes the certificate, and on some firmware the key
+            // will not delete with it - YubiKey 5.4.3 answers 6D00 to
+            // DeleteKey. The slot is then left holding a key belonging to
+            // nothing, and a refusal to overwrite it means the slot can never
+            // be used again: every later enrolment stops on a key the operator
+            // already asked to have removed.
+            logger.LogInformation(
+                "Token {Serial} slot {Slot}: generating over an orphaned {Algorithm} key, "
+                + "which the server revoked and the card would not delete",
+                serial, slot, existing.Algorithm);
+        }
+        else if (existing is not null)
         {
             // Generating destroys what is there, with no copy anywhere. The
             // server decided this slot was free; if it is not, that assumption
@@ -183,7 +205,7 @@ public sealed class CardEnrolment(
                 $"Refusing to generate a key in {slot} that needs no verification.");
         }
 
-        var generated = session.GenerateKeyPair(slot, PivAlgorithm.EccP256,
+        var generated = session.GenerateKeyPair(slot, algorithm,
             policy, TouchPolicy.Never);
 
         await Report(backend, job, attempt, "Attest", ct);
@@ -371,7 +393,7 @@ public sealed class CardEnrolment(
     /// So a deployment that wants ECC asks for it and turns the setting on. A
     /// deployment that has not thought about it gets the one that works.
     /// </remarks>
-    private static PivAlgorithm ParseAlgorithm(string? requested)
+    internal static PivAlgorithm ParseAlgorithm(string? requested)
     {
         if (string.IsNullOrWhiteSpace(requested))
         {
