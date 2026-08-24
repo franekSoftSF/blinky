@@ -317,8 +317,34 @@ public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> 
     /// vendor published, and pretending otherwise would make the first unblock
     /// of every new token fail.
     /// </remarks>
+    /// <summary>The PUK the card is holding right now.</summary>
+    /// <remarks>
+    /// What the card says comes before what this server remembers, and the
+    /// order used to be the other way round.
+    ///
+    /// An envelope records the PUK Blinky last set. PukState comes from the
+    /// card's own metadata and is refreshed at every inventory. When the two
+    /// disagree - the card reporting a factory PUK while an envelope says
+    /// otherwise - the card is right, and the envelope is a memory of a card
+    /// that has since been reset by something other than Blinky. `ykman piv
+    /// reset` does exactly that, and so does anybody re-provisioning a token
+    /// by hand.
+    ///
+    /// Believing the envelope there is not merely wrong, it is expensive: the
+    /// value goes to the card, the card refuses it, and one of three PUK
+    /// attempts is gone. Three of those and the PUK blocks, which is the thing
+    /// this whole escrow exists to avoid.
+    ///
+    /// Seen on token 29051525, wiped between two enrolments: CHANGE PUK came
+    /// back 63C2 with two attempts left.
+    /// </remarks>
     private string Current(NHibernate.ISession session, Token token)
     {
+        if (token.PukState == CredentialSecretState.Default)
+        {
+            return FactoryPuk;
+        }
+
         var escrowed = session.Query<SecretEnvelope>()
             .Where(e => e.Token.Id == token.Id && e.Kind == SecretKind.Puk)
             .OrderByDescending(e => e.CreatedAt)
@@ -327,11 +353,6 @@ public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> 
         if (escrowed is not null)
         {
             return Unwrap(escrowed);
-        }
-
-        if (token.PukState == CredentialSecretState.Default)
-        {
-            return FactoryPuk;
         }
 
         throw new PukUnavailableException(

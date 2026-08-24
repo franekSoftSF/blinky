@@ -437,6 +437,28 @@ public sealed class CardEnrolment(
     private async Task RotateFactoryPukAsync(PivSession session, long serial,
         BackendClient backend, CancellationToken ct)
     {
+        // Not on a card that cannot afford a wrong guess.
+        //
+        // CHANGE PUK spends an attempt when it is refused, and there are three.
+        // The value comes from escrow, which can be out of step with the card -
+        // a token reset outside Blinky keeps its envelope here while the card
+        // goes back to the factory value - and a refusal there costs a third of
+        // the way to a blocked PUK. Blocking it is precisely what this escrow
+        // exists to prevent, so replacing a PUK is not worth doing at any cost.
+        //
+        // Full retries mean nothing has been guessed wrong yet, which is the
+        // only state where a fresh card should be.
+        var puk = session.GetPukMetadata();
+
+        if (puk.RemainingRetries is { } left && puk.TotalRetries is { } total && left < total)
+        {
+            logger.LogWarning(
+                "Token {Serial}: the PUK has {Left} of {Total} attempts left, so it is "
+                + "left alone rather than risked on a value escrow may not share",
+                serial, left, total);
+            return;
+        }
+
         var material = await backend.CheckoutPukAsync(serial, ct, "personalise");
 
         if (material is null)
