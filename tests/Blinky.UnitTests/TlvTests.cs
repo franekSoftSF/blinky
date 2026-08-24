@@ -52,5 +52,5 @@ public sealed class TlvTests
     private static Dictionary<byte, byte[]> ParseSimple(string hex) =>
         Tlv.ParseSimple(Convert.FromHexString(hex));
 
-    private static Dictionary<byte, byte[]> ParseBer(byte[] data) => Tlv.ParseBer(data);
+    private static Dictionary<int, byte[]> ParseBer(byte[] data) => Tlv.ParseBer(data);
 }

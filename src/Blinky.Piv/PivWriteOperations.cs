@@ -476,10 +476,12 @@ internal static class PublicKeyDecoder
     {
         var outer = Tlv.ParseBer(response);
 
-        // The template is 7F49, a two-byte tag the single-byte parser sees as
-        // 7F followed by a length; unwrap whichever shape arrives.
-        var template = outer.TryGetValue(0x7F, out var nested)
-            ? Tlv.ParseBer(nested[1..])
+        // 7F49 is the public key template, and it is now read as the single
+        // two-byte tag it is. Some cards return the contents unwrapped, so a
+        // missing template is not an error - it means the tags are already at
+        // the top level.
+        var template = outer.TryGetValue(0x7F49, out var nested)
+            ? Tlv.ParseBer(nested)
             : outer;
 
         return algorithm switch
@@ -495,7 +497,7 @@ internal static class PublicKeyDecoder
         };
     }
 
-    private static byte[] Require(Dictionary<byte, byte[]> template, byte tag) =>
+    private static byte[] Require(Dictionary<int, byte[]> template, int tag) =>
         template.TryGetValue(tag, out var value)
             ? value
             : throw new PivProtocolException(
