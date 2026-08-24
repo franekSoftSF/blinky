@@ -397,8 +397,23 @@ public sealed class CardEnrolment(
                     "Token {Serial}: management key set to this deployment's own, "
                     + "and stored behind the PIN", serial);
 
-                await RotateFactoryPukAsync(session, serial, backend, ct);
             }
+
+            // The PUK is a separate fact from the management key, and asking
+            // about it separately is the point.
+            //
+            // It used to happen only while personalising, which tied it to the
+            // management key still being the factory value. A card whose
+            // personalisation was interrupted between the two - management key
+            // replaced, PUK not yet - was then never eligible again: the next
+            // enrolment saw a card that was no longer factory, skipped
+            // personalisation, and left the PUK at the value printed in the
+            // manual. Permanently.
+            //
+            // That is not a rare interleaving. It is what happens when the card
+            // is reset mid-operation, which on Windows is what a logon does.
+            // Token 29051525 spent an afternoon in exactly that state.
+            await RotateFactoryPukIfUntouchedAsync(session, serial, backend, ct);
 
             return userVerified;
         }
@@ -434,9 +449,18 @@ public sealed class CardEnrolment(
     /// on the card, rather than one on the card and written down nowhere.
     /// </para>
     /// </remarks>
-    private async Task RotateFactoryPukAsync(PivSession session, long serial,
+    private async Task RotateFactoryPukIfUntouchedAsync(PivSession session, long serial,
         BackendClient backend, CancellationToken ct)
     {
+        var state = session.GetPukMetadata();
+
+        // Only a PUK the card says is still the factory one. Anything else
+        // belongs to whoever set it, and a Bio has none at all.
+        if (state.State is not PinState.Default)
+        {
+            return;
+        }
+
         // Not on a card that cannot afford a wrong guess.
         //
         // CHANGE PUK spends an attempt when it is refused, and there are three.
@@ -448,9 +472,8 @@ public sealed class CardEnrolment(
         //
         // Full retries mean nothing has been guessed wrong yet, which is the
         // only state where a fresh card should be.
-        var puk = session.GetPukMetadata();
-
-        if (puk.RemainingRetries is { } left && puk.TotalRetries is { } total && left < total)
+        if (state.RemainingRetries is { } left && state.TotalRetries is { } total
+            && left < total)
         {
             logger.LogWarning(
                 "Token {Serial}: the PUK has {Left} of {Total} attempts left, so it is "
