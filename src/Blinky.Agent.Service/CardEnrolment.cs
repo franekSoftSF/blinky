@@ -399,6 +399,14 @@ public sealed class CardEnrolment(
 
             }
 
+            // A card still on the PIN printed in the manual is not protected,
+            // whatever else is on it. Dealt with before a credential goes
+            // anywhere near the slot.
+            if (await ReplaceFactoryPinAsync(session, serial, job, backend, attempt, ct))
+            {
+                userVerified = true;
+            }
+
             // The PUK is a separate fact from the management key, and asking
             // about it separately is the point.
             //
@@ -523,6 +531,81 @@ public sealed class CardEnrolment(
                 "Token {Serial}: the card took a new PUK and the server was not told. "
                 + "Escrow holds both until it is.", serial);
         }
+    }
+
+    /// <summary>
+    /// Makes the holder choose a PIN when the card is still on the factory one.
+    /// </summary>
+    /// <returns>True if the PIN was changed and verified, so nothing need ask again.</returns>
+    /// <remarks>
+    /// <para>
+    /// A credential on a card whose PIN is 123456 is not a credential, it is a
+    /// certificate anybody holding the card can use. The card is refused rather
+    /// than issued to if the holder will not choose one - that is the point of
+    /// forcing it here rather than suggesting it afterwards.
+    /// </para>
+    /// <para>
+    /// Only the new PIN is asked for. The card has reported that its PIN is
+    /// still the factory value, so the current one is already known and asking
+    /// for it would be theatre.
+    /// </para>
+    /// <para>
+    /// Asked twice and compared, because there is no confirmation field in this
+    /// prompt and a PIN typed once wrong is a PIN nobody knows. The card is
+    /// then only recoverable through the PUK, which is exactly the situation
+    /// worth two seconds of typing to avoid.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> ReplaceFactoryPinAsync(PivSession session, long serial,
+        JobEnvelope job, BackendClient backend, int attempt, CancellationToken ct)
+    {
+        if (session.GetPinMetadata().State is not PinState.Default)
+        {
+            return false;
+        }
+
+        await Report(backend, job, attempt, "ChoosePin", ct,
+            JobState.AwaitingUser, "waiting for a new PIN");
+
+        var policy = PinComplexityPolicy.Default;
+
+        var chosen = await prompts.AskForPinAsync(serial, null,
+            "This key still has the PIN it left the factory with. Choose a new one.", ct);
+
+        if (chosen is null)
+        {
+            throw new InvalidOperationException(
+                "Nobody chose a PIN. A card on the factory PIN is not issued to.");
+        }
+
+        var verdict = PinRules.Check(chosen, policy, serial);
+
+        if (!verdict.IsAcceptable)
+        {
+            throw new InvalidOperationException($"That PIN was refused: {verdict.Explanation}");
+        }
+
+        var again = await prompts.AskForPinAsync(serial, null,
+            "Type the same PIN once more, so a slip does not lock the key.", ct);
+
+        if (again != chosen)
+        {
+            throw new InvalidOperationException(
+                "The two PINs were not the same, so nothing was changed.");
+        }
+
+        session.ChangePin(PinComplexityPolicy.FactoryPin, chosen);
+
+        // Verified as well as changed: CHANGE REFERENCE DATA proves the old
+        // value but does not leave the card in a PIN-verified state, and the
+        // rest of the enrolment needs one. Doing it here saves asking the same
+        // person for the PIN they chose ten seconds ago.
+        session.VerifyPin(chosen);
+
+        logger.LogInformation(
+            "Token {Serial}: the factory PIN was replaced by the holder", serial);
+
+        return true;
     }
 
     /// <summary>The management key from the card's PRINTED object, after the PIN.</summary>
