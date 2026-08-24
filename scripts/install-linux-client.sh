@@ -18,6 +18,7 @@ REALM="${REALM:-BLINKY.LAB}"
 DESKTOP=0
 ANCHORS=""
 REMOTE_READER=0
+SMARTCARD_LOGIN=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -47,6 +48,21 @@ while [[ $# -gt 0 ]]; do
         # open a shell as this user can then talk to whatever card is in the
         # reader.
         --allow-remote-reader) REMOTE_READER=1; shift ;;
+
+        # Puts the card into the PAM stack, so it can be logged in with.
+        #
+        # Separate from --anchors, and not implied by it, because the two carry
+        # very different risk. Anchors let Kerberos check a KDC certificate and
+        # break nothing if they are wrong. This edits how the machine decides
+        # who may log in.
+        #
+        # It was folded into --anchors for one afternoon and locked somebody out
+        # of a lab machine: the "optional" PAM profile puts pam_sss with
+        # try_cert_auth ahead of the password, and with a card in the reader the
+        # greeter enters card mode and does not come back. "Optional" describes
+        # what PAM does with the result, not what the greeter offers the person
+        # standing there.
+        --smartcard-login) SMARTCARD_LOGIN=1; shift ;;
 
         --realm) REALM="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -161,6 +177,7 @@ if [[ -n "$ANCHORS" ]]; then
     # certificate against, the switch that makes it look at cards at all, and a
     # PAM profile that puts it in the stack. Following Omnissa's Horizon guide
     # for Ubuntu with SSSD, which is the same arrangement.
+    if [[ $SMARTCARD_LOGIN -eq 1 ]]; then
     say "logging in with the card"
 
     install -d -m 755 /etc/sssd/pki
@@ -194,6 +211,32 @@ if [[ -n "$ANCHORS" ]]; then
         echo "  PAM profile sss-smart-card-optional is not on this release" >&2
 
     systemctl restart sssd 2>/dev/null || true
+
+    # Checked, and put back if it broke the other way in.
+    #
+    # This is the only edit in this script that can leave a machine nobody can
+    # log into, and a script that can do that has to look at what it did. A
+    # card that will not read is a bad day; a machine that has stopped
+    # accepting passwords is somebody driving to a data centre.
+    if ! grep -q "pam_unix.so" /etc/pam.d/common-auth; then
+        echo "  the password path is gone from common-auth - putting it back" >&2
+        pam-auth-update --disable sss-smart-card-optional >/dev/null 2>&1 || true
+        systemctl restart sssd 2>/dev/null || true
+        exit 8
+    fi
+
+    cat <<'WARN'
+
+  A card is now part of how this machine authenticates. Before you rely on it,
+  log in with a password once with the card OUT of the reader, and once with it
+  in. The greeter enters card mode when it sees one, and "optional" in the
+  profile name describes what PAM does with the result - not what the person in
+  front of the screen is offered.
+
+  To undo:  sudo pam-auth-update --disable sss-smart-card-optional
+
+WARN
+    fi
 fi
 
 say "check"
