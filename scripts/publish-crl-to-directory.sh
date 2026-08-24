@@ -149,6 +149,21 @@ install -d -m 755 "$tls"
 install -m 644 "$work/issuing.crl" "$tls/issuing.crl"
 echo "  $tls/issuing.crl"
 
+# And a PEM copy, because "tls crlfile" is the one consumer here that will not
+# take DER.
+#
+# Samba refuses to start at all on a DER list - "TLS failed to initialise
+# crlfile ... Base64 decoding error" - and takes the whole LDAP server down
+# with it. The directory then stops answering for a reason that has nothing to
+# do with the directory, on a controller that was working a minute earlier.
+#
+# The DER copy stays: that is what the directory attributes hold and what a
+# Windows client fetches from the distribution point.
+openssl crl -in "$work/issuing.crl" -inform DER -outform PEM \
+    -out "$tls/issuing-crl.pem" 2>/dev/null
+chmod 644 "$tls/issuing-crl.pem"
+echo "  $tls/issuing-crl.pem  (PEM, for tls crlfile)"
+
 if [[ $have_root -eq 1 ]]; then
     install -m 644 "$work/root.crl" "$tls/root.crl"
     echo "  $tls/root.crl"
@@ -161,7 +176,7 @@ if ! grep -q "tls crlfile" /etc/samba/smb.conf; then
 
   smb.conf has no "tls crlfile". Add it under [global] and reload:
 
-      tls crlfile = $tls/issuing.crl
+      tls crlfile = $tls/issuing-crl.pem
 EOF
 fi
 

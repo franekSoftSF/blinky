@@ -346,17 +346,62 @@ cp "$samba_krb5" /etc/krb5.conf
 chmod 644 /etc/krb5.conf
 
 # The revocation list smbd checks, once one has been published here.
-if [[ -f "$private/issuing.crl" ]] &&
+#
+# The PEM copy, not the DER one. Samba will not start on a DER list - it says
+# "TLS failed to initialise crlfile ... Base64 decoding error" and takes the
+# LDAP server down with it, so the controller stops answering for a reason that
+# names neither this file nor this setting. Seen on BY-DC01, which went from
+# working to failed on this one line.
+if [[ -f "$private/issuing-crl.pem" ]] &&
         ! grep -q "tls crlfile" /etc/samba/smb.conf; then
     # Spaces rather than a tab: sed's "a" strips the backslash and leaves
     # the letter, which would write "ttls crlfile" and be ignored as an
     # unknown parameter.
-    sed -i "/^\[global\]/a\\    tls crlfile = $private/issuing.crl" /etc/samba/smb.conf
+    sed -i "/^\[global\]/a\\    tls crlfile = $private/issuing-crl.pem" /etc/samba/smb.conf
     say "smb.conf now points at the revocation list"
 fi
 
+cp /etc/samba/smb.conf "$private/smb.conf.before-blinky"
+
 systemctl restart samba-ad-dc
-sleep 4
+sleep 6
+
+# Put it back if it will not start.
+#
+# This script edits smb.conf on a domain controller, and a controller that does
+# not come back takes the realm with it - every member machine, every logon,
+# every LDAP query. Leaving it down while somebody reads a script is not an
+# acceptable way to report a mistake.
+#
+# It has happened: one wrong line here - a revocation list in the wrong
+# encoding - and samba refused to start the LDAP server task and terminated.
+if ! systemctl is-active --quiet samba-ad-dc; then
+    echo
+    echo "  samba did not start with the new configuration. Putting the old" >&2
+    echo "  one back, because a controller that is down takes the realm with" >&2
+    echo "  it. What it said:" >&2
+    echo >&2
+
+    journalctl -u samba-ad-dc -n 8 --no-pager 2>/dev/null |
+        grep -iE "fail|error|terminate" | sed 's/^/      /' >&2 ||
+        tail -6 /var/log/samba/log.samba 2>/dev/null | sed 's/^/      /' >&2
+
+    cp "$private/smb.conf.before-blinky" /etc/samba/smb.conf
+    systemctl restart samba-ad-dc
+    sleep 6
+
+    if systemctl is-active --quiet samba-ad-dc; then
+        echo >&2
+        echo "  The controller is back on its previous configuration." >&2
+    else
+        echo >&2
+        echo "  It did not come back on the previous configuration either." >&2
+        echo "  $private/smb.conf.before-blinky holds what was there before." >&2
+    fi
+
+    exit 7
+fi
+
 systemctl is-active samba-ad-dc
 
 # Checked rather than claimed. "PKINIT is enabled" is a line that was written;
