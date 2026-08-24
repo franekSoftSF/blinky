@@ -121,14 +121,8 @@ public sealed class CardEnrolment(
     {
         await Report(backend, job, attempt, "AuthenticateManagementKey", ct);
 
-        var management = session.GetManagementKeyMetadata()
-            ?? throw new InvalidOperationException(
-                "This firmware will not say which management key algorithm it holds.");
-
-        // The factory key, because personalisation is patch 0025. Once that
-        // lands this becomes the derived value and a token still holding the
-        // factory key is refused instead.
-        session.AuthenticateManagementKey(ManagementKey.Default(management.Algorithm));
+        var userAlreadyVerified =
+            await OpenCardAsync(session, serial, backend, job, attempt, ct);
 
         // Before anything else is written, because a certificate on a card
         // with no CHUID is a certificate Windows can see and cannot use: the
@@ -225,7 +219,12 @@ public sealed class CardEnrolment(
             throw new InvalidOperationException($"Attestation refused locally: {local}");
         }
 
-        await VerifyUserAsync(session, serial, job, backend, attempt, ct);
+        // Skipped when opening the card already asked. PIV keeps a verified
+        // PIN for the session, so this would be a second prompt for nothing.
+        if (!userAlreadyVerified)
+        {
+            await VerifyUserAsync(session, serial, job, backend, attempt, ct);
+        }
 
         await Report(backend, job, attempt, "BuildAndSignCsr", ct);
 
@@ -309,6 +308,125 @@ public sealed class CardEnrolment(
     /// line ships with no PUK.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Authenticates the management key, whichever of the three this card is
+    /// holding, and personalises a factory card on the way through.
+    /// </summary>
+    /// <remarks>
+    /// See ManagementKeyChoice for why there are three and what order they go
+    /// in. Everything here is the doing; the deciding is there, where it can be
+    /// tested without a card.
+    /// </remarks>
+    /// <returns>
+    /// Whether the user was verified on the way through. The PIN is asked for
+    /// only when the management key is behind it, and asking twice for one
+    /// operation is the kind of thing people report as the program being
+    /// broken - reasonably, because from outside it is indistinguishable from
+    /// the first attempt having failed.
+    /// </returns>
+    private async Task<bool> OpenCardAsync(PivSession session, long serial,
+        BackendClient backend, JobEnvelope job, int attempt, CancellationToken ct)
+    {
+        var userVerified = false;
+
+        var management = session.GetManagementKeyMetadata()
+            ?? throw new InvalidOperationException(
+                "This firmware will not say which management key algorithm it holds.");
+
+        var secret = await backend.GetManagementKeySecretAsync(serial, ct);
+
+        var derived = secret is null
+            ? null
+            : ManagementKey.FromSecret(secret, management.Algorithm);
+
+        if (secret is null)
+        {
+            logger.LogInformation(
+                "Token {Serial}: no derived management key available - either this "
+                + "deployment has no master or the backend did not answer", serial);
+        }
+
+        var plan = ManagementKeyChoice.For(management.IsDefault, derived is not null);
+
+        foreach (var source in plan.Order)
+        {
+            var key = source switch
+            {
+                ManagementKeySource.Factory => ManagementKey.Default(management.Algorithm),
+                ManagementKeySource.Derived => derived,
+
+                // The PIN first, because the object holding this key is refused
+                // without it - and refused in a way that looks like an object
+                // that is not there.
+                ManagementKeySource.BehindPin => await ReadKeyBehindPinAsync(
+                    session, serial, management.Algorithm, job, backend, attempt, ct,
+                    () => userVerified = true),
+
+                _ => null,
+            };
+
+            if (key is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                session.AuthenticateManagementKey(key);
+            }
+            catch (PivAuthenticationFailedException)
+            {
+                // Expected while working through the order. Only the last one
+                // failing is a problem, and that is reported below.
+                logger.LogDebug("Token {Serial}: the {Source} management key was refused",
+                    serial, source);
+                continue;
+            }
+
+            if (plan.ShouldPersonalise && derived is not null)
+            {
+                await Report(backend, job, attempt, "PersonaliseCard", ct);
+
+                // Also behind the PIN, so a YubiKey minidriver installed later
+                // finds a card that is already owned and leaves it alone. That
+                // driver is what makes smart-card logon work on Windows, and
+                // without this it would take the card back.
+                session.SetManagementKey(derived, alsoBehindPin: true);
+
+                logger.LogInformation(
+                    "Token {Serial}: management key set to this deployment's own, "
+                    + "and stored behind the PIN", serial);
+            }
+
+            return userVerified;
+        }
+
+        throw new InvalidOperationException(
+            $"None of the management keys this deployment knows opened token {serial}. "
+            + "The card holds a key set somewhere else, and there is no way back to it "
+            + "from here.");
+    }
+
+    /// <summary>The management key from the card's PRINTED object, after the PIN.</summary>
+    private async Task<ManagementKey?> ReadKeyBehindPinAsync(PivSession session, long serial,
+        PivAlgorithm algorithm, JobEnvelope job, BackendClient backend, int attempt,
+        CancellationToken ct, Action verified)
+    {
+        await VerifyUserAsync(session, serial, job, backend, attempt, ct);
+        verified();
+
+        var key = session.ReadProtectedManagementKey(algorithm);
+
+        if (key is null)
+        {
+            logger.LogInformation(
+                "Token {Serial}: nothing behind the PIN that looks like a management key",
+                serial);
+        }
+
+        return key;
+    }
+
     private async Task VerifyUserAsync(PivSession session, long serial, JobEnvelope job,
         BackendClient backend, int attempt, CancellationToken ct)
     {

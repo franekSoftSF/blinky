@@ -88,6 +88,42 @@ public sealed class ManagementKey
     /// one. The enum values are the PIV algorithm identifiers, so the first
     /// byte is the algorithm itself.
     /// </remarks>
+    /// <summary>
+    /// A key of the length this card's algorithm needs, from longer key
+    /// material.
+    /// </summary>
+    /// <remarks>
+    /// The server derives one fixed length for every token, because it has not
+    /// asked the card what it is and cannot: firmware below 5.7 wants 3DES and
+    /// 5.7 or later wants AES-192, and both are in the field. The agent has
+    /// asked, so the agent cuts.
+    ///
+    /// Taking a prefix of HKDF output is sound - producing more bytes and using
+    /// some of them is what its counter mode is for - and it means the same
+    /// derived secret gives the right key whichever algorithm the card turns
+    /// out to hold.
+    /// </remarks>
+    public static ManagementKey FromSecret(ReadOnlySpan<byte> secret, PivAlgorithm algorithm)
+    {
+        var needed = algorithm switch
+        {
+            PivAlgorithm.TripleDes or PivAlgorithm.Aes192 => 24,
+            PivAlgorithm.Aes128 => 16,
+            PivAlgorithm.Aes256 => 32,
+            _ => throw new ArgumentException(
+                $"{algorithm} is not a management key algorithm.", nameof(algorithm)),
+        };
+
+        if (secret.Length < needed)
+        {
+            throw new ArgumentException(
+                $"A {algorithm} key needs {needed} bytes and the secret is {secret.Length}.",
+                nameof(secret));
+        }
+
+        return new ManagementKey(secret[..needed].ToArray(), algorithm);
+    }
+
     internal byte[] SetCommandData()
     {
         var data = new byte[3 + key.Length];

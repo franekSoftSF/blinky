@@ -61,5 +61,21 @@ public sealed record CredentialInstalled(Guid CredentialId, string Thumbprint);
 /// </remarks>
 public sealed record PukMaterial(Guid CheckoutId, string CurrentPuk, string NextPuk);
 
+/// <summary>
+/// The management key material for one token, on its way to the agent holding
+/// that token.
+/// </summary>
+/// <param name="Configured">
+/// False when the deployment derives no management key at all, which leaves
+/// cards on the factory value. Not an error - it is the state every card is in
+/// until this is rolled out - and the agent needs to be able to tell it apart
+/// from a call that failed.
+/// </param>
+/// <param name="Secret">
+/// Base64. Long enough for any management key algorithm; the agent takes what
+/// its own card reports needing, because only the agent has asked it.
+/// </param>
+public sealed record ManagementKeySecret(bool Configured, string? Secret);
+
 /// <summary>The card took the replacement; escrow may promote it.</summary>
 public sealed record PukRotated(Guid CheckoutId);

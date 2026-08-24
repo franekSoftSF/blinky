@@ -248,6 +248,45 @@ public sealed class BackendClient : IDisposable
     /// Asks for the PUK this token holds and the one to replace it with.
     /// </summary>
     /// <returns>Null when the backend refused or could not be reached.</returns>
+    /// <summary>
+    /// The management key this deployment derives for one token, or null if it
+    /// derives none.
+    /// </summary>
+    /// <remarks>
+    /// Asked for at the moment it is needed rather than carried in the job,
+    /// because a job's payload is written to the server's database and a
+    /// management key must not be - see docs/06-security.md.
+    ///
+    /// Null covers two different things on purpose: a deployment with no
+    /// master configured, and a backend that could not be reached. Both mean
+    /// the same thing to the caller, which is that there is no derived key to
+    /// try, and the difference is visible in the log either way.
+    /// </remarks>
+    public async Task<byte[]?> GetManagementKeySecretAsync(long serial, CancellationToken ct)
+    {
+        try
+        {
+            var response = await Authenticated()
+                .PostAsync($"/api/tokens/{serial}/management-key", content: null, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var body = await response.Content.ReadFromJsonAsync<ManagementKeySecret>(ct);
+
+            return body is { Configured: true, Secret.Length: > 0 }
+                ? Convert.FromBase64String(body.Secret)
+                : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException
+                                      or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+    }
+
     public async Task<PukMaterial?> CheckoutPukAsync(long serial, CancellationToken ct)
     {
         try
