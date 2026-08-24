@@ -47,6 +47,34 @@ for the user whose Kerberos ticket it can produce.
 | 13 | Browser claiming an agent identity | The edge overwrites `X-Client-Verify` and `X-Client-Cert` with empty values on the console listener; only the mTLS listener sets them from a verified certificate |
 | 14 | Denial of service by PIN blocking | PIN retry counters are read on every contact and surfaced before they reach zero; the unblock workflow is deliberately cheap |
 
+## Where the management key and the PUK actually stand
+
+Rows 7 and 8 above describe the design, and the design is now implemented. Two
+things about it are worth saying plainly rather than leaving to be discovered.
+
+**The master is in `.env`, not in an HSM.** The derivation is real — HKDF over
+the master and the token's serial, nothing written down, one token's key opening
+one token — but the master sits beside the database password until the PKCS#11
+tier exists. `/api/system/status` reports the custody tier and says
+`productionReady: false` for exactly this reason. Row 7's "HSM-resident" is the
+destination, not the current state.
+
+**A card is personalised at its first enrolment, and only then.** A card already
+holding a management key is left with it, because there is no way to tell a key
+this deployment set under an old master from one another deployment set, from
+one the YubiKey minidriver set when it took ownership. Replacing it because the
+card happened to open would take the card away from whoever owns it.
+
+The consequence is not subtle: **every card issued before this landed still
+holds the factory management key and the factory PUK**, and will keep holding
+them. Bringing one into the fold means resetting its PIV application, which
+destroys the credential on it. That is a decision for whoever runs the
+deployment, not something an enrolment should do quietly.
+
+**A deployment with no master configured is a supported state**, not a
+misconfiguration — it leaves every card on the factory key, which is where they
+all are today. It is visible in the system status rather than silently fine.
+
 ## Key custody
 
 Three secrets, in descending order of how bad it is to lose them:
