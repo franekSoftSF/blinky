@@ -174,9 +174,42 @@ fi
 
 say "5/6  start"
 
+# After the network is actually up, not merely after the network stack exists.
+#
+# samba-ad-dc ships ordered after network.target, which is satisfied long
+# before an interface has an address. On a machine that boots faster than its
+# NIC configures - a virtual machine, every time - Samba starts, finds only
+# loopback, and binds to that. It then answers perfectly on 127.0.0.1 and is
+# invisible to every other machine in the realm: DNS times out, LDAP times
+# out, and ping works, which sends everyone looking at the network.
+#
+# The lab is then broken after every reboot until somebody restarts Samba by
+# hand, and nothing says why. Seen on BY-DC01.
+mkdir -p /etc/systemd/system/samba-ad-dc.service.d
+
+cat > /etc/systemd/system/samba-ad-dc.service.d/blinky-wait-for-network.conf <<'UNIT'
+[Unit]
+After=network-online.target
+Wants=network-online.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable systemd-networkd-wait-online.service >/dev/null 2>&1 || true
+
 systemctl enable --now samba-ad-dc >/dev/null
 sleep 3
 systemctl is-active samba-ad-dc
+
+# What it bound to, because "active" is not the question. A Samba that came up
+# before the interface is active and useless to everyone but itself.
+# Any address that is not loopback will do; the question is only whether it
+# reached the network at all.
+if ! ss -lnu 2>/dev/null | awk '$4 ~ /:53$/' |
+        grep -qvE "127\.0\.0\.[0-9]+:53|\[::1\]:53"; then
+    say_note "listening on loopback only - restarting now that the network is up"
+    systemctl restart samba-ad-dc
+    sleep 5
+fi
 
 # ------------------------------------------------------------ reverse zone
 
