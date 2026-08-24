@@ -170,6 +170,59 @@ and everything about how a credential comes into being do not.
    provisioning. So this task is per-provider, and step 3 for one provider
    proves nothing about the next.
 
+## 0025 — card personalisation (management key, PIN, PUK)
+
+The building blocks exist and nothing uses them. `PivPinOperations` already has
+CHANGE REFERENCE DATA and RESET RETRY COUNTER, so PIN and PUK changes are
+written and tested; `PukEscrow` already does checkout, commit and offline
+unblock. The enrolment flow calls none of it, so every card Blinky has ever
+issued to still carries the factory PIN `123456`, the factory PUK `12345678`
+and the factory management key.
+
+What is actually missing:
+
+- **SET MANAGEMENT KEY (`INS 0xFF`)** — the one PIV instruction not implemented.
+- **Writing** the PRINTED object. Reading it landed with the protected-key
+  work; writing is the other half.
+- **A policy decision, which is the real work.** A management key can be random
+  per card and escrowed on the server, or random per card and kept on the card
+  behind the PIN. The second is the convention the YubiKey minidriver uses, so
+  choosing it means Blinky and that driver stop taking the card away from each
+  other — see below for why that matters.
+
+Until this lands, a card is protected by values printed in every manual.
+
+## Off the vendor minidriver — OpenSC
+
+Windows' inbox PIV minidriver would not produce a key container for a card that
+met every requirement in SP 800-73 that could be checked: CHUID present, unique
+and well-formed; CCC byte-identical in structure to Yubico's own; certificate
+object encoded `70 … 71 01 00 FE 00`; RSA 2048; the certificate's public key
+matching the key in the slot, proven by attestation. `certutil -scinfo`
+answered `NTE_BAD_KEYSET` on both providers throughout. Installing Yubico's
+minidriver fixed it immediately.
+
+Why that is not a good place to stop: the same driver takes ownership of the
+card. It replaces the management key with a random one, hides it behind the
+PIN, and blocks the PUK. So the driver that makes logon work is the driver that
+takes the card away from the CMS.
+
+**OpenSC** implements a Windows smart card minidriver alongside its PKCS#11
+module, supports the PIV applet generally rather than one vendor's, and does
+not claim ownership of a card. It is also open source, which matters here for a
+reason beyond licence: several hours went into a failure whose cause is inside
+`msclmd.dll` and cannot be read.
+
+The task is to test it: install the OpenSC minidriver on a clean workstation,
+issue, and attempt logon. If it works, it replaces a vendor dependency with a
+portable one and removes the management-key conflict at its source.
+
+**The risk is worth stating plainly.** Nobody has established *why* the inbox
+driver refuses. If the cause is something about the YubiKey applet rather than
+about Microsoft's driver, OpenSC may refuse for the same reason, and the answer
+becomes "a vendor minidriver is a prerequisite" — which is a legitimate
+finding, but only after it has been tested rather than assumed.
+
 ## Open questions
 
 1. **Does the built-in CA need to be a separate container?** Currently it is a
