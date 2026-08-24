@@ -243,6 +243,7 @@ ensure CA_PASSWORD "$(secret 24)"
 # it is an AES-256 key rather than a passphrase - and if this is ever lost,
 # every escrowed PUK is lost with it.
 ensure PUK_KEK "$(openssl rand -base64 32)"
+ensure MANAGEMENT_KEY_MASTER "$(openssl rand -base64 32)"
 
 # The address written into every certificate as its distribution point. Has to
 # be one a relying party resolves, over HTTP - see CaPublication.

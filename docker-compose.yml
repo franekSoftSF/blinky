@@ -98,6 +98,16 @@ services:
       # this run's PUKs with a value that dies with the process, and every token
       # unblocked today would be unrecoverable tomorrow.
       Blinky__Puk__Kek: ${PUK_KEK}
+
+      # What every token's management key is derived from.
+      #
+      # Unset leaves every card on the factory management key - the state every
+      # card issued so far is in - so this is allowed to be absent while it is
+      # rolled out, and /api/system/status says which it is.
+      #
+      # Losing it is losing every card: nothing records what a card's key is,
+      # by design, so there is no other way back to one.
+      Blinky__ManagementKey__Master: ${MANAGEMENT_KEY_MASTER:-}
     volumes:
       # The agent CA signs the certificates agents authenticate with. Dev
       # material from scripts/dev-certs.sh; in production this is the one thing

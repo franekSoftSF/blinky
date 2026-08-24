@@ -89,6 +89,9 @@ builder.Services.AddSingleton<CredentialIssuanceService>();
 // absent: a KEK invented at startup would encrypt this run's PUKs with a value
 // that dies with the process, and the tokens would be unrecoverable without
 // anything having looked wrong.
+builder.Services.AddSingleton(
+    new ManagementKeyDerivation(ManagementKeyMaster(builder.Configuration)));
+
 builder.Services.AddSingleton(services => new PukEscrow(
     services.GetRequiredService<Database>(),
     PukKek(builder.Configuration),
@@ -1089,6 +1092,41 @@ app.MapPost("/api/tokens/{serial:long}/unblock",
             }, statusCode: 409);
     });
 
+// The management key for one token, to the agent holding that token.
+//
+// Fetched at the moment it is needed rather than carried in the job, because a
+// job's payload is written to the database and this must not be. docs/06 says
+// a stolen database yields no management key; putting one in an enrolment job
+// would make that untrue for every card ever issued.
+//
+// Any enrolled agent may ask for any token's key, and that is not a gap: an
+// agent has to be able to manage whatever card is put into it, and it already
+// holds a certificate this server issued. The audit line is what makes the
+// asking visible.
+app.MapPost("/api/tokens/{serial:long}/management-key",
+    (long serial, HttpContext context, ManagementKeyDerivation derivation,
+        ILoggerFactory loggers) =>
+    {
+        var agent = (Agent)context.Items["agent"]!;
+
+        if (!derivation.IsConfigured)
+        {
+            // Not an error. A deployment without a master keeps the factory
+            // key, and the agent needs to hear that rather than a failure.
+            return Results.Json(new { configured = false }, statusCode: 200);
+        }
+
+        loggers.CreateLogger("Blinky.ManagementKey").LogInformation(
+            "Agent {Agent} took the management key for token {Serial}",
+            agent.Hostname, serial);
+
+        return Results.Ok(new
+        {
+            configured = true,
+            secret = Convert.ToBase64String(derivation.For(serial)),
+        });
+    });
+
 app.MapPost("/api/tokens/{serial:long}/puk/checkout",
     (long serial, HttpContext context, PukEscrow escrow) =>
     {
@@ -1475,6 +1513,38 @@ app.Run();
 /// silently starts working with a throwaway key looks identical to escrow that
 /// works, right up to the first unblock after a restart.
 /// </remarks>
+/// <summary>
+/// The master every token's management key is derived from.
+/// </summary>
+/// <remarks>
+/// Absent is allowed, and that is the difference from the PUK KEK above. A
+/// deployment without one leaves every card on the factory management key -
+/// which is the state every card is in today, and a state worth being able to
+/// run in while this is rolled out. It is reported by /api/system/status
+/// rather than being silently fine.
+///
+/// Losing it is losing every card: nothing anywhere records what a card's key
+/// is, so there is no other way back to one. That is the trade docs/06 makes
+/// deliberately - a stolen database yields no key either.
+/// </remarks>
+static byte[] ManagementKeyMaster(IConfiguration configuration)
+{
+    var configured = configuration["Blinky:ManagementKey:Master"];
+
+    if (string.IsNullOrWhiteSpace(configured))
+    {
+        return [];
+    }
+
+    var master = Convert.FromBase64String(configured);
+
+    return master.Length >= 32
+        ? master
+        : throw new InvalidOperationException(
+            $"Blinky:ManagementKey:Master decodes to {master.Length} bytes; "
+            + "32 is the minimum. Generate one with: openssl rand -base64 32");
+}
+
 static byte[] PukKek(IConfiguration configuration)
 {
     var configured = configuration["Blinky:Puk:Kek"];
