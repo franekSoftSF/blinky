@@ -62,7 +62,8 @@ public sealed record JobEnvelope(
     /// </remarks>
     public static JobEnvelope Enrolment(Guid jobId, string idempotencyKey,
         DateTimeOffset deadline, long tokenSerial, string slotId, string profile,
-        string displayName, string? upn, string? objectSid) =>
+        string displayName, string? upn, string? objectSid,
+        string? keyAlgorithm = null) =>
         new(Protocol.SchemaVersion, jobId, JobType.Enroll, idempotencyKey, deadline,
             tokenSerial,
         [
@@ -73,6 +74,11 @@ public sealed record JobEnvelope(
                 ["displayName"] = displayName,
                 ["upn"] = upn ?? string.Empty,
                 ["objectSid"] = objectSid ?? string.Empty,
+
+                // Which key the card generates. Empty means the agent's own
+                // default, so an older agent that does not read this is not
+                // handed something it will ignore silently.
+                ["keyAlgorithm"] = keyAlgorithm ?? string.Empty,
             }),
         ]);
 }

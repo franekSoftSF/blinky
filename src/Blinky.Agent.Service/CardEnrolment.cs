@@ -350,6 +350,40 @@ public sealed class CardEnrolment(
             step?.Argument("objectSid"));
     }
 
+    /// <summary>
+    /// The key the card should generate, from the job, or the default.
+    /// </summary>
+    /// <remarks>
+    /// RSA 2048 by default, and not because it is the better cryptography - it
+    /// is not. It is the one a Windows workstation accepts without being
+    /// configured first.
+    ///
+    /// The inbox smart-card credential provider does not enumerate ECC
+    /// certificates unless EnumerateECCCerts is set under
+    /// HKLM\SOFTWARE\Policies\Microsoft\Windows\SmartCardCredentialProvider.
+    /// Without it an ECC credential that is present, valid and correctly
+    /// chained produces "no valid certificates were found on this smart card"
+    /// at the logon screen, while certutil -scinfo reports a missing keyset
+    /// for a key the card itself will happily describe. Neither message
+    /// mentions a policy setting, and the card is the first thing anybody
+    /// suspects.
+    ///
+    /// So a deployment that wants ECC asks for it and turns the setting on. A
+    /// deployment that has not thought about it gets the one that works.
+    /// </remarks>
+    private static PivAlgorithm ParseAlgorithm(string? requested)
+    {
+        if (string.IsNullOrWhiteSpace(requested))
+        {
+            return PivAlgorithm.Rsa2048;
+        }
+
+        return Enum.TryParse<PivAlgorithm>(requested, ignoreCase: true, out var parsed)
+            ? parsed
+            : throw new InvalidOperationException(
+                $"'{requested}' is not a key algorithm this agent knows.");
+    }
+
     private static Task Report(BackendClient backend, JobEnvelope job, int attempt,
         string phase, CancellationToken ct, JobState state = JobState.Running,
         string? detail = null) =>

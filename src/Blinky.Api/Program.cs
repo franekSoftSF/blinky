@@ -270,12 +270,13 @@ app.MapPost("/api/jobs/enrol",
         // row is concerned, and without a way to say "this is a new attempt"
         // the same request would keep returning the dead one.
         var key = $"enrol:{request.TokenSerial}:{request.SlotId}:{request.ProfileName}"
+                  + $":{request.KeyAlgorithm ?? "default"}"
                   + $":{request.Reason ?? "initial"}";
 
         var (job, created) = jobs.Create(JobType.Enroll, key,
             id => JobEnvelope.Enrolment(id, key, DateTimeOffset.UtcNow.AddHours(1),
                 request.TokenSerial, request.SlotId, request.ProfileName, request.DisplayName,
-                request.Upn, request.ObjectSid),
+                request.Upn, request.ObjectSid, request.KeyAlgorithm),
             request.AgentId);
 
         return Results.Ok(new { job.Id, created, state = job.State.ToString() });
@@ -1549,7 +1550,21 @@ internal sealed record EnrolmentJobRequest(
     string DisplayName,
     string? Upn,
     string? ObjectSid,
-    string? Reason = null);
+    string? Reason = null,
+
+    /// <summary>
+    /// "Rsa2048", "EccP256", and so on. Null leaves the choice to the agent.
+    /// </summary>
+    /// <remarks>
+    /// Worth choosing rather than accepting, because the two are not
+    /// interchangeable in front of Windows. The inbox smart-card credential
+    /// provider does not enumerate ECC certificates unless
+    /// EnumerateECCCerts is set on the workstation, so a perfectly good ECC
+    /// credential produces "no valid certificates were found on this smart
+    /// card" at the logon screen - a sentence about the card, for a policy
+    /// setting.
+    /// </remarks>
+    string? KeyAlgorithm = null);
 
 internal sealed record HeartbeatRequest(
     string? Version,
