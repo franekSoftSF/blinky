@@ -82,7 +82,8 @@ say "Kerberos packages"
 # the card is one the KDC accepts, without needing a Windows client to blame
 # when it does not work.
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-    krb5-pkinit libpam-pkcs11 >/dev/null
+    krb5-pkinit libpam-pkcs11 \
+    libengine-pkcs11-openssl libnss3-tools sssd-tools >/dev/null
 
 if [[ $DESKTOP -eq 1 ]]; then
     say "a desktop to log into"
@@ -146,6 +147,53 @@ if [[ -n "$ANCHORS" ]]; then
 
     bash "$(dirname "$0")/configure-krb5-client.sh" \
         --realm "$REALM" --anchors "$ANCHORS" 2>&1 | sed 's/^/  /'
+
+    # Logging in with the card, not merely getting a ticket with one.
+    #
+    # On a domain-joined Ubuntu the thing in the PAM stack is sssd, not
+    # pam_pkcs11 - common-auth calls pam_sss.so. Installing libpam-pkcs11 and
+    # stopping there, which this script used to do, leaves a component nobody
+    # configures and nothing consults, while the greeter asks for a card and
+    # has nowhere to take it. What that looks like is GDM repeating "Please
+    # (re)insert (different) Smartcard" at a card it can read perfectly.
+    #
+    # Three things, and Ubuntu ships the third: the CA sssd checks the card's
+    # certificate against, the switch that makes it look at cards at all, and a
+    # PAM profile that puts it in the stack. Following Omnissa's Horizon guide
+    # for Ubuntu with SSSD, which is the same arrangement.
+    say "logging in with the card"
+
+    install -d -m 755 /etc/sssd/pki
+    install -m 644 "$ANCHORS" /etc/sssd/pki/sssd_auth_ca_db.pem
+    echo "  /etc/sssd/pki/sssd_auth_ca_db.pem"
+
+    if [[ -f /etc/sssd/sssd.conf ]]; then
+        cp /etc/sssd/sssd.conf /etc/sssd/sssd.conf.before-blinky
+
+        if ! grep -q "^pam_cert_auth" /etc/sssd/sssd.conf; then
+            if grep -q "^\[pam\]" /etc/sssd/sssd.conf; then
+                sed -i "/^\[pam\]/a pam_cert_auth = True" /etc/sssd/sssd.conf
+            else
+                printf '\n[pam]\npam_cert_auth = True\n' >> /etc/sssd/sssd.conf
+            fi
+
+            echo "  sssd.conf: pam_cert_auth = True"
+        else
+            echo "  sssd.conf already asks for certificate authentication"
+        fi
+
+        chmod 600 /etc/sssd/sssd.conf
+    else
+        echo "  no /etc/sssd/sssd.conf - is this machine joined?" >&2
+    fi
+
+    # Optional rather than required: a card that will not read must not become
+    # the only way into a machine, least of all while this is being set up.
+    pam-auth-update --enable sss-smart-card-optional >/dev/null 2>&1 &&
+        echo "  PAM: sss-smart-card-optional" ||
+        echo "  PAM profile sss-smart-card-optional is not on this release" >&2
+
+    systemctl restart sssd 2>/dev/null || true
 fi
 
 say "check"
