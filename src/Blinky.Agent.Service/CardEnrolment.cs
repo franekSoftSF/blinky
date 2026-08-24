@@ -396,6 +396,8 @@ public sealed class CardEnrolment(
                 logger.LogInformation(
                     "Token {Serial}: management key set to this deployment's own, "
                     + "and stored behind the PIN", serial);
+
+                await RotateFactoryPukAsync(session, serial, backend, ct);
             }
 
             return userVerified;
@@ -405,6 +407,77 @@ public sealed class CardEnrolment(
             $"None of the management keys this deployment knows opened token {serial}. "
             + "The card holds a key set somewhere else, and there is no way back to it "
             + "from here.");
+    }
+
+    /// <summary>
+    /// Replaces the factory PUK with one nobody has seen, escrowed on the way.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The whole exchange already exists for unblocking, and it fits here
+    /// unchanged: escrow hands out the current PUK and its replacement in one
+    /// call, the card is told to change from one to the other, and escrow is
+    /// told it took. On a card nobody has personalised, "the current PUK" is
+    /// the factory value, which is exactly the case this is for.
+    /// </para>
+    /// <para>
+    /// A failure here is logged and not thrown. By this point the management
+    /// key is already this deployment's own, so the card is manageable and the
+    /// enrolment can finish; what is lost is that the PUK stays at the value
+    /// printed in every manual, and that is worth a warning rather than
+    /// throwing away a working credential.
+    /// </para>
+    /// <para>
+    /// The order matters the other way round from the management key: escrow
+    /// records the replacement <em>before</em> the card is told about it, so a
+    /// failure between the two leaves a PUK that is written down but not yet
+    /// on the card, rather than one on the card and written down nowhere.
+    /// </para>
+    /// </remarks>
+    private async Task RotateFactoryPukAsync(PivSession session, long serial,
+        BackendClient backend, CancellationToken ct)
+    {
+        var material = await backend.CheckoutPukAsync(serial, ct);
+
+        if (material is null)
+        {
+            logger.LogWarning(
+                "Token {Serial}: no PUK came back from escrow, so the card keeps the "
+                + "factory one", serial);
+            return;
+        }
+
+        try
+        {
+            session.ChangePuk(material.CurrentPuk, material.NextPuk);
+        }
+        catch (Exception ex) when (ex is PivAuthenticationFailedException
+                                      or PivProtocolException)
+        {
+            // The card refused the value escrow believes it holds. That is a
+            // card somebody else personalised, or one whose PUK is blocked -
+            // the YubiKey minidriver blocks it when it takes ownership.
+            logger.LogWarning(ex,
+                "Token {Serial}: the card would not take a new PUK, so it keeps the one "
+                + "it has", serial);
+            return;
+        }
+
+        if (await backend.ConfirmPukRotatedAsync(serial, material.CheckoutId, ct))
+        {
+            logger.LogInformation(
+                "Token {Serial}: the factory PUK was replaced and the new one escrowed",
+                serial);
+        }
+        else
+        {
+            // The card has the new PUK and escrow still calls it pending. Both
+            // values stay usable there until something confirms, which is the
+            // design - but it should be visible that this happened.
+            logger.LogWarning(
+                "Token {Serial}: the card took a new PUK and the server was not told. "
+                + "Escrow holds both until it is.", serial);
+        }
     }
 
     /// <summary>The management key from the card's PRINTED object, after the PIN.</summary>
