@@ -223,6 +223,51 @@ about Microsoft's driver, OpenSC may refuse for the same reason, and the answer
 becomes "a vendor minidriver is a prerequisite" — which is a legitimate
 finding, but only after it has been tested rather than assumed.
 
+## Linux: where smart-card login stopped, 2026-08-24
+
+Kerberos and the card are fine. What is not resolved is sssd.
+
+**What works.** `BY-LX-Client01` is joined, resolves domain users, and reads the
+card: `pcscd` sees the reader, OpenSC and Yubico's `libykcs11` both enumerate
+the token, and the certificate on it is correct in every respect that matters -
+`Digital Signature` key usage, `clientAuth` and `msScLogin` EKUs, the UPN in an
+otherName, the SID extension, and a chain that `openssl verify` accepts against
+the same CA database sssd was given.
+
+**What does not.** `sssd`'s `p11_child` finds the certificate, logs
+`found cert[Certificate for PIV Authentication][/CN=Jan Nowak]`, skips OCSP
+because there is no responder, and then reports `No certificate found` and
+returns zero. The greeter and `sssctl user-checks jnowak -s gdm-smartcard -a
+auth` both end at `Please (re)insert (different) Smartcard`.
+
+Four causes were ruled out by test rather than by reasoning:
+
+- **Trust.** `openssl verify` against `/etc/sssd/pki/sssd_auth_ca_db.pem`
+  returns OK.
+- **Verification itself.** `p11_child --verify=no_verification` returns zero
+  just the same.
+- **The PKCS#11 module.** OpenSC and `libykcs11` behave identically.
+- **Privilege.** sssd and `p11_child` both run as root; the polkit rule that
+  the reader needs over SSH is irrelevant here.
+
+So the certificate is dropped somewhere between passing OCSP and the end of
+`read_certs`, without a message. That is a narrow place to start: sssd source
+for that function, and `p11_child` at debug level 10.
+
+**A hazard found the hard way.** The PAM profile that makes this work,
+`sss-smart-card-optional`, puts `pam_sss` with `try_cert_auth` ahead of the
+password. With a card in the reader the greeter enters card mode and does not
+return to a password, so a machine set up this way and left with a card in it
+is a machine nobody can log into. "Optional" describes what PAM does with the
+result, not what the person at the screen is offered. `install-linux-client.sh`
+now puts this behind `--smartcard-login` rather than `--anchors`, checks that
+the password path survived, and reverts if it did not.
+
+**Not attempted yet.** `kinit -X` with the card - the cheaper rung of the same
+ladder, which would prove the KDC accepts the certificate without PAM or a
+greeter in the way. Worth doing first next time, because it separates the
+certificate and the KDC from everything sssd does with them.
+
 ## Open questions
 
 1. **Does the built-in CA need to be a separate container?** Currently it is a
