@@ -106,8 +106,7 @@ if [[ $DESKTOP -eq 1 ]]; then
 EOF
 fi
 
-if [[ -n "$ANCHORS" ]]; then
-    if [[ $REMOTE_READER -eq 1 ]]; then
+if [[ $REMOTE_READER -eq 1 ]]; then
     say "the reader, from a session that is not at this machine"
 
     install -d -m 755 /etc/polkit-1/rules.d
@@ -140,7 +139,8 @@ RULE
     echo "  delete /etc/polkit-1/rules.d/50-blinky-pcsc.rules to undo it"
 fi
 
-say "PKINIT anchors"
+if [[ -n "$ANCHORS" ]]; then
+    say "PKINIT anchors"
 
     [[ -f "$ANCHORS" ]] || { echo "No such file: $ANCHORS" >&2; exit 2; }
 
