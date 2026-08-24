@@ -94,6 +94,33 @@ done
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
+# Nothing to do if the certificate already names this address.
+#
+# Re-signing produces a new certificate every time - same key, same subject,
+# new serial and new thumbprint - and every copy of the old one goes stale the
+# moment it does. Those copies are not local: NTAuth and the Certification
+# Authorities container in the directory, the intermediate store on every
+# workstation, the chain the KDC sends, the chain nginx serves.
+#
+# install-server.sh calls this on every run, so without this check re-running
+# the installer silently breaks smart-card logon for every machine that has not
+# been updated since. It did, three times in one day, and the third time the
+# symptom was Windows refusing the domain controller's certificate as coming
+# from an untrusted authority.
+#
+# Idempotent is not a nicety here. An installer that cannot safely be run twice
+# is an installer nobody can safely run once.
+existing_cdp="$(openssl x509 -in "$CA_DIR/issuing.crt" -noout -text 2>/dev/null |
+    grep -A 2 "X509v3 CRL Distribution Points" | grep -o "URI:[^ ]*" || true)"
+
+if [[ "$existing_cdp" == "URI:$PUBLIC_URL/pki/root.crl" ]]; then
+    echo
+    echo "The issuing CA already points at $PUBLIC_URL - nothing to re-sign."
+    echo "Re-signing would change its thumbprint and stale every published copy."
+    exit 0
+fi
+
+
 password="${CA_PASSWORD:-$(grep '^CA_PASSWORD=' .env 2>/dev/null | cut -d= -f2-)}"
 password="${password:-blinky}"
 
