@@ -126,6 +126,55 @@ public static class TransferCode
         return [.. bytes];
     }
 
+    /// <summary>
+    /// A code as somebody typed it, reduced to the characters that carry it.
+    /// </summary>
+    /// <remarks>
+    /// Punctuation goes, case goes, and the characters people confuse when
+    /// reading aloud are resolved the same way <see cref="Decode"/> resolves
+    /// them - I and L are ones, O is a zero. Sharing that logic matters: a
+    /// field that shows something the decoder would read differently is worse
+    /// than a field that shows nothing.
+    /// </remarks>
+    public static string Normalise(string? code)
+    {
+        if (string.IsNullOrEmpty(code))
+        {
+            return string.Empty;
+        }
+
+        var cleaned = new StringBuilder();
+
+        foreach (var c in code.ToUpperInvariant())
+        {
+            var normalised = c switch
+            {
+                'I' or 'L' => '1',
+                'O' => '0',
+                _ => c,
+            };
+
+            if (Alphabet.Contains(normalised, StringComparison.Ordinal))
+            {
+                cleaned.Append(normalised);
+            }
+        }
+
+        return cleaned.ToString();
+    }
+
+    /// <summary>
+    /// A code laid out the way it is read out: groups of four, separated.
+    /// </summary>
+    /// <remarks>
+    /// For a field to format as somebody types, so the separators are there
+    /// rather than being something to remember. Typing them by hand works -
+    /// the decoder discards them - but a field that looks like it wants them
+    /// invites a person to supply them, and every character they type is one
+    /// they can get wrong.
+    /// </remarks>
+    public static string Format(string? code) => Group(Normalise(code));
+
     /// <summary>Groups in fours, which is how people read numbers aloud.</summary>
     private static string Group(string code) =>
         string.Join('-', Enumerable.Range(0, (code.Length + 3) / 4)

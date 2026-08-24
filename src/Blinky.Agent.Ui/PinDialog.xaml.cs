@@ -307,6 +307,38 @@ public partial class PinDialog : Window
         FirstBox.Focus();
     }
 
+    /// <summary>
+    /// Lays the code out as it is typed, so the separators are there rather
+    /// than being something to remember.
+    /// </summary>
+    /// <remarks>
+    /// Typing the dashes by hand works - the decoder discards punctuation, and
+    /// resolves I, L and O the same way this does - but a field that looks like
+    /// it wants them invites somebody to type them, and every character typed
+    /// is one that can go in wrong. This is a code being read aloud from one
+    /// screen to another; the fewer keystrokes it needs, the fewer chances
+    /// there are to mishear a letter.
+    ///
+    /// The caret goes to the end. Editing the middle of a transcribed code is
+    /// not a thing anybody does - it is retyped - and keeping the caret in
+    /// place across a reformat costs more than it is worth here.
+    /// </remarks>
+    private void CodeBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        var formatted = Blinky.Contracts.TransferCode.Format(CodeBox.Text);
+
+        if (formatted == CodeBox.Text)
+        {
+            return;
+        }
+
+        CodeBox.TextChanged -= CodeBox_TextChanged;
+        CodeBox.Text = formatted;
+        CodeBox.CaretIndex = formatted.Length;
+        CodeBox.TextChanged += CodeBox_TextChanged;
+    }
+
+
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
         DialogResult = false;

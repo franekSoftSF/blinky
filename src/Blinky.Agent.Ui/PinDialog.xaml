@@ -107,6 +107,7 @@
              enough that hiding it would be perverse: the person has to be able
              to see what they typed. -->
         <TextBox x:Name="CodeBox" Grid.Row="3" Visibility="Collapsed"
+                 TextChanged="CodeBox_TextChanged"
                  FontSize="16" FontFamily="Consolas" Padding="8,6" MaxLength="32"
                  Margin="0,22,0,14" VerticalAlignment="Bottom"
                  Background="{DynamicResource FieldBackground}"
