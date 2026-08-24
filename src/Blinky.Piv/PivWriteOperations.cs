@@ -389,6 +389,23 @@ public partial class PivSession
         return true;
     }
 
+    /// <summary>
+    /// The management key this card keeps behind its PIN, or null if it keeps
+    /// none.
+    /// </summary>
+    /// <remarks>
+    /// Call after VerifyPin. The object is refused otherwise, and the refusal
+    /// arrives looking like an absent object rather than a denied one - so a
+    /// card whose key is here reads as a card whose key is not, and the next
+    /// write fails on the management key instead.
+    /// </remarks>
+    public ManagementKey? ReadProtectedManagementKey(PivAlgorithm algorithm)
+    {
+        var data = ReadObject(PivCardObjects.PrintedInformation);
+
+        return data is null ? null : ProtectedManagementKey.Parse(data, algorithm);
+    }
+
     private byte[]? ReadObject(byte[] tag)
     {
         var data = new List<byte> { 0x5C, (byte)tag.Length };

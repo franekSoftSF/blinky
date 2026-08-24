@@ -44,6 +44,24 @@ public static class PivCardObjects
     public static readonly byte[] CardCapabilityContainer = [0x5F, 0xC1, 0x07];
 
     /// <summary>
+    /// 5F C1 09 - PRINTED. Readable only after the PIN has been verified, which
+    /// is why a management key is kept here.
+    /// </summary>
+    /// <remarks>
+    /// The object is meant for what is printed on the face of a card, and the
+    /// PIV standard says nothing about management keys. Storing one here is a
+    /// Yubico convention, and it is the convention that matters: the YubiKey
+    /// minidriver takes ownership of a card when it is installed, replaces the
+    /// factory management key with a random one, and leaves it here. So does
+    /// ykman with --protect.
+    ///
+    /// A CMS that cannot read this cannot touch a card any Windows workstation
+    /// has been set up to log on with - and that driver is required for logon,
+    /// so this is not an edge case but the normal state of a working card.
+    /// </remarks>
+    public static readonly byte[] PrintedInformation = [0x5F, 0xC1, 0x09];
+
+    /// <summary>
     /// Builds a CHUID. The GUID is fresh, and it is the only part that varies.
     /// </summary>
     /// <param name="expires">
