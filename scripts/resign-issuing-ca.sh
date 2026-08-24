@@ -69,13 +69,28 @@ EOF
 
 PUBLIC_URL="${PUBLIC_URL%/}"
 
-for f in root.key anchor.crt issuing.key issuing.crt; do
+for f in root.key anchor.crt issuing.crt; do
     [[ -f "$CA_DIR/$f" ]] || {
         echo "$CA_DIR/$f is missing. This re-signs a two-tier CA that already exists;" >&2
         echo "use scripts/new-ca.sh to create one." >&2
         exit 3
     }
 done
+
+# The issuing key is not in that list, because after new-ca.sh there is no such
+# file: the key lives inside issuing.p12 and the loose copy is deleted, which is
+# right. Requiring it here meant this script could never run on a CA this
+# project had just built - it refused with "issuing.key is missing", and
+# install-server.sh swallowed that through a grep and a || true.
+#
+# Every installation therefore carried an issuing CA with no distribution point
+# at all. Nothing complains until a relying party checks revocation across the
+# chain, and by then the message is about a KDC certificate or about trust,
+# several steps away from the CA that has no CDP.
+[[ -f "$CA_DIR/issuing.p12" || -f "$CA_DIR/issuing.key" ]] || {
+    echo "$CA_DIR holds neither issuing.key nor issuing.p12." >&2
+    exit 3
+}
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
@@ -84,6 +99,21 @@ password="${password:-blinky}"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+
+# The key, from wherever it lives. Out of the PKCS#12 into a directory that
+# goes away when this exits - never next to the certificates, where a stray
+# copy would outlive the run.
+if [[ -f "$CA_DIR/issuing.key" ]]; then
+    issuing_key="$CA_DIR/issuing.key"
+else
+    openssl pkcs12 -in "$CA_DIR/issuing.p12" -passin "pass:$password" \
+        -nocerts -nodes -out "$work/issuing.key" 2>/dev/null || {
+        echo "The issuing PKCS#12 would not open with that password." >&2
+        exit 4
+    }
+
+    issuing_key="$work/issuing.key"
+fi
 
 # ------------------------------------------------------------------ re-sign
 
@@ -96,7 +126,7 @@ before="$(openssl x509 -in "$CA_DIR/issuing.crt" -noout -fingerprint -sha1 | cut
 # subject would orphan every certificate already issued.
 subject="$(openssl x509 -in "$CA_DIR/issuing.crt" -noout -subject -nameopt compat | sed 's/^subject=//')"
 
-openssl req -new -key "$CA_DIR/issuing.key" -subj "$subject" -out "$work/issuing.csr"
+openssl req -new -key "$issuing_key" -subj "$subject" -out "$work/issuing.csr"
 
 cat > "$work/issuing.ext" <<EOF
 basicConstraints=critical,CA:TRUE,pathlen:0
@@ -114,7 +144,7 @@ openssl x509 -req -in "$work/issuing.csr" -days "$DAYS" -sha256 \
 # Checked before it replaces anything. A re-signed CA whose key no longer
 # matches its certificate takes the whole installation down at the next
 # issuance, and the error will be about a signature rather than about this.
-key_modulus="$(openssl rsa -in "$CA_DIR/issuing.key" -noout -modulus | sha256sum)"
+key_modulus="$(openssl rsa -in "$issuing_key" -noout -modulus | sha256sum)"
 crt_modulus="$(openssl x509 -in "$work/issuing.crt" -noout -modulus | sha256sum)"
 
 [[ "$key_modulus" == "$crt_modulus" ]] || {
@@ -131,7 +161,7 @@ cp "$work/issuing.crt" "$CA_DIR/issuing.crt"
 cat "$CA_DIR/issuing.crt" "$CA_DIR/anchor.crt" > "$CA_DIR/chain.pem"
 
 openssl pkcs12 -export -out "$CA_DIR/issuing.p12" \
-    -inkey "$CA_DIR/issuing.key" -in "$CA_DIR/issuing.crt" \
+    -inkey "$issuing_key" -in "$CA_DIR/issuing.crt" \
     -certfile "$CA_DIR/anchor.crt" -passout "pass:$password"
 
 after="$(openssl x509 -in "$CA_DIR/issuing.crt" -noout -fingerprint -sha1 | cut -d= -f2)"

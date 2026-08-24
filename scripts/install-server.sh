@@ -354,9 +354,23 @@ EOF
 elif [[ -f ca/issuing.p12 ]]; then
     note "ca/ exists - keeping it"
 
-    CA_PASSWORD="$ca_password" bash scripts/resign-issuing-ca.sh \
-        --public-url "$public_url" 2>&1 |
-        grep -E "issuing CA (was|now)|root CRL" | sed 's/^/  /' || true
+    # Not filtered through a grep, and not ended with || true.
+    #
+    # Both were here, and between them they hid a refusal for as long as this
+    # lab has existed: the script needed ca/issuing.key, which new-ca.sh
+    # deletes because the key belongs in the PKCS#12. It exited saying so, the
+    # grep matched none of it, and || true made the failure invisible. Every
+    # installation ended up with an issuing CA carrying no distribution point,
+    # and that surfaced days later as a Windows logon refusing a KDC
+    # certificate.
+    if ! CA_PASSWORD="$ca_password" bash scripts/resign-issuing-ca.sh \
+            --public-url "$public_url" 2>&1 | sed 's/^/  /'; then
+        echo
+        echo "  The issuing CA could not be re-signed, so it carries no CRL" >&2
+        echo "  distribution point. Revocation cannot be checked for it, and a" >&2
+        echo "  smart-card logon will be refused for reasons that name neither." >&2
+        exit 6
+    fi
 else
     CA_PASSWORD="$ca_password" \
         bash scripts/new-ca.sh --name "$CA_NAME" --topology two-tier >/dev/null
@@ -378,9 +392,23 @@ else
         note "cleared the lists the previous CA had published"
     fi
 
-    CA_PASSWORD="$ca_password" bash scripts/resign-issuing-ca.sh \
-        --public-url "$public_url" 2>&1 |
-        grep -E "issuing CA (was|now)|root CRL" | sed 's/^/  /' || true
+    # Not filtered through a grep, and not ended with || true.
+    #
+    # Both were here, and between them they hid a refusal for as long as this
+    # lab has existed: the script needed ca/issuing.key, which new-ca.sh
+    # deletes because the key belongs in the PKCS#12. It exited saying so, the
+    # grep matched none of it, and || true made the failure invisible. Every
+    # installation ended up with an issuing CA carrying no distribution point,
+    # and that surfaced days later as a Windows logon refusing a KDC
+    # certificate.
+    if ! CA_PASSWORD="$ca_password" bash scripts/resign-issuing-ca.sh \
+            --public-url "$public_url" 2>&1 | sed 's/^/  /'; then
+        echo
+        echo "  The issuing CA could not be re-signed, so it carries no CRL" >&2
+        echo "  distribution point. Revocation cannot be checked for it, and a" >&2
+        echo "  smart-card logon will be refused for reasons that name neither." >&2
+        exit 6
+    fi
 fi
 
 if [[ -n "$EDGE_CERT" ]]; then
