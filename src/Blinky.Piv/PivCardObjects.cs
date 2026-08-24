@@ -62,6 +62,39 @@ public static class PivCardObjects
     public static readonly byte[] PrintedInformation = [0x5F, 0xC1, 0x09];
 
     /// <summary>
+    /// 5F FF 00 - YubiKey's own administrative data, outside the PIV standard.
+    /// </summary>
+    /// <remarks>
+    /// It holds flags about how the card is being managed, and one of them is
+    /// the reason this constant exists: a bit saying the management key is
+    /// kept behind the PIN.
+    ///
+    /// Writing the key into PRINTED without setting that bit produces a card
+    /// that looks, to every Yubico tool, like a card whose management key
+    /// nobody knows. `ykman piv info` stops printing "Management key is stored
+    /// on the YubiKey, protected by PIN", and the minidriver - which is what
+    /// makes smart-card logon work on Windows - concludes it cannot manage the
+    /// card. What that looks like from the outside is NTE_BAD_KEYSET on a card
+    /// holding a perfectly good key and certificate.
+    ///
+    /// So the two objects are one fact written in two places, and writing only
+    /// the first is worse than writing neither.
+    /// </remarks>
+    public static readonly byte[] AdminData = [0x5F, 0xFF, 0x00];
+
+    /// <summary>Wrapper tag inside ADMIN DATA.</summary>
+    public const byte AdminDataWrapper = 0x80;
+
+    /// <summary>The flags byte inside that wrapper.</summary>
+    public const byte AdminFlagsTag = 0x81;
+
+    /// <summary>The PUK has been deliberately blocked.</summary>
+    public const byte AdminFlagPukBlocked = 0x01;
+
+    /// <summary>The management key is in the PRINTED object, behind the PIN.</summary>
+    public const byte AdminFlagManagementKeyProtected = 0x02;
+
+    /// <summary>
     /// Builds a CHUID. The GUID is fresh, and it is the only part that varies.
     /// </summary>
     /// <param name="expires">

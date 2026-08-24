@@ -395,6 +395,68 @@ public partial class PivSession
         return true;
     }
 
+    /// <summary>
+    /// Sets the "management key is behind the PIN" bit in ADMIN DATA.
+    /// </summary>
+    /// <remarks>
+    /// Read, modified, written back - not overwritten. That object holds more
+    /// than this one bit: a salt for the derived-key scheme and a timestamp,
+    /// both of which belong to whoever put them there. Replacing the object
+    /// with a freshly built one carrying only our flag would take away things
+    /// this code does not understand and cannot restore.
+    /// </remarks>
+    private void SetManagementKeyProtectedFlag()
+    {
+        var existing = ReadObject(PivCardObjects.AdminData);
+
+        var fields = new SortedDictionary<int, byte[]>();
+
+        if (existing is { Length: > 0 })
+        {
+            var outer = Tlv.ParseBer(existing);
+
+            var unwrapped = outer.TryGetValue(0x53, out var wrapped)
+                ? Tlv.ParseBer(wrapped)
+                : outer;
+
+            if (unwrapped.TryGetValue(PivCardObjects.AdminDataWrapper, out var admin))
+            {
+                foreach (var (tag, value) in Tlv.ParseBer(admin))
+                {
+                    fields[tag] = value;
+                }
+            }
+        }
+
+        var flags = fields.TryGetValue(PivCardObjects.AdminFlagsTag, out var current)
+            && current.Length > 0
+                ? current[0]
+                : (byte)0;
+
+        if ((flags & PivCardObjects.AdminFlagManagementKeyProtected) != 0)
+        {
+            return;
+        }
+
+        fields[PivCardObjects.AdminFlagsTag] =
+            [(byte)(flags | PivCardObjects.AdminFlagManagementKeyProtected)];
+
+        var inner = new List<byte>();
+
+        foreach (var (tag, value) in fields)
+        {
+            inner.Add((byte)tag);
+            AppendLength(inner, value.Length);
+            inner.AddRange(value);
+        }
+
+        var wrapper = new List<byte> { PivCardObjects.AdminDataWrapper };
+        AppendLength(wrapper, inner.Count);
+        wrapper.AddRange(inner);
+
+        WriteObject(PivCardObjects.AdminData, [.. wrapper], "administrative flags");
+    }
+
     /// <summary>Writes a data object, replacing whatever is there.</summary>
     private void WriteObject(byte[] tag, byte[] value, string what)
     {
@@ -459,6 +521,22 @@ public partial class PivSession
         {
             WriteObject(PivCardObjects.PrintedInformation, newKey.PrintedObjectValue(),
                 "protected management key");
+
+            // And the flag that says so, in a different object.
+            //
+            // The key in PRINTED is half the fact. Yubico's tools decide whether
+            // a card keeps its management key behind the PIN by reading a bit in
+            // ADMIN DATA, not by looking in PRINTED - so a card with the key and
+            // without the bit reads, to every one of them, as a card whose
+            // management key nobody knows.
+            //
+            // "ykman piv info" then stops printing "Management key is stored on
+            // the YubiKey, protected by PIN", and the minidriver concludes it
+            // cannot manage the card. Which matters, because the entire reason
+            // for writing the key there is to stop that driver taking the card
+            // over - and a card it does not recognise as managed is exactly what
+            // it takes over.
+            SetManagementKeyProtectedFlag();
         }
 
         var response = Connection.Send(new ApduCommand(InsSetManagementKey,
