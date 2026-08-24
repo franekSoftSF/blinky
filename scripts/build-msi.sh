@@ -23,6 +23,24 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="${1:-0.1.0}"
 out="$root/artifacts"
 
+# What this build is, in a way that identifies it.
+#
+# The agent used to report 0.1.0 plus the commit at HEAD, whatever the MSI was
+# called - so two packages built minutes apart from different working trees
+# announced themselves identically. One of them carried a fix the other did
+# not, and nothing on the wire could tell them apart; an hour went into
+# deciding which agent was actually installed on the workstation.
+#
+# The version now matches the package, and a build from a tree with
+# uncommitted changes says so - because that is precisely when the commit
+# stops describing what was built.
+revision="$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+
+if ! git -C "$root" diff --quiet HEAD 2>/dev/null; then
+    revision="$revision-dirty"
+    echo "note: building from a tree with uncommitted changes; the version says -dirty"
+fi
+
 if ! command -v wix >/dev/null 2>&1; then
     echo "wix is not installed. dotnet tool install --global wix" >&2
     exit 1
@@ -42,6 +60,8 @@ for project in "Blinky.Agent.Service:agent" "Blinky.Agent.Ui:ui"; do
         -r win-x64 \
         --self-contained true \
         -p:PublishSingleFile=false \
+        -p:Version="$version" \
+        -p:InformationalVersion="$version+$revision" \
         -o "$out/publish/$folder" \
         --nologo -v q
 done
