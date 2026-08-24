@@ -31,6 +31,29 @@ public partial class PivSession
     public void AuthenticateManagementKey(ManagementKey managementKey)
     {
         Authenticate(managementKey);
+        RegisterRestore(managementKey);
+    }
+
+    /// <summary>
+    /// Teaches the connection how to get back in after the card is reset.
+    /// </summary>
+    /// <remarks>
+    /// Separate from authenticating because the two come apart: replacing the
+    /// management key leaves the card demanding a different value from the one
+    /// this was last told about, and a restore holding the old one answers a
+    /// reset by failing.
+    ///
+    /// That is not hypothetical. Personalisation authenticates with the factory
+    /// key and then replaces it, so every card being personalised spends the
+    /// rest of the operation with a stale restore unless this is called again -
+    /// and the rest of the operation is exactly where a reset happens, because
+    /// on Windows the card is shared with the logon screen. Seen on token
+    /// 29051525: the key was generated, somebody logged in, the card was reset,
+    /// and the recovery tried a key the card had stopped accepting a second
+    /// earlier.
+    /// </remarks>
+    private void RegisterRestore(ManagementKey managementKey)
+    {
 
         // Registered so a reset in the middle of a long operation does not end
         // it. Enrolment authenticates here, generates a key, then goes to the
@@ -448,6 +471,10 @@ public partial class PivSession
         }
 
         PivStatus.ThrowIfFailed(response.Status, "SET MANAGEMENT KEY");
+
+        // The card now wants this one. A restore still holding the previous
+        // value would turn the next card reset into a failed operation.
+        RegisterRestore(newKey);
     }
 
     public ManagementKey? ReadProtectedManagementKey(PivAlgorithm algorithm)
