@@ -38,6 +38,50 @@ public class ProtectedManagementKeyTests
         return [.. outer];
     }
 
+    /// <summary>
+    /// What Blinky writes, Blinky can read back.
+    /// </summary>
+    /// <remarks>
+    /// The two sides are separate code - one builds the object, the other
+    /// parses it - and a mismatch between them is a card written in an
+    /// encoding nothing understands, discovered on the next write, which
+    /// fails on the management key.
+    /// </remarks>
+    [Theory]
+    [InlineData(PivAlgorithm.TripleDes, 24)]
+    [InlineData(PivAlgorithm.Aes192, 24)]
+    [InlineData(PivAlgorithm.Aes128, 16)]
+    [InlineData(PivAlgorithm.Aes256, 32)]
+    public void What_is_written_can_be_read(PivAlgorithm algorithm, int length)
+    {
+        var bytes = new byte[length];
+        for (var i = 0; i < length; i++)
+        {
+            bytes[i] = (byte)(i * 3 + 1);
+        }
+
+        var original = new ManagementKey(bytes, algorithm);
+
+        // The PRINTED object as the card holds it: the 53 wrapper around what
+        // the key produced.
+        var value = ManagementKeyTestAccess.PrintedObjectValue(original);
+        var stored = new List<byte> { 0x53, (byte)value.Length };
+        stored.AddRange(value);
+
+        var parsed = ProtectedManagementKey.Parse([.. stored], algorithm);
+
+        Assert.NotNull(parsed);
+        Assert.Equal(algorithm, parsed.Algorithm);
+        Assert.Equal(original.BlockSize, parsed.BlockSize);
+
+        // Same key, proven by both encrypting a block to the same thing rather
+        // than by reading the bytes, which neither class exposes.
+        var block = new byte[original.BlockSize];
+        Assert.Equal(
+            ManagementKeyTestAccess.Encrypt(original, block),
+            ManagementKeyTestAccess.Encrypt(parsed, block));
+    }
+
     [Fact]
     public void The_key_is_read_out_of_the_printed_object()
     {
@@ -73,5 +117,41 @@ public class ProtectedManagementKeyTests
         Assert.Null(ProtectedManagementKey.Parse(
             [0x53, 0x06, 0x01, 0x04, (byte)'J', (byte)'a', (byte)'n', 0xFE],
             PivAlgorithm.TripleDes));
+    }
+}
+
+/// <summary>
+/// The data field of SET MANAGEMENT KEY.
+/// </summary>
+/// <remarks>
+/// Worth pinning down because there is no second chance at it. The command
+/// replaces the key the card will demand from then on, and a payload the card
+/// misreads leaves a card demanding something nobody knows - not recoverable,
+/// not resettable without wiping the PIV application and everything on it.
+/// </remarks>
+public class SetManagementKeyPayloadTests
+{
+    [Theory]
+    [InlineData(PivAlgorithm.TripleDes, 24, 0x03)]
+    [InlineData(PivAlgorithm.Aes192, 24, 0x0A)]
+    [InlineData(PivAlgorithm.Aes128, 16, 0x08)]
+    [InlineData(PivAlgorithm.Aes256, 32, 0x0C)]
+    public void It_is_the_algorithm_then_the_key_under_9b(
+        PivAlgorithm algorithm, int length, byte algorithmByte)
+    {
+        var bytes = new byte[length];
+        for (var i = 0; i < length; i++)
+        {
+            bytes[i] = (byte)(0x80 + i);
+        }
+
+        var data = ManagementKeyTestAccess.SetCommandData(
+            new ManagementKey(bytes, algorithm));
+
+        Assert.Equal(algorithmByte, data[0]);
+        Assert.Equal(0x9B, data[1]);           // the card management slot
+        Assert.Equal((byte)length, data[2]);
+        Assert.Equal(bytes, data[3..]);
+        Assert.Equal(3 + length, data.Length);
     }
 }

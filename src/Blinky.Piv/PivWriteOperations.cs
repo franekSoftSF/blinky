@@ -17,6 +17,7 @@ public partial class PivSession
     private const byte InsGeneralAuthenticate = 0x87;
     private const byte InsGenerateKeyPair = 0x47;
     private const byte InsPutData = 0xDB;
+    private const byte InsSetManagementKey = 0xFF;
 
     /// <summary>
     /// Proves to the card that we hold the management key, and makes the card
@@ -367,8 +368,14 @@ public partial class PivSession
             return false;
         }
 
+        WriteObject(tag, build(), what);
+        return true;
+    }
+
+    /// <summary>Writes a data object, replacing whatever is there.</summary>
+    private void WriteObject(byte[] tag, byte[] value, string what)
+    {
         var body = new List<byte> { 0x53 };
-        var value = build();
         AppendLength(body, value.Length);
         body.AddRange(value);
 
@@ -386,7 +393,6 @@ public partial class PivSession
         }
 
         PivStatus.ThrowIfFailed(response.Status, $"PUT DATA ({what})");
-        return true;
     }
 
     /// <summary>
@@ -399,6 +405,51 @@ public partial class PivSession
     /// card whose key is here reads as a card whose key is not, and the next
     /// write fails on the management key instead.
     /// </remarks>
+    /// <summary>
+    /// Replaces the card's management key, and optionally stores it behind the
+    /// PIN so the card stays manageable by anything that looks there.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Needs the current management key authenticated first, like every other
+    /// write. The card is not asked to confirm the old value again - holding an
+    /// authenticated session <em>is</em> that proof.
+    /// </para>
+    /// <para>
+    /// The order is deliberate: the PRINTED copy is written first, while the
+    /// session is still authenticated under the old key. Setting the key first
+    /// and then failing to record it leaves a card nobody can open again, and
+    /// no amount of care afterwards recovers from that.
+    /// </para>
+    /// <para>
+    /// <paramref name="alsoBehindPin"/> is what lets Blinky and the YubiKey
+    /// minidriver share a card. That driver takes ownership of any card whose
+    /// management key it does not recognise - replaces it, hides its own copy
+    /// here, and blocks the PUK - and a card it has done that to is one this
+    /// CMS can no longer write to. A card that already keeps its key here is
+    /// one it leaves alone.
+    /// </para>
+    /// </remarks>
+    public void SetManagementKey(ManagementKey newKey, bool alsoBehindPin)
+    {
+        if (alsoBehindPin)
+        {
+            WriteObject(PivCardObjects.PrintedInformation, newKey.PrintedObjectValue(),
+                "protected management key");
+        }
+
+        var response = Connection.Send(new ApduCommand(InsSetManagementKey,
+            p1: 0xFF, p2: 0xFF, data: newKey.SetCommandData()));
+
+        if (response.Status.Value == StatusWord.SecurityStatusNotSatisfied)
+        {
+            throw new PivAuthenticationFailedException(
+                "Replacing the management key needs the current one authenticated first.");
+        }
+
+        PivStatus.ThrowIfFailed(response.Status, "SET MANAGEMENT KEY");
+    }
+
     public ManagementKey? ReadProtectedManagementKey(PivAlgorithm algorithm)
     {
         var data = ReadObject(PivCardObjects.PrintedInformation);

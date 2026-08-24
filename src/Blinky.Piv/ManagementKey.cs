@@ -78,6 +78,54 @@ public sealed class ManagementKey
             nameof(algorithm)),
     };
 
+    /// <summary>
+    /// The data field of a SET MANAGEMENT KEY command: the algorithm, then the
+    /// key under tag 9B.
+    /// </summary>
+    /// <remarks>
+    /// Built here rather than by exposing the bytes, so the one operation that
+    /// has to put a management key on the wire is the only thing that can see
+    /// one. The enum values are the PIV algorithm identifiers, so the first
+    /// byte is the algorithm itself.
+    /// </remarks>
+    internal byte[] SetCommandData()
+    {
+        var data = new byte[3 + key.Length];
+
+        data[0] = (byte)Algorithm;
+        data[1] = 0x9B;                    // the card management key slot
+        data[2] = (byte)key.Length;
+        key.CopyTo(data, 3);
+
+        return data;
+    }
+
+    /// <summary>
+    /// The key wrapped for the PRINTED object, in the encoding a YubiKey
+    /// minidriver and ykman both read: 88 wrapping 89 wrapping the bytes.
+    /// </summary>
+    /// <remarks>
+    /// Writing it there is what makes a card manageable by Blinky and by that
+    /// driver at the same time. The driver takes ownership of a card whose
+    /// management key it does not recognise - random key, PUK blocked - and a
+    /// card that has been through that is one Blinky can no longer touch. A
+    /// card that already keeps its key here is a card it leaves alone.
+    /// </remarks>
+    internal byte[] PrintedObjectValue()
+    {
+        var inner = new byte[2 + key.Length];
+        inner[0] = 0x89;
+        inner[1] = (byte)key.Length;
+        key.CopyTo(inner, 2);
+
+        var outer = new byte[2 + inner.Length];
+        outer[0] = 0x88;
+        outer[1] = (byte)inner.Length;
+        inner.CopyTo(outer, 2);
+
+        return outer;
+    }
+
     internal byte[] Encrypt(ReadOnlySpan<byte> block) => Transform(block, encrypt: true);
 
     internal byte[] Decrypt(ReadOnlySpan<byte> block) => Transform(block, encrypt: false);
