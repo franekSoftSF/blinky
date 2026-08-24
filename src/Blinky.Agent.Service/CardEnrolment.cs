@@ -568,31 +568,7 @@ public sealed class CardEnrolment(
             JobState.AwaitingUser, "waiting for a new PIN");
 
         var policy = PinComplexityPolicy.Default;
-
-        var chosen = await prompts.AskForPinAsync(serial, null,
-            "This key still has the PIN it left the factory with. Choose a new one.", ct);
-
-        if (chosen is null)
-        {
-            throw new InvalidOperationException(
-                "Nobody chose a PIN. A card on the factory PIN is not issued to.");
-        }
-
-        var verdict = PinRules.Check(chosen, policy, serial);
-
-        if (!verdict.IsAcceptable)
-        {
-            throw new InvalidOperationException($"That PIN was refused: {verdict.Explanation}");
-        }
-
-        var again = await prompts.AskForPinAsync(serial, null,
-            "Type the same PIN once more, so a slip does not lock the key.", ct);
-
-        if (again != chosen)
-        {
-            throw new InvalidOperationException(
-                "The two PINs were not the same, so nothing was changed.");
-        }
+        var chosen = await AskForANewPinAsync(serial, policy, ct);
 
         session.ChangePin(PinComplexityPolicy.FactoryPin, chosen);
 
@@ -606,6 +582,92 @@ public sealed class CardEnrolment(
             "Token {Serial}: the factory PIN was replaced by the holder", serial);
 
         return true;
+    }
+
+    /// <summary>
+    /// A new PIN, typed twice and agreeing with itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The old PIN is never asked for. The card has just reported that it is
+    /// still the factory value, so it is already known - and asking a person
+    /// for a number printed in the manual teaches them that Blinky asks for
+    /// things it does not need.
+    /// </para>
+    /// <para>
+    /// Both prompts carry their own heading, and that is not decoration. They
+    /// are otherwise the same window shown twice, and the heading is where a
+    /// person looks to find out what is being asked. With one heading for both,
+    /// the first prompt reads as "type your PIN" and the obvious thing to type
+    /// is the one the card has - which is the answer this is trying to get rid
+    /// of. It happened on the first run.
+    /// </para>
+    /// <para>
+    /// A mismatch is retried rather than fatal. Failing the enrolment over a
+    /// typo means redoing everything, and there is nothing dangerous about
+    /// asking again: nothing has been written to the card yet.
+    /// </para>
+    /// </remarks>
+    private async Task<string> AskForANewPinAsync(long serial, PinComplexityPolicy policy,
+        CancellationToken ct)
+    {
+        const int attempts = 3;
+
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            var chosen = await prompts.AskForPinAsync(serial, null,
+                "This key still has the PIN it came with, which anybody holding it knows. "
+                + "Choose a new one - you will not be asked for the old one.",
+                ct, title: "Choose a new PIN");
+
+            if (chosen is null)
+            {
+                throw new InvalidOperationException(
+                    "Nobody chose a PIN. A card on the factory PIN is not issued to.");
+            }
+
+            var verdict = PinRules.Check(chosen, policy, serial);
+
+            if (!verdict.IsAcceptable)
+            {
+                logger.LogInformation("Token {Serial}: the chosen PIN was refused - {Why}",
+                    serial, verdict.Explanation);
+
+                if (attempt == attempts)
+                {
+                    throw new InvalidOperationException(
+                        $"That PIN was refused: {verdict.Explanation}");
+                }
+
+                continue;
+            }
+
+            var again = await prompts.AskForPinAsync(serial, null,
+                "Type the new PIN again, so a slip does not lock the key.",
+                ct, title: "Confirm the new PIN");
+
+            if (again is null)
+            {
+                throw new InvalidOperationException(
+                    "Nobody confirmed the PIN, so nothing was changed.");
+            }
+
+            if (again == chosen)
+            {
+                return chosen;
+            }
+
+            logger.LogInformation(
+                "Token {Serial}: the two PINs did not agree, asking again", serial);
+
+            if (attempt == attempts)
+            {
+                throw new InvalidOperationException(
+                    "The two PINs were not the same, so nothing was changed.");
+            }
+        }
+
+        throw new InvalidOperationException("No PIN was chosen.");
     }
 
     /// <summary>The management key from the card's PRINTED object, after the PIN.</summary>

@@ -37,8 +37,16 @@ public sealed record PromptRequest(
     public const string Fingerprint = "Fingerprint";
     public const string Dismiss = "Dismiss";
 
-    public static PromptRequest ForPin(long serial, int? attemptsRemaining, string reason) =>
-        new(Pin, "Blinky needs your PIN",
+    /// <param name="title">
+    /// Overrides the heading. Worth having because two PIN prompts in a row -
+    /// choosing one and confirming it - are the same window with the same
+    /// heading, and a person reading the heading sees the first prompt twice.
+    /// The message underneath is not where anybody looks to find out what is
+    /// being asked.
+    /// </param>
+    public static PromptRequest ForPin(long serial, int? attemptsRemaining, string reason,
+        string? title = null) =>
+        new(Pin, title ?? "Blinky needs your PIN",
             reason, serial, attemptsRemaining);
 
     /// <summary>
