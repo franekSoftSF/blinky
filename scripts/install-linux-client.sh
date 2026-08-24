@@ -17,6 +17,7 @@ set -euo pipefail
 REALM="${REALM:-BLINKY.LAB}"
 DESKTOP=0
 ANCHORS=""
+REMOTE_READER=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -29,6 +30,23 @@ while [[ $# -gt 0 ]]; do
         # the client refuses its own KDC and reports "No pkinit_anchors
         # supplied" - even when the real problem was a mistyped password.
         --anchors) ANCHORS="$2"; shift 2 ;;
+
+        # Lets a session that is not sitting at this machine reach the reader.
+        #
+        # pcscd asks polkit, and polkit says yes to an active local session and
+        # no to everything else. That is the right default: a reader is a thing
+        # on somebody's desk, and a card in it belongs to whoever is standing
+        # there. A person logging in at the greeter is unaffected either way.
+        #
+        # It is wrong for a machine driven over SSH, which is every machine in
+        # this lab. Without it, opensc reports "No smart card readers found" for
+        # a reader that is plugged in, working, and visible to root - a message
+        # about hardware for what is entirely a question of authorisation.
+        #
+        # Off unless asked for, because it is a real widening: anybody who can
+        # open a shell as this user can then talk to whatever card is in the
+        # reader.
+        --allow-remote-reader) REMOTE_READER=1; shift ;;
 
         --realm) REALM="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -89,7 +107,40 @@ EOF
 fi
 
 if [[ -n "$ANCHORS" ]]; then
-    say "PKINIT anchors"
+    if [[ $REMOTE_READER -eq 1 ]]; then
+    say "the reader, from a session that is not at this machine"
+
+    install -d -m 755 /etc/polkit-1/rules.d
+
+    cat > /etc/polkit-1/rules.d/50-blinky-pcsc.rules <<'RULE'
+// Lets members of "sudo" reach the card reader from any session, including
+// one arrived at over SSH.
+//
+// pcscd's default is to allow an active local session and refuse the rest,
+// which is right for a workstation: the card is in a reader on somebody's
+// desk. This file is for a machine being driven remotely, and it is a real
+// widening - anybody who can open a shell as one of these users can talk to
+// whatever card is in the reader.
+//
+// Written by scripts/install-linux-client.sh --allow-remote-reader. Delete
+// the file and restart pcscd to put the default back.
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.debian.pcsc-lite.access_pcsc" ||
+         action.id == "org.debian.pcsc-lite.access_card") &&
+        subject.isInGroup("sudo")) {
+        return polkit.Result.YES;
+    }
+});
+RULE
+
+    systemctl restart polkit 2>/dev/null || true
+    systemctl restart pcscd 2>/dev/null || true
+
+    echo "  members of 'sudo' can now reach the reader over SSH"
+    echo "  delete /etc/polkit-1/rules.d/50-blinky-pcsc.rules to undo it"
+fi
+
+say "PKINIT anchors"
 
     [[ -f "$ANCHORS" ]] || { echo "No such file: $ANCHORS" >&2; exit 2; }
 
