@@ -160,6 +160,40 @@ openssl verify -CAfile "$CA_DIR/anchor.crt" "$work/issuing.crt" >/dev/null || {
 cp "$work/issuing.crt" "$CA_DIR/issuing.crt"
 cat "$CA_DIR/issuing.crt" "$CA_DIR/anchor.crt" > "$CA_DIR/chain.pem"
 
+# Anywhere else on this machine that carries a copy of the issuing certificate.
+#
+# Re-signing invalidates every copy, and the copies do not announce themselves.
+# certs/edge.crt is one: nginx sends exactly what that file holds, so an edge
+# left with the previous issuing certificate goes on handing out the version
+# with no distribution point - and every client that checks revocation on the
+# chain gets "status unknown" for a CA that has had a CDP for some time.
+#
+# Found that way: a workstation reported the old thumbprint long after this
+# script had run and reported success.
+edge_certs="${EDGE_CERTS:-certs}"
+
+if [[ -f "$edge_certs/edge.crt" ]]; then
+    leaf="$(awk '/BEGIN CERT/{n++} n==1' "$edge_certs/edge.crt")"
+
+    if [[ -n "$leaf" ]]; then
+        printf '%s
+' "$leaf" > "$work/edge.crt"
+        cat "$CA_DIR/issuing.crt" >> "$work/edge.crt"
+
+        # Only if it still verifies. The leaf was signed by this key, which has
+        # not changed, so it should - and if it does not, leaving the old file
+        # alone beats replacing a working edge with a broken one.
+        if openssl verify -CAfile "$CA_DIR/anchor.crt"                 -untrusted "$CA_DIR/issuing.crt" "$work/edge.crt" >/dev/null 2>&1; then
+            cp --preserve=mode,ownership "$edge_certs/edge.crt" "$work/edge.crt.old" 2>/dev/null || true
+            cat "$work/edge.crt" > "$edge_certs/edge.crt"
+            echo "  $edge_certs/edge.crt now carries the new issuing certificate"
+            echo "  (restart the edge so nginx re-reads it)"
+        else
+            echo "  $edge_certs/edge.crt was left alone: the rebuilt chain did not verify" >&2
+        fi
+    fi
+fi
+
 openssl pkcs12 -export -out "$CA_DIR/issuing.p12" \
     -inkey "$issuing_key" -in "$CA_DIR/issuing.crt" \
     -certfile "$CA_DIR/anchor.crt" -passout "pass:$password"
