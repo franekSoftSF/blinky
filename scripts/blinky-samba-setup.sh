@@ -218,6 +218,26 @@ fi
 
 # ------------------------------------------------------------ kdc request
 
+# A certificate this controller already holds is one to keep, not to ask for
+# again.
+#
+# The chain around it is a different matter. Re-signing the issuing CA leaves
+# kdc-chain.pem carrying a certificate that no longer exists anywhere else,
+# and PKINIT then presents a path a client cannot complete - reported as the
+# domain controller's certificate coming from an untrusted authority, which
+# sends everyone to look at anchors rather than at what was sent.
+#
+# So a run that brings a new chain and is given no certificate rebuilds the
+# chain around the certificate that is already here, rather than printing a
+# request for one nobody needs. Seen after the issuing CA was re-signed while
+# the KDC certificate stayed perfectly valid: the same key signed it, so
+# nothing about it had changed.
+if [[ -z "$KDC_CERT" && -f "$private/kdc.crt" && -n "$CHAIN" && -f "$CHAIN" ]]; then
+    KDC_CERT="$private/kdc.crt"
+
+    say "the KDC certificate is already here - refreshing the chain around it"
+fi
+
 if [[ -z "$KDC_CERT" ]]; then
     say "certificate request for the KDC"
 
@@ -264,7 +284,10 @@ if ! openssl x509 -in "$KDC_CERT" -noout -ext extendedKeyUsage 2>/dev/null |
     exit 4
 fi
 
-cp "$KDC_CERT" "$private/kdc.crt"
+if [[ "$(readlink -f "$KDC_CERT")" != "$(readlink -f "$private/kdc.crt")" ]]; then
+    cp "$KDC_CERT" "$private/kdc.crt"
+fi
+
 chmod 644 "$private/kdc.crt"
 
 # The full chain beside it. PKINIT presents what it is given, and a client that
