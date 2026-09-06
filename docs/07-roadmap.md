@@ -131,6 +131,58 @@ the profile's CA instance differing.
 | 0063 | Documentation pass and screenshots | A stranger can go from clone to smart-card logon using only the repository |
 | 0064 | The agent CA belongs to the deployment, and revocation is enforced at the edge | `scripts/dev-certs.sh` writes the agent CA unencrypted next to the certificates, which is right for a laptop and must never reach a customer. `install-server.sh` mints it, or takes one that already exists. **And a revocation list for it**: an agent whose state is not `Enrolled` is already refused by [the middleware](../src/Blinky.Api/Security/AgentAuthenticationMiddleware.cs) — that is the defence and it works today — but nothing checks a CRL at the TLS layer, so a withdrawn certificate still completes a handshake before being turned away. `ssl_crl` on the agent listener, fed by the same publisher as everything else, closes that and makes the certificate worthless to anything else that trusts the same CA |
 
+## Phase 7 — FIDO2 on the same key
+
+The brief is [12 — Passkey provisioning](12-passkey-provisioning-brief.md);
+what it turns into is below. Two things make this phase unlike the six before it.
+
+**The transport is new.** PIV speaks APDUs over PC/SC, CTAP2 speaks its own
+protocol over HID. The agent, the job engine, the inventory model and the
+console all carry over; nothing underneath them does. That is why 0070 is a
+foundation patch rather than the first feature.
+
+**Blinky does not mint this credential.** A WebAuthn credential is created by
+the authenticator in a ceremony with the relying party — there is no way to
+generate one server-side and write it into a slot the way a certificate is
+written. All Blinky can do is run the ceremony on somebody's behalf and hand
+the result to a provider that accepts it, which makes the phase per-provider by
+construction: Entra proves nothing about Okta, and both prove nothing about
+Google, which today accepts no such handover at all (§ Later).
+
+0070–0072 need no identity provider at all and are worth having on their own:
+they answer *is this returned key actually empty*, which a CMS that manages
+only PIV answers wrongly.
+
+| # | Patch | DoD |
+|---|---|---|
+| 0070 | `Blinky.Fido`: CTAP2 over HID, `AuthenticatorInfo`, correlated to the PIV token by serial | A plugged key reports AAGUID, CTAP versions, whether a PIN is set, PIN retries, and discoverable-credential slots used and free — joined to the same token the PC/SC sweep already sees, by serial. A key with the FIDO application disabled says so; it is not a failure. Denied HID access is an environment error naming elevation, because the tray does not run as LocalSystem and the service does. Nothing is written to any key |
+| 0071 | The FIDO application in the inventory and on the token page | The console shows PIV and FIDO beside each other, with **two** PIN retry counters that are never collapsed into one, and lists the relying parties a key holds discoverable credentials for. "Is this returned key empty" is answerable from the console without `ykman` |
+| 0072 | Control it: FIDO PIN set and change, and FIDO reset | The policy is enforced in the service and not only in the window, as in 0047. Reset is refused without a confirmation that names how many discoverable credentials it destroys, and reports the vendor's power-cycle window honestly when it has passed. A test on hardware asserts the thing an operator will otherwise assume wrongly: `ykman piv reset` leaves FIDO untouched, and a FIDO reset leaves PIV untouched |
+| 0073 | `Blinky.Passkeys`: `IPasskeyDirectory`, the normalised `PasskeyCreationOptions`, `Capabilities`, and `EntraPasskeyDirectory` | Recorded Graph fixtures normalise into one model; contract tests pass with no tenant and no hardware. rpId and origin come from the provider's answer and never from a constant — asserted by a test that fails on a `login.microsoft.com` literal anywhere outside `EntraPasskeyDirectory`. `Capabilities` carries `SupportsRegistration` and `PrepareOnly` from the first commit, so the Google question can be answered later without reshaping the interface |
+| 0073a | `OktaPasskeyDirectory`, the Factors route | The same interface against Okta's naming (`attestation`/`clientData` rather than `attestationObject`/`clientDataJSON`), with origin taken from the org's domain — including a custom one — preferring what the API returns over what is configured. A ceremony failed on purpose leaves no factor behind: the `PENDING_ACTIVATION` factor is deleted in cleanup, proved by a test that fails the ceremony deliberately |
+| 0073b | Okta's Preregistration API, behind `OKTA__USEPREREGISTRATIONAPI` — optional | The provisional PIN is delivered by Okta's own email template and never appears in Blinky's UI or database. Off by default, behind the same interface, and not made default before it has run against a live org — the API may need an Early Access flag and is shaped for Yubico's fulfilment programme rather than for ours |
+| 0074 | `Blinky.Contracts`: the `ProvisionFido2Credential` envelopes and a protocol version bump | Four messages — prepare, ready, ceremony, result — carrying no provider semantics beyond an opaque tag for the audit trail. A repeated ceremony request with the same challenge is the same operation, not a second one. The version is bumped, and an agent from before the bump refuses cleanly rather than misreading a field |
+| 0075 | `PasskeyCredential`: entity, mapping, generated schema | `Requested → KeyReady → ChallengeIssued → Provisioned → Registered → Revoked`, plus `Failed` with a reason, following the three state machines that exist. Schema generated by `tools/SchemaTool`, `SchemaValidator` clean at both services' start. **No column can hold the provisional PIN** — enforced by the mapping rather than left as a convention the next patch can forget |
+| 0076 | The ceremony in the agent — *hardware milestone* | `clientDataJSON` built byte-exact with the challenge as received, `clientDataHash` its SHA-256, and `attestationObject` passed through as produced rather than re-encoded. Touch and PIN prompts drawn by `Agent.Ui`, labelled as the **FIDO2 PIN** and distinguishable from the PIV PIN by a person who does not know there are two. `forceChangePin` and `SetMinPinLength` are used where `AuthenticatorInfo` says CTAP 2.1 exists and never assumed; where it does not, the fallback is an operator-set PIN and the UI says so. Proved on the bench against a mock relying party, before any provider is in the loop |
+| 0077 | Api orchestration, REST, drift and revocation | Options are fetched only after `Fido2Ready` and dispatched immediately, with the challenge TTL enforced as a job deadline; expiry fails with a retryable code rather than a dead job. The passkey list merges the database with the provider's live list and shows disagreement instead of hiding it. Revoke deletes at the provider **and then** marks locally, never the other way round. The agent never speaks to Entra or Okta — every provider call is server-side |
+| 0077a | Okta wired into the orchestration and the console | The same job completes against an Okta org **with no change in `Blinky.Agent.Service`**. A change that turns out to be needed there is reviewed as a design smell before it is written: the ceremony is meant to be identical, and if it is not, the abstraction is in the wrong place |
+| 0078 | The passkey panel *(Codex)* | Provider selector showing configured providers, and rendering an analysis-only provider visible-but-disabled with the reason rather than omitting it. Live ceremony status — waiting for the key, touch, PIN, registering. A provisional PIN is displayed **exactly once** and cannot be fetched again by reloading the page. Drift badge where the provider and the database disagree |
+| 0079 | Docs: `13-passkey-provisioning.md` and the updates around it | Tenant prerequisites for both providers, the egress the `api` container needs and the fact that nothing else in the stack gains any, the chain-of-custody note for a key that ships as a live credential, and the Google gap stated plainly next to the federation alternative. Updates to [05](05-agent-protocol.md), [06](06-security.md), `README.md` and both status files |
+
+**Phase gate:** an operator provisions a fresh YubiKey from the console for an
+Entra lab-tenant user and for an Okta lab-org user; each of them signs in at
+their own provider with that key; the provisional PIN must be changed on first
+use; revoking from the console removes the method at the provider; every step
+is in the audit trail; and the unit and contract tests are green with no
+hardware, no tenant and no org.
+
+**What this phase adds that no earlier one has: a dependency on somebody else's
+cloud.** Everything through Phase 6 runs on-premises. Here the `api` container —
+and only that container — needs to reach `graph.microsoft.com`,
+`login.microsoftonline.com` and the Okta org URL, and the lab in
+[09](09-lab.md) needs a tenant and an org that no script in this repository can
+provision. Worth deciding on purpose rather than discovering at deployment.
+
 ## Later
 
 Named so they are not mistaken for oversights: OCSP responder, SCP03/SCP11
@@ -138,38 +190,40 @@ secure channel, dual control for privileged profiles, hash-linked audit chain,
 non-Yubico token support. The Windows credential provider has moved up to 0049a
 now that there is a reason for it.
 
-### FIDO2 — application development, not a commitment
+### FIDO2 — now Phase 7
 
-Worth doing eventually and not on the path to anything else. Three tasks rather than one:
+Listed here as three tasks and not a commitment. It is a commitment: the three
+became Phase 7 above, and the brief they came from is
+[12](12-passkey-provisioning-brief.md). What this section said about Okta —
+"narrower, and may come down to a guided browser ceremony" — turned out to be
+wrong, and is worth recording as wrong rather than quietly deleting: Okta
+enrols a security key on a user's behalf through its own management API, its
+Admin Console does it by hand already, and the agent-side ceremony is the same
+one Entra needs. It is a second implementation of one interface, not a second
+design.
 
-A YubiKey runs PIV and FIDO2 as **separate applications, with separate PINs and
-separate resets**. `ykman piv reset` does not touch FIDO and the reverse is
-equally true — so a CMS that manages only PIV will tell an operator a returned
-key is clean while it still holds somebody's passkeys. That alone is an
-argument for the first two of these, before any identity provider is involved.
+### Google Workspace — analysed, not scheduled
 
-They are listed apart because FIDO is not an extension of what exists: PIV
-speaks APDUs over PC/SC, CTAP2 speaks its own protocol over HID. The agent, the
-job engine, the inventory model and the console all carry over. The transport
-and everything about how a credential comes into being do not.
+There is **no public Google API that accepts a WebAuthn attestation on behalf
+of a user**. This is not an agent limitation — the agent could run
+`makeCredential` against rpId `google.com` perfectly well — there is simply no
+endpoint to hand the result to, so the first and third steps of the flow do not
+exist. The admin-side APIs cover policy and reporting only.
 
-1. **See it.** Read the FIDO application: whether a PIN is set, how many
-   attempts remain, how many discoverable credentials there are and which
-   relying parties they belong to. Reuses the sweep and the console, and closes
-   the "is this returned key actually empty" question.
-2. **Control it.** Set and change the FIDO PIN; reset the FIDO application when
-   a key is returned or reassigned. Real lifecycle value that needs no identity
-   provider at all, and the half most likely to be wanted first.
-3. **Provision it.** Here the answer stops being symmetric and the honest
-   version has to be said out loud. A WebAuthn credential is created by the
-   authenticator in a ceremony with the relying party — a CMS cannot mint one
-   server-side and write it to a slot the way it writes a certificate. Entra ID
-   has a provisioning API for exactly this case, which needs enterprise
-   attestation and keys that support it. Okta's equivalent is narrower and may
-   come down to a guided browser ceremony rather than server-side
-   provisioning. So this task is per-provider, and step 3 for one provider
-   proves nothing about the next.
+Two answers, and the second is usually the real one:
 
+- **Prepare-only.** Blinky sets the FIDO2 PIN with `forceChangePin`, records the
+  key against a cardholder, prints a hand-off sheet, and then watches the
+  Directory API's read-only enrolment signals to see whether the user ever
+  enrolled. That is a compliance loop rather than provisioning, and it is
+  optional; brief §7 holds the design.
+- **Federate.** Front Google with Entra or Okta and provision at the IdP.
+  Phishing-resistant sign-in to Google, with no Google-side enrolment at all.
+
+Phases 0070–0079 owe this exactly two things, both nearly free and both already
+in the DoD of 0073 and 0078: the capability flags exist from the first commit,
+and the selector shows an unsupported provider with a reason instead of
+omitting it.
 ## 0025 — card personalisation (management key, PIN, PUK)
 
 The building blocks exist and nothing uses them. `PivPinOperations` already has
@@ -286,3 +340,13 @@ certificate and the KDC from everything sssd does with them.
 5. **Which HSM in production**, and does it need to hold the management-key
    master and the CA issuing key in the same partition? Needs site input before
    0062.
+6. **Does the lab get an Entra tenant and an Okta org?** Phase 7's contract
+   tests need neither — recorded fixtures cover both providers, and 0076 can be
+   proved against a mock relying party. Everything past that needs a real
+   tenant and a real org, which no script here can provision and which nobody
+   has yet agreed to pay for. Decide before 0076, not after.
+7. **Google Workspace: prepare-only, or federation and nothing else?** There is
+   no API to register a passkey on a user's behalf, so the choice is between a
+   compliance loop that presets the PIN and watches for self-enrolment, and
+   telling operators plainly to front Google with an IdP that does have one. A
+   product decision; the technical answer is already written in brief §7.

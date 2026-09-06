@@ -18,7 +18,7 @@
     ]
   },
   "status": {
-    "updated": "2026-08-21",
+    "updated": "2026-08-27",
     "phase": 2,
     "phaseTitle": "Issue something",
     "state": "in-progress",
@@ -67,6 +67,12 @@
       "title": "Ship it",
       "state": "open",
       "done": "A stranger can go from clone to smart-card logon using only the repository."
+    },
+    {
+      "id": 7,
+      "title": "FIDO2 on the same key",
+      "state": "open",
+      "done": "An operator provisions a fresh YubiKey from the console for an Entra lab-tenant user and for an Okta lab-org user; each signs in at their own provider with that key; the provisional PIN must be changed on first use; revoking from the console removes the method at the provider; every step is in the audit trail; unit and contract tests green with no hardware, no tenant and no org."
     }
   ],
   "components": [
@@ -183,6 +189,18 @@
       "type": "cli",
       "phase": 1,
       "state": "done"
+    },
+    {
+      "name": "Blinky.Fido",
+      "type": "library",
+      "phase": 7,
+      "state": "not-started"
+    },
+    {
+      "name": "Blinky.Passkeys",
+      "type": "library",
+      "phase": 7,
+      "state": "not-started"
     }
   ],
   "decisions": [
@@ -325,6 +343,26 @@
       "id": "foreign-piv-cards",
       "choice": "Detected by asking the card for a serial, never by reader name; reported as unsupported with a reason rather than skipped",
       "state": "locked-validated"
+    },
+    {
+      "id": "passkey-ceremony-location",
+      "choice": "The WebAuthn ceremony runs in the agent over CTAP2, never in the browser",
+      "state": "locked"
+    },
+    {
+      "id": "passkey-rpid-origin",
+      "choice": "rpId and origin are per-provider, per-tenant data carried in the job payload, never constants in code",
+      "state": "locked"
+    },
+    {
+      "id": "provisional-fido-pin",
+      "choice": "Generated on the workstation, shown to the operator once, stored nowhere; delivered by the provider instead where the provider can",
+      "state": "locked"
+    },
+    {
+      "id": "passkey-providers",
+      "choice": "Entra ID and Okta behind one interface; Google Workspace analysed and not built, because no API accepts an attestation on behalf of a user",
+      "state": "locked"
     }
   ],
   "openQuestions": [
@@ -367,6 +405,22 @@
         6
       ],
       "needs": "site input"
+    },
+    {
+      "id": "passkey-lab-tenancy",
+      "question": "Does the lab get an Entra tenant and an Okta org, or does Phase 7 stop at contract tests against recorded fixtures?",
+      "blocks": [
+        7
+      ],
+      "needs": "a decision and a subscription"
+    },
+    {
+      "id": "google-prepare-only",
+      "question": "Is Google Workspace worth a prepare-only mode - PIN preset, hand-off sheet, read-only compliance loop - or is federating Google behind Entra or Okta the whole answer?",
+      "blocks": [
+        7
+      ],
+      "needs": "product decision"
     }
   ],
   "risks": [
@@ -419,6 +473,31 @@
       "id": "t0-and-outbound-chaining-untested",
       "impact": "medium",
       "handling": "6Cxx needs a T=0 reader and outbound chaining needs a write; hand-built cases cover both until patch 0024"
+    },
+    {
+      "id": "graph-fido2-beta",
+      "impact": "medium",
+      "handling": "Microsoft Graph's fido2Methods endpoints are beta. Isolated behind IPasskeyDirectory, with recorded fixtures so a contract change surfaces as a failing test rather than as a broken deployment"
+    },
+    {
+      "id": "fido-reset-is-irreversible",
+      "impact": "high",
+      "handling": "A FIDO reset destroys every discoverable credential and there is no PUK equivalent. 0070 makes them visible before 0072 can destroy them, and the reset needs a confirmation naming the count"
+    },
+    {
+      "id": "challenge-ttl-bounds-ceremony",
+      "impact": "medium",
+      "handling": "Options are fetched only after the key has answered; expiry is a retryable code with a fresh challenge, and for Okta the pending factor is deleted before the retry"
+    },
+    {
+      "id": "provisional-pin-shown-once",
+      "impact": "medium",
+      "handling": "Deliberate, and the reason Okta's ProviderDelivers mode is worth having: the PIN is emailed to the holder and passes through no operator and no database"
+    },
+    {
+      "id": "passkey-cloud-egress",
+      "impact": "medium",
+      "handling": "Phase 7 is the first thing here that needs the internet. Only the api container reaches graph.microsoft.com, login.microsoftonline.com or the Okta org URL; the rest of the stack stays on-premises, and 0079 documents it"
     }
   ],
   "stateLegend": {
@@ -896,6 +975,110 @@
       "state": "open",
       "owner": "cloud-ai",
       "proof": "dev-certs.sh writes the agent CA unencrypted next to the certificates, which is right for a laptop and must never reach a customer. And a revocation list for it: an agent whose state is not Enrolled is already refused by AgentAuthenticationMiddleware - that is the defence and it works - but nothing checks a CRL at the TLS layer, so a withdrawn certificate still completes a handshake before being turned away."
+    },
+    {
+      "id": "0070",
+      "phase": 7,
+      "title": "Blinky.Fido: CTAP2 over HID, AuthenticatorInfo, joined to the token by serial",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started. Foundation for the rest of the phase: HID is not PC/SC, so nothing in Blinky.Piv carries over below the token."
+    },
+    {
+      "id": "0071",
+      "phase": 7,
+      "title": "The FIDO application in the inventory and on the token page",
+      "state": "open",
+      "owner": "both",
+      "proof": "Not started. Two PIN retry counters, never one. The API half is cloud-ai, the page is codex."
+    },
+    {
+      "id": "0072",
+      "phase": 7,
+      "title": "FIDO PIN set and change, and FIDO reset",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started. Needs no identity provider, and answers whether a returned key is actually empty."
+    },
+    {
+      "id": "0073",
+      "phase": 7,
+      "title": "Blinky.Passkeys: IPasskeyDirectory, PasskeyCreationOptions, Capabilities, EntraPasskeyDirectory",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started, and buildable today: fixtures and contract tests need neither hardware nor a tenant."
+    },
+    {
+      "id": "0073a",
+      "phase": 7,
+      "title": "OktaPasskeyDirectory, Factors route",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started. Second implementation of the same interface; a pending factor left by a failed ceremony must be deleted in cleanup."
+    },
+    {
+      "id": "0073b",
+      "phase": 7,
+      "title": "Okta Preregistration API behind OKTA__USEPREREGISTRATIONAPI",
+      "state": "deferred",
+      "owner": "cloud-ai",
+      "proof": "Optional. May need an Early Access flag on the org and is shaped for Yubico fulfilment; not default before it has run against a live org."
+    },
+    {
+      "id": "0074",
+      "phase": 7,
+      "title": "Contracts: ProvisionFido2Credential envelopes and a protocol version bump",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started. Breaking the protocol immobilises deployed agents, which is what the version bump is for."
+    },
+    {
+      "id": "0075",
+      "phase": 7,
+      "title": "PasskeyCredential: entity, mapping, generated schema",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started. A fourth state machine, and a mapping in which no column can hold the provisional PIN."
+    },
+    {
+      "id": "0076",
+      "phase": 7,
+      "title": "The makeCredential ceremony in the agent",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started. Hardware milestone: prove it on the bench against a mock relying party before any UI work."
+    },
+    {
+      "id": "0077",
+      "phase": 7,
+      "title": "Api orchestration, REST, drift and revocation",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started. The challenge TTL becomes a job deadline, and the agent never speaks to a provider."
+    },
+    {
+      "id": "0077a",
+      "phase": 7,
+      "title": "Okta wired into the orchestration and the console",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started. An agent change needed here is a design smell to review rather than write."
+    },
+    {
+      "id": "0078",
+      "phase": 7,
+      "title": "The passkey panel",
+      "state": "open",
+      "owner": "codex",
+      "proof": "Not started, and waits on 0077 the way 0052 waits on the API today. The provisional PIN is shown once and is not re-fetchable."
+    },
+    {
+      "id": "0079",
+      "phase": 7,
+      "title": "docs/13-passkey-provisioning.md and the updates around it",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Not started. Includes the Google gap and the federation alternative, stated plainly."
     }
   ],
   "notVerified": [
