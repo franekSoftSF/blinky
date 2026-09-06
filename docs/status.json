@@ -18,10 +18,10 @@
     ]
   },
   "status": {
-    "updated": "2026-08-27",
+    "updated": "2026-09-07",
     "phase": 2,
     "phaseTitle": "Issue something",
-    "state": "in-progress",
+    "state": "gate-met",
     "summary": "Phase 2, the gate is met. On 2026-08-24, jnowak@blinky.lab logged in to BY-WIN-CLIENT01 with a YubiKey carrying a certificate this system issued - own two-tier CA, own directory lookup for the UPN and objectSid, own agent, Samba4 KDC over PKINIT, and no ADCS anywhere. The card was fully personalised first: management key derived per token and stored nowhere, PIN chosen by the holder, PUK replaced and escrowed. Both unblock paths were exercised, online and offline. Two findings worth carrying. Windows' inbox PIV minidriver would not produce a key container for a card meeting every requirement in SP 800-73 that could be checked; Yubico's minidriver did, and is a prerequisite for the workstation - but it takes ownership of any card whose management key it does not recognise, which is why 0025 writes the key behind the PIN and sets the flag Yubico's tools read. And a certificate chain trusted for TLS is not thereby trusted for logon: the issuing CA must be in the workstation's NTAuth store, and Windows reports its absence as CERT_E_UNTRUSTEDCA, which reads exactly like a broken chain. Fourteen defects surfaced over the day, most of them this project's own. Three are worth naming: the installer protected every CA private key with the literal password \"blinky\" while .env recorded a strong one that opened nothing; 7F49 was parsed as a tag plus a length rather than the two-byte tag it is, which broke every RSA issuance and was hidden by a hard-coded ECC algorithm; and the issuing CA never received a CRL distribution point at all, because the script that adds one refused to run and the installer swallowed the refusal through a grep and a || true. Still open: an orphaned Issued credential from an earlier attempt, the API gaps in doc 11 that block enrolment from the console, reconciliation (0029), and a card cannot be personalised without also being issued to.",
     "nothingIssuedYet": false
   },
@@ -41,7 +41,7 @@
     {
       "id": 2,
       "title": "Issue something",
-      "state": "in-progress",
+      "state": "gate-met",
       "done": "docker compose up, enrol a factory YubiKey from the console, and log into a Samba4 domain with it. No ADCS involved."
     },
     {
@@ -104,13 +104,13 @@
       "name": "Blinky.Piv",
       "type": "library",
       "phase": 1,
-      "state": "attestation-done"
+      "state": "done"
     },
     {
       "name": "Blinky.Contracts",
       "type": "library",
       "phase": 1,
-      "state": "skeleton"
+      "state": "done"
     },
     {
       "name": "Blinky.Domain",
@@ -128,19 +128,19 @@
       "name": "Blinky.Api",
       "type": "aspnet-core",
       "phase": 1,
-      "state": "enrolment-done"
+      "state": "partial"
     },
     {
       "name": "Blinky.Worker",
       "type": "worker-service",
       "phase": 2,
-      "state": "skeleton"
+      "state": "partial"
     },
     {
       "name": "Blinky.Pki.BuiltInCa",
       "type": "feature",
       "phase": 2,
-      "state": "not-started"
+      "state": "partial"
     },
     {
       "name": "Blinky.Pki.Adcs",
@@ -158,7 +158,7 @@
       "name": "Blinky.Agent.Service",
       "type": "worker-service",
       "phase": 1,
-      "state": "inventory-done"
+      "state": "done"
     },
     {
       "name": "Blinky.Agent.Ui",
@@ -170,13 +170,13 @@
       "name": "console",
       "type": "angular",
       "phase": 5,
-      "state": "not-started"
+      "state": "partial"
     },
     {
       "name": "blinky-samba-setup",
       "type": "cli",
       "phase": 6,
-      "state": "not-started"
+      "state": "done"
     },
     {
       "name": "tools/SchemaTool",
@@ -615,7 +615,8 @@
       "title": "pcsc-lite interop so the agent runs on Linux",
       "state": "blocked",
       "owner": "cloud-ai",
-      "gap": "No Linux machine with a reader here; untested marshalling would sit under everything else"
+      "proof": "The reader is no longer the missing piece. BY-LX-Client01 is joined, reads the card through pcscd, and both OpenSC and libykcs11 enumerate the token; scripts/install-linux-client.sh now configures the sssd CA database, the smart-card switch and the PAM profile, and opens the reader to a remote session behind --allow-remote-reader.",
+      "gap": "Card logon on Linux stops inside sssd: p11_child finds the certificate, skips OCSP for want of a responder, and then reports 'No certificate found' without a message. Trust, verification, the PKCS#11 module and privilege were each ruled out by test - see docs/07-roadmap.md, 'Linux: where smart-card login stopped'. kinit -X is the next thing to try. The IApduTransport over libpcsclite, which is what this patch is actually for, is still unwritten."
     },
     {
       "id": "0018",
@@ -654,7 +655,7 @@
       "id": "0022",
       "phase": 2,
       "title": "Certificate profiles, logon extensions, SID extension",
-      "state": "done-unverified",
+      "state": "partly-done",
       "owner": "cloud-ai",
       "proof": "EKUs, UPN SAN and the SID extension are issued and asserted",
       "gap": "The profile model lives in code rather than in the database"
@@ -679,7 +680,7 @@
       "id": "0024",
       "phase": 2,
       "title": "Certificate write-back, Issued to Installed",
-      "state": "done-unverified",
+      "state": "done",
       "owner": "cloud-ai",
       "proof": "1019 bytes written and read back identical, which also exercised outbound chaining",
       "gap": "The certificate does not reach the Windows certificate store on this machine: HID ActivClient owns the minidriver binding"
@@ -697,7 +698,7 @@
       "id": "0026",
       "phase": 2,
       "title": "Job engine: leases, watchdog, AwaitingUser",
-      "state": "done-unverified",
+      "state": "done",
       "owner": "cloud-ai",
       "proof": "Operator creates a job, agent claims it on a lease, runs it and reports; an expired lease is returned to the queue by the watchdog",
       "gap": "AwaitingUser has its own longer lease but nothing raises it until 0018"
@@ -717,6 +718,14 @@
       "state": "done",
       "owner": "cloud-ai",
       "proof": "Chain validates in both topologies; pathlen asserted so the reversal cannot return"
+    },
+    {
+      "id": "0029",
+      "phase": 2,
+      "title": "Reconcile credentials with what the sweep actually finds",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "A token reset outside Blinky leaves Credential rows reading Installed for certificates that no longer exist. The sweep corrects the slot and says nothing about the credential - found by resetting a token after two successful issuances."
     },
     {
       "id": "0030",
@@ -966,7 +975,9 @@
       "phase": 6,
       "title": "Documentation pass and screenshots",
       "state": "open",
-      "owner": "cloud-ai"
+      "owner": "cloud-ai",
+      "proof": "Three defects on the clone-to-logon path are fixed: provision-dc.sh orders samba-ad-dc after network-online.target and reloads it when it bound only to the loopback; resign-issuing-ca.sh is idempotent, having silently invalidated NTAuth, the workstation stores and the KDC chain three times in one day; blinky-samba-setup.sh rebuilds kdc-chain.pem around the certificate already on the controller when refreshed with --from-url alone.",
+      "gap": "No documentation pass and no screenshots yet. The fixes above are what a stranger following the repository would have hit, not the pass itself."
     },
     {
       "id": "0064",
@@ -1084,8 +1095,8 @@
   "notVerified": [
     {
       "what": "Multi-machine deployment",
-      "why": "The lab is being built; everything so far ran on one box",
-      "when": "The lab, docs/09-lab.md"
+      "why": "Proved on 2026-08-24 across the four-machine lab, controller, CMS host and both clients",
+      "when": "Done - kept here until a second deployment repeats it"
     },
     {
       "what": "6Cxx retry-with-length",
@@ -1099,7 +1110,7 @@
     },
     {
       "what": "The Linux transport",
-      "why": "No Linux machine with a reader",
+      "why": "The Linux client and its reader now exist; the libpcsclite marshalling is still unwritten and card logon stops inside sssd",
       "when": "0017"
     },
     {
@@ -1113,24 +1124,14 @@
       "when": "0030-0034"
     },
     {
-      "what": "Samba4 publication and PKINIT",
-      "why": "No Samba4 provision yet",
-      "when": "0061 and the phase 2 gate"
-    },
-    {
       "what": "The SoftHSM key tier",
       "why": "Needs Pkcs11Interop and a container; the file tier proves the rest",
       "when": "The other half of 0021"
     },
     {
-      "what": "That an issued certificate logs anybody in",
-      "why": "Needs a domain",
-      "when": "The phase 2 gate, docs/09-lab.md"
-    },
-    {
       "what": "That a written certificate reaches the Windows certificate store",
-      "why": "HID ActivClient owns the minidriver binding on this machine",
-      "when": "A clean Windows client, docs/09-lab.md"
+      "why": "It does on BY-WIN-CLIENT01, but only with Yubico's minidriver installed; the inbox PIV minidriver produced no key container, and on the bench machine HID ActivClient owns the binding",
+      "when": "Done for the supported arrangement; the inbox-minidriver case stays unproved"
     },
     {
       "what": "Issuance onto the biometric token",
@@ -1145,7 +1146,7 @@
   ],
   "lab": {
     "document": "docs/09-lab.md",
-    "state": "being-built",
+    "state": "built",
     "machines": [
       {
         "name": "blinky",
@@ -1175,7 +1176,8 @@
           "dc",
           "ubuntu"
         ],
-        "state": "not-reached"
+        "state": "not-reached",
+        "note": "Attempted 2026-08-24 and stopped inside sssd, not in Kerberos - see patch 0017. kinit -X, which would ask the KDC directly and leave sssd out of it, has not been tried."
       },
       {
         "name": "Smart-card logon into the Samba4 domain",
@@ -1183,7 +1185,9 @@
           "dc",
           "win"
         ],
-        "state": "not-reached",
+        "state": "reached",
+        "reachedOn": "2026-08-24",
+        "note": "jnowak@blinky.lab logged in to BY-WIN-CLIENT01 with a certificate this system issued, against the Samba4 KDC over PKINIT, with no ADCS anywhere.",
         "isPhaseGate": 2
       }
     ]
