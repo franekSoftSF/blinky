@@ -238,6 +238,7 @@ Three things in that table are the design working rather than data:
 | Offline desk-side unblock with a pre-fetched PUK | Phase 4 (0042) | security decision, not technical |
 | CLI-first v1 instead of the Angular console | Phase 5 | revisit if Phase 2 runs long |
 | Which HSM in production | Phase 6 (0062) | needs site input |
+| Do foreign tokens get a capability model — attestation yes/no, management key yes/no — and may a profile issue onto a token that cannot attest? | *Later* § non-Yubico tokens | measurement, then a decision |
 | Does the lab get an Entra tenant and an Okta org | Phase 7 (0076 onwards) | needs a decision and a subscription; contract tests need neither |
 | Google prepare-only mode, or federation and nothing else | Phase 7 (§ Later) | product decision, not a technical one |
 
@@ -398,6 +399,8 @@ exercised against the thing it is really for.
 
 | What | Why not yet | When it gets proved |
 |---|---|---|
+| YubiKey 5.8 | Newer than anything measured here. The version gates are open-ended, so it inherits the 5.7 path — but the pinned attestation root, the form-factor enum and the absence of card-side PIN complexity are assumptions until a card is read | `PivProbe`, which writes nothing |
+| What a Crescendo V3 and a C4000 answer to the **standard** PIV instructions | Only the Yubico extensions have been measured on them, and those answer `6D00`. The rest is inferred from SP 800-73 | `tools/InsProbe`, extended from one instruction to the standard set |
 | `6Cxx` retry-with-length | Comes from T=0 readers; every reader here negotiated T=1 | Needs a T=0 reader, or stays covered by hand-built cases |
 | Attestation rejection paths | Forgeries, wrong roots and serial mismatches are synthetic — a real one would mean a counterfeit token | Stays synthetic; the genuine path is proved on hardware |
 | The Linux transport | The client and its reader now exist; the `libpcsclite` marshalling is unwritten and card logon stops inside sssd | 0017 |
@@ -455,6 +458,60 @@ exercised against the thing it is really for.
 | The challenge TTL bounds the whole ceremony | A person fumbling an unfamiliar PIN runs the job past the deadline and the credential is never registered | Options are fetched only after the key answers; expiry is a retryable code with a fresh challenge, and for Okta the pending factor is deleted first |
 | The provisional PIN is shown once and stored nowhere | An operator who loses it before the key reaches its holder has no way to recover it | Deliberate, and the reason Okta's `ProviderDelivers` mode is worth having: the PIN goes to the user by email and never through a person |
 | Phase 7 needs egress to somebody else's cloud | An on-premises product acquires an internet dependency at the point it is most sensitive | Only the `api` container; named in 0079's docs; every other container stays where it is |
+
+## The bench, 2026-09-07
+
+Two things arrived and neither has been run against anything yet.
+
+**A YubiKey 5.8**, the first firmware here above 5.7. Nothing in the code
+branches on the version where it matters — the gates are `>= 5.3` for
+`GET METADATA` and `>= 5.7` for the AES-192 management key, and the algorithm
+is read from the card rather than derived from the number — so 5.8 should walk
+the 5.7 path. Three things are assumptions until a card is actually read.
+[`YubicoRoots`](../src/Blinky.Piv/Attestation/YubicoRoots.cs) pins **one** root
+with its SHA-256 checked at load, and issuance is gated on attestation, so an
+intermediate chaining anywhere else stops 0023 rather than degrading it. The
+form factor is a byte cast into an enum that stops at `0x07`, so a new shape
+becomes a number in a column people read as a name. And if 5.8 enforces PIN
+complexity of its own, the card will refuse for its reason and 0047 will explain
+it in ours.
+
+**An HID Crescendo SDK 2.1.0**, which turns out to answer a question and raise a
+better one. It is a managed .NET library over PC/SC — it loads under .NET 10 and
+its `SDK API` and `CLI Tool` folders are redistributable — with a full PIV
+surface: key generation on the card, certificate read and write, signing, ACR
+changes, PIN change, PUK reset, and a `NewToken` that personalises a card on its
+own terms. It produces **no PIV attestation of any kind**; every `Attestation`
+class in it belongs to FIDO. And Crescendo has no PIV management key at all —
+access is governed by ACRs plus the PIN.
+
+So supporting these cards is a **capability-model change, not a driver**. Blinky
+will not ask a CA to sign without an attestation chaining to a pinned root, and
+its personalisation *is* management-key diversification; neither has an
+equivalent here. That is now an open question above rather than a line in
+*Later*.
+
+**And the SDK is not needed to talk to the card.** The split, from the code:
+
+| | |
+|---|---|
+| **Standard SP 800-73** | `00A4` SELECT · `0020` VERIFY · `0024` CHANGE REFERENCE DATA · `002C` RESET RETRY COUNTER · `00CB` GET DATA · `00DB` PUT DATA · `0087` GENERAL AUTHENTICATE · `0047` GENERATE ASYMMETRIC KEY PAIR |
+| **Yubico only** | `00FD` GET VERSION · `00F8` GET SERIAL · `00F7` GET METADATA · `00F9` ATTEST · `00FF` SET MANAGEMENT KEY · MOVE KEY |
+
+The whole issuance path — generate, have the card sign its own request, write
+the certificate back, PIN and unblock — is in the standard set, which
+`Blinky.Piv` already speaks. What a foreign card cannot give is attestation, its
+own serial and metadata, and mutual authentication against key `9B`. That is a
+measurement waiting to be taken, not a conclusion: [`tools/InsProbe`](../tools/InsProbe/Program.cs)
+exists for exactly this question and today asks it of one instruction. It probes
+`0047` with a deliberately invalid algorithm identifier, so it writes nothing —
+extending it to the standard set is small and answers this in an evening.
+
+Where the SDK stays useful is as an **independent oracle** for what SP 800-73
+does not describe — ACR coding, what `NewToken` really does, what
+`PIVPutPKIData` looks like on the wire — the role `yubico-piv-tool` plays for
+the YubiKey. And as a reference for the FIDO half of Phase 7, where there are no
+APDUs at all because CTAP2 goes over HID.
 
 ## What to do next
 

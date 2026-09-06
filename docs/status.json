@@ -375,6 +375,12 @@
       "needs": "lab test"
     },
     {
+      "id": "foreign-token-capabilities",
+      "question": "Do non-Yubico PIV tokens get a capability model - attestation yes/no, management key yes/no - and may a profile issue onto a token that cannot attest?",
+      "blocks": [],
+      "needs": "measurement with InsProbe, then a decision. Today the answer is 'recognised and refused', which is correct and is not a plan"
+    },
+    {
       "id": "ca-container-split",
       "question": "Should the built-in CA run as its own process so the key material sits behind a process boundary?",
       "blocks": [
@@ -1099,6 +1105,16 @@
       "when": "Done - kept here until a second deployment repeats it"
     },
     {
+      "what": "YubiKey 5.8",
+      "why": "Newer than anything measured here; the matrix stops at 5.4.3, 5.7.1 and 5.7.2. The version gates are open-ended so 5.8 inherits the 5.7 path, but three things are assumptions until a card is read: that its attestation intermediate chains to the one pinned root, that its form factor is inside the enum, and that it has no card-side PIN complexity of its own",
+      "when": "Next session at the bench - PivProbe, which writes nothing"
+    },
+    {
+      "what": "What an HID Crescendo V3 and a C4000 answer to the standard PIV instructions",
+      "why": "Only the Yubico extensions have been measured on them, and those answer 6D00. Whether SELECT, VERIFY, GENERATE ASYMMETRIC KEY PAIR, GENERAL AUTHENTICATE and PUT DATA work is inferred from SP 800-73 rather than observed",
+      "when": "tools/InsProbe, extended from one instruction to the standard set. It probes with a deliberately invalid algorithm identifier, so it writes nothing"
+    },
+    {
       "what": "6Cxx retry-with-length",
       "why": "Comes from T=0 readers; every reader here negotiated T=1",
       "when": "Needs a T=0 reader; covered by hand-built cases until then"
@@ -1144,6 +1160,34 @@
       "when": "0027, worth doing while a person is at the keyboard"
     }
   ],
+  "bench": {
+    "updated": "2026-09-07",
+    "tokens": [
+      {
+        "what": "YubiKey 5.8",
+        "state": "on the bench, never read",
+        "note": "First firmware here above 5.7. Nothing in the code branches on it - the gates are >= 5.3 for GET METADATA and >= 5.7 for the AES-192 management key, and the algorithm is read from the card rather than derived from the version."
+      },
+      {
+        "what": "HID Crescendo Key V3, HID C4000",
+        "state": "read, and refused on purpose",
+        "note": "Recognised as unsupported with a reason (0019). Only the Yubico extensions have been measured on them."
+      }
+    ],
+    "vendorSdk": {
+      "what": "HID Crescendo SDK 2.1.0 for Windows",
+      "docs": "https://docs.hidglobal.com/crescendo-sdk-docs/",
+      "shape": "A managed .NET library (CrescendoDLL, net8.0 with RollForward LatestMajor, so it loads under .NET 10) over PCSC, HidSharpCore, BouncyCastle and Newtonsoft.Json, plus a CLI. LEGAL/Redist.txt makes the SDK API and CLI Tool folders redistributable.",
+      "canDo": "A full PIV surface - PIVGenerateKeyPair, PIVGetCertificate, PIVPutPKIData, PIVSignData, PIVDeleteKey, ACR changes, ChangePIN, ResetPINTries, PUKPut, NewToken - and a deep FIDO2/CTAP2 surface including ForceChangePin, enterprise attestation, bio enrollment and large blobs.",
+      "cannotDo": "No PIV attestation of any kind: every Attestation class in it is FIDO/WebAuthn. And Crescendo has no PIV management key at all - access is governed by ACRs plus the PIN, and NewToken personalises the card on its own terms.",
+      "consequence": "Supporting these cards is a capability-model change, not a driver. Blinky refuses to ask a CA to sign without an attestation chaining to a pinned root, and its personalisation is management-key diversification; neither has a Crescendo equivalent. The SDK is not needed to talk to the card - the issuance path is standard SP 800-73, which Blinky.Piv already speaks. It is worth having as an independent oracle for what SP 800-73 does not describe, and as a reference for the FIDO half of phase 7."
+    },
+    "instructionSplit": {
+      "standard": "00A4 SELECT, 0020 VERIFY, 0024 CHANGE REFERENCE DATA, 002C RESET RETRY COUNTER, 00CB GET DATA, 00DB PUT DATA, 0087 GENERAL AUTHENTICATE, 0047 GENERATE ASYMMETRIC KEY PAIR",
+      "yubicoOnly": "00FD GET VERSION, 00F8 GET SERIAL, 00F7 GET METADATA, 00F9 ATTEST, 00FF SET MANAGEMENT KEY, MOVE KEY",
+      "note": "The whole issuance path - generate, sign the request on the card, write the certificate back, PIN and unblock - is in the standard set. What a foreign card cannot give is attestation, its own serial and metadata, and mutual authentication against key 9B. That is measurement waiting to be done, not a conclusion."
+    }
+  },
   "lab": {
     "document": "docs/09-lab.md",
     "state": "built",
