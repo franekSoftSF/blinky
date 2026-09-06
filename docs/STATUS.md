@@ -485,6 +485,22 @@ own terms. It produces **no PIV attestation of any kind**; every `Attestation`
 class in it belongs to FIDO. And Crescendo has no PIV management key at all —
 access is governed by ACRs plus the PIN.
 
+Four constraints from the [API reference](https://docs.hidglobal.com/hid-crescendo-sdk-v2.1/API%20references/html/index.html)
+and the CLI's own help text, which shape anything built on this later:
+
+- **The slot map is not PIV's, but the data objects are.** Key references are
+  `0x9A` plus vendor slots `B0`, `B4` and `F0`, addressed alongside standard
+  BER-TLV tags like `5FC105`.
+- **Key generation offers RSA2048, RSA3072, RSA4096, CURVEP256 and CURVEP384**,
+  and nothing else. No Ed25519, no X25519 — so a profile either picks an
+  algorithm both a YubiKey and a Crescendo accept, or says which card it is for.
+- **ACRs can be changed only on a Crescendo 4000 (applet V4), and only on a slot
+  that is completely empty.** That inverts the order of operations: rules first,
+  then the key. Today Blinky generates the key and the certificate follows.
+- **`piv-pki-put` writes a private key, a certificate, or both.** A key can
+  arrive on one of these cards from outside — which is exactly the situation
+  attestation exists to detect, and the reason its absence is not a detail.
+
 So supporting these cards is a **capability-model change, not a driver**. Blinky
 will not ask a CA to sign without an attestation chaining to a pinned root, and
 its personalisation *is* management-key diversification; neither has an
