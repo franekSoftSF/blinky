@@ -1,5 +1,6 @@
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
+import { AuthStore } from './auth.store';
 import { firstValueFrom } from 'rxjs';
 
 export interface AgentRow {
@@ -188,6 +189,7 @@ export interface SystemStatus {
 @Injectable({ providedIn: 'root' })
 export class ConsoleStore {
   private readonly http = inject(HttpClient);
+  private readonly auth = inject(AuthStore);
   private readonly operatorToken = signal('');
   readonly online = signal(false);
   readonly loading = signal(false);
@@ -203,7 +205,18 @@ export class ConsoleStore {
   setOperatorToken(token: string): void {
     this.operatorToken.set(token.trim());
   }
+  /**
+   * The session first, the shared token only if there is no session.
+   *
+   * Both exist for one more patch. 0053e removes the header and the field that
+   * fills it, and cannot do it before this screen proved it can sign somebody
+   * in - deleting the shared token while it was the console's only way in would
+   * have taken the console offline.
+   */
   private headers(): HttpHeaders | undefined {
+    const session = this.auth.authorization();
+    if (session) return session;
+
     const token = this.operatorToken();
     return token ? new HttpHeaders({ 'X-Blinky-Operator': token }) : undefined;
   }
