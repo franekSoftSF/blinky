@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthStore } from '../core/auth.store';
 
@@ -33,7 +33,7 @@ import { AuthStore } from '../core/auth.store';
 
       <!-- Krok 1: kto i czym. -->
       @if (auth.stage() === 'credentials' || auth.stage() === 'totp-required') {
-        <form class="sign-in-form" (ngSubmit)="submit()">
+        <form class="sign-in-form" (submit)="submit($event)">
           <label>
             Nazwa konta
             <input
@@ -80,7 +80,7 @@ import { AuthStore } from '../core/auth.store';
 
       <!-- Krok 2a: hasło od instalatora kupuje dokładnie jedno logowanie. -->
       @if (auth.stage() === 'password-change-required') {
-        <form class="sign-in-form" (ngSubmit)="changePassword()">
+        <form class="sign-in-form" (submit)="changePassword($event)">
           <p class="sign-in-note">
             To konto ma hasło wygenerowane przy instalacji. Takie hasło leży w pliku, w historii
             powłoki i w pakiecie diagnostycznym, więc kupuje jedno logowanie — teraz ustaw własne.
@@ -216,7 +216,7 @@ import { AuthStore } from '../core/auth.store';
     `,
   ],
 })
-export class SignIn {
+export class SignIn implements OnInit {
   readonly auth = inject(AuthStore);
   private readonly router = inject(Router);
 
@@ -225,6 +225,27 @@ export class SignIn {
   readonly code = signal('');
   readonly newPassword = signal('');
   readonly repeated = signal('');
+
+  /**
+   * Takes credentials back out of the address bar.
+   *
+   * They should never arrive there, and for one build they did: the form was
+   * bound with (ngSubmit) and nothing imported FormsModule, so the event never
+   * fired and the browser submitted the form itself - as a GET, with the fields
+   * as query parameters. A password in a URL is a password in the browser
+   * history, in the proxy's access log, in the WAF's log and in the Referer
+   * header of the next request.
+   *
+   * The bug is fixed above. This stays because the history entry survives the
+   * fix, and because the next person to write a form here will make the same
+   * mistake.
+   */
+  ngOnInit(): void {
+    if (!location.search) return;
+
+    const scrubbed = location.pathname + location.hash;
+    history.replaceState(history.state, '', scrubbed);
+  }
 
   ready(): boolean {
     if (!this.username().trim() || !this.password()) return false;
@@ -235,7 +256,9 @@ export class SignIn {
     return this.newPassword().length >= 12 && this.newPassword() === this.repeated();
   }
 
-  async submit(): Promise<void> {
+  async submit(event?: Event): Promise<void> {
+    event?.preventDefault();
+
     await this.auth.signIn(this.username().trim(), this.password(), this.code().trim() || undefined);
 
     if (this.auth.signedIn()) {
@@ -250,7 +273,9 @@ export class SignIn {
     await this.auth.beginTotpEnrolment(this.username().trim(), this.password());
   }
 
-  async changePassword(): Promise<void> {
+  async changePassword(event?: Event): Promise<void> {
+    event?.preventDefault();
+
     await this.auth.changePassword(this.username().trim(), this.password(), this.newPassword());
 
     // The new one becomes what the next step presents, because the ceremony

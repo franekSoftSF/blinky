@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
+import { AuthStore } from './core/auth.store';
 import { ConsoleStore } from './core/console.store';
 import { I18n } from './core/i18n';
 import { Theme } from './core/theme';
@@ -16,6 +17,17 @@ export class App {
   private readonly store = inject(ConsoleStore);
   protected readonly i18n = inject(I18n);
   protected readonly theme = inject(Theme);
+  private readonly auth = inject(AuthStore);
+
+  /**
+   * Whether to draw the console around the page at all.
+   *
+   * Somebody who is not signed in was being shown the whole navigation tree
+   * with a sign-in form inside it - a menu of pages they cannot open, in front
+   * of the one thing they can do. The shell is for people who are past the
+   * door.
+   */
+  protected readonly signedIn = this.auth.signedIn;
   protected readonly menuOpen = signal(false);
   protected readonly administrationOpen = signal(true);
   protected readonly apiOnline = this.store.online;
