@@ -128,6 +128,62 @@ else
     app.Logger.LogError("Schema validation FAILED: {Summary}", schema.Summary);
 }
 
+// The first way in, created once and only when there is nobody at all.
+//
+// A deployment that has no accounts has no way to make one, which is the
+// bootstrap problem 0053d names: a smart card cannot be required to sign into
+// the system that issues smart cards before it has issued any. So the installer
+// generates a password into a file only root can read, and it buys exactly one
+// sign-in during which a real one is set.
+//
+// Seeded here rather than by a migration because it has to be conditional on
+// the table being empty, and "empty" is a question about the database at start
+// rather than about the schema.
+if (schema.IsValid)
+{
+    var bootstrapPassword = builder.Configuration["Blinky:Bootstrap:Password"] ?? string.Empty;
+    var bootstrapUsername = builder.Configuration["Blinky:Bootstrap:Username"] ?? "superadmin";
+
+    if (string.IsNullOrWhiteSpace(bootstrapPassword))
+    {
+        app.Logger.LogWarning(
+            "No bootstrap password configured, so no administrator exists and nobody can "
+            + "sign in. Set BOOTSTRAP_ADMIN_PASSWORD and restart.");
+    }
+    else
+    {
+        using var seeding = new Database(connectionString).OpenSession();
+        using var transaction = seeding.BeginTransaction();
+
+        if (!seeding.Query<OperatorAccount>().Any())
+        {
+            var now = DateTime.UtcNow;
+
+            seeding.Save(new OperatorAccount
+            {
+                Username = bootstrapUsername.Trim().ToLowerInvariant(),
+                DisplayName = "Bootstrap administrator",
+                PasswordHash = PasswordHash.Create(bootstrapPassword),
+                Role = Blinky.Domain.OperatorRole.Administrator,
+                State = Blinky.Domain.OperatorAccountState.Active,
+
+                // Both true at once on purpose. The generated password is in a
+                // file, a terminal history and a support bundle, and an account
+                // with no second factor is an account with one.
+                MustChangePassword = true,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+
+            transaction.Commit();
+
+            app.Logger.LogWarning(
+                "Created the bootstrap administrator {Username}. It must change its password "
+                + "and enrol a second factor before it can do anything.", bootstrapUsername);
+        }
+    }
+}
+
 app.UseSerilogRequestLogging();
 // Explicitly, and before the middleware below, because that middleware asks
 // which route was matched. Without this call routing runs at the end of the
@@ -243,6 +299,305 @@ app.MapPost("/api/jobs/{id:guid}/result",
 // token. That is a stop-gap and is named as one - but an unauthenticated write
 // endpoint would not have been the smaller compromise.
 var operatorToken = builder.Configuration["Blinky:Operator:Token"] ?? string.Empty;
+
+var signIn = new OperatorSignIn(() => DateTime.UtcNow);
+var sessions = new OperatorSessions(() => DateTime.UtcNow);
+
+// ---------------------------------------------------------------------------
+// Signing in. Patches 0086 and 0053b.
+//
+// Every step re-presents the password rather than carrying a half-finished
+// sign-in around on a ticket. A pending credential is a credential: it can be
+// stolen, it has to expire, and it needs its own storage and its own rules.
+// Asking for the password again costs a page that already has it nothing, and
+// leaves exactly one kind of token in this system.
+// ---------------------------------------------------------------------------
+
+OperatorAccount? FindOperator(NHibernate.ISession session, string? username) =>
+    string.IsNullOrWhiteSpace(username)
+        ? null
+        : session.Query<OperatorAccount>()
+            .FirstOrDefault(a => a.Username == username.Trim().ToLowerInvariant());
+
+// The second factor's secret, handed out while it is still unconfirmed.
+//
+// Generated once and kept, so reloading the page during enrolment shows the
+// same QR code rather than silently invalidating the one already scanned. It
+// stops being available the moment a code proves somebody has it.
+app.MapPost("/api/auth/totp/enrol",
+    (SignInRequest request, Database database) =>
+    {
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var account = FindOperator(session, request.Username);
+        var outcome = signIn.WithPassword(account, request.Password ?? string.Empty);
+
+        session.Flush();
+        transaction.Commit();
+
+        if (outcome.Outcome is not (SignInOutcome.TotpEnrolmentRequired
+            or SignInOutcome.PasswordChangeRequired))
+        {
+            return Results.Json(new { error = "that is not where this account is" },
+                statusCode: 409);
+        }
+
+        if (account!.TotpConfirmedAt is not null)
+        {
+            return Results.Json(new { error = "this account already has a second factor" },
+                statusCode: 409);
+        }
+
+        using var writing = database.OpenSession();
+        using var write = writing.BeginTransaction();
+
+        var fresh = FindOperator(writing, request.Username)!;
+        fresh.TotpSecret ??= Totp.NewSecret();
+        fresh.UpdatedAt = DateTime.UtcNow;
+        writing.Update(fresh);
+        write.Commit();
+
+        return Results.Ok(new
+        {
+            secret = fresh.TotpSecret,
+            uri = Totp.ProvisioningUri("Blinky", fresh.Username, fresh.TotpSecret!),
+        });
+    });
+
+// The whole sign-in, in one request when the account is settled and two while
+// it is not. The reply says what is missing rather than only that it failed.
+app.MapPost("/api/auth/sign-in",
+    (SignInRequest request, HttpContext context, Database database) =>
+    {
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var account = FindOperator(session, request.Username);
+        var first = signIn.WithPassword(account, request.Password ?? string.Empty);
+
+        // Persisted whatever happened: a failed attempt that is not written
+        // down is an attempt that never counted towards the lockout.
+        if (account is not null)
+        {
+            session.Update(account);
+        }
+
+        transaction.Commit();
+
+        switch (first.Outcome)
+        {
+            case SignInOutcome.Refused:
+                return Results.Json(new { error = "that did not work" }, statusCode: 401);
+
+            case SignInOutcome.LockedOut:
+                return Results.Json(new
+                {
+                    error = "too many attempts",
+                    until = first.LockedUntil,
+                }, statusCode: 423);
+
+            case SignInOutcome.PasswordChangeRequired:
+                return Results.Ok(new { outcome = "password-change-required" });
+
+            case SignInOutcome.TotpEnrolmentRequired:
+                return Results.Ok(new { outcome = "totp-enrolment-required" });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.TotpCode))
+        {
+            return Results.Ok(new { outcome = "totp-required" });
+        }
+
+        using var second = database.OpenSession();
+        using var finishing = second.BeginTransaction();
+
+        var confirming = FindOperator(second, request.Username)!;
+        var result = signIn.WithTotp(confirming, request.TotpCode);
+        second.Update(confirming);
+
+        if (result.Outcome != SignInOutcome.SignedIn)
+        {
+            finishing.Commit();
+
+            return result.Outcome == SignInOutcome.LockedOut
+                ? Results.Json(new { error = "too many attempts", until = result.LockedUntil },
+                    statusCode: 423)
+                : Results.Json(new { error = "that code did not work" }, statusCode: 401);
+        }
+
+        var (issued, token) = sessions.Issue(confirming.Id,
+            context.Connection.RemoteIpAddress?.ToString());
+
+        second.Save(issued);
+        finishing.Commit();
+
+        // The token exists in this response and nowhere else afterwards.
+        return Results.Ok(new
+        {
+            outcome = "signed-in",
+            token,
+            expires = issued.AbsoluteExpiresAt,
+            operatorName = confirming.DisplayName,
+            role = confirming.Role.ToString(),
+        });
+    });
+
+// Changing the password, which is how the bootstrap closes.
+app.MapPost("/api/auth/password",
+    (PasswordChangeRequest request, Database database) =>
+    {
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 12)
+        {
+            return Results.Json(new
+            {
+                error = "a password for this console is at least twelve characters",
+                detail = "Length is the only rule here on purpose: composition rules push "
+                         + "people towards one capital, one digit and one exclamation mark at "
+                         + "the end, which is a smaller space than a longer phrase.",
+            }, statusCode: 400);
+        }
+
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var account = FindOperator(session, request.Username);
+        var outcome = signIn.WithPassword(account, request.CurrentPassword ?? string.Empty);
+
+        if (outcome.Outcome is SignInOutcome.Refused or SignInOutcome.LockedOut)
+        {
+            if (account is not null)
+            {
+                session.Update(account);
+            }
+
+            transaction.Commit();
+
+            return Results.Json(new { error = "that did not work" }, statusCode: 401);
+        }
+
+        signIn.SetPassword(account!, request.NewPassword);
+        session.Update(account!);
+
+        // Every session that existed under the old password ends here. A
+        // password is changed either because it should be, or because somebody
+        // believes it is known - and the second case is worthless if whatever
+        // was signed in with it keeps working.
+        var live = session.Query<OperatorSession>()
+            .Where(s => s.OperatorAccountId == account!.Id && s.RevokedAt == null)
+            .ToList();
+
+        var ended = sessions.RevokeAll(live, "password changed");
+
+        foreach (var one in live)
+        {
+            session.Update(one);
+        }
+
+        transaction.Commit();
+
+        return Results.Ok(new { outcome = "password-changed", sessionsEnded = ended });
+    });
+
+// Who the caller is, and what is still outstanding for them.
+app.MapGet("/api/auth/me",
+    (HttpContext context, Database database) =>
+    {
+        var caller = SignedInOperator(context, database, sessions);
+
+        return caller is null
+            ? Results.Json(new { error = "not signed in" }, statusCode: 401)
+            : Results.Ok(new
+            {
+                caller.Username,
+                caller.DisplayName,
+                role = caller.Role.ToString(),
+            });
+    });
+
+// Ending this one, and ending all of them.
+app.MapPost("/api/auth/sign-out",
+    (HttpContext context, Database database) =>
+    {
+        var presented = SessionTokenFrom(context);
+
+        if (presented is null)
+        {
+            return Results.Json(new { error = "not signed in" }, statusCode: 401);
+        }
+
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var fingerprint = SessionTokens.Fingerprint(presented);
+        var row = session.Query<OperatorSession>().FirstOrDefault(s => s.TokenHash == fingerprint);
+
+        if (row is not null)
+        {
+            sessions.Revoke(row, "signed out");
+            session.Update(row);
+        }
+
+        transaction.Commit();
+
+        return Results.Ok(new { outcome = "signed-out" });
+    });
+
+app.MapGet("/api/auth/sessions",
+    (HttpContext context, Database database) =>
+    {
+        var caller = SignedInOperator(context, database, sessions);
+
+        if (caller is null)
+        {
+            return Results.Json(new { error = "not signed in" }, statusCode: 401);
+        }
+
+        using var session = database.OpenSession();
+
+        var rows = session.Query<OperatorSession>()
+            .Where(s => s.OperatorAccountId == caller.Id).ToList();
+
+        return Results.Ok(sessions.Live(rows).Select(s => new
+        {
+            s.Id,
+            s.CreatedFrom,
+            s.CreatedAt,
+            s.LastSeenAt,
+            s.AbsoluteExpiresAt,
+        }));
+    });
+
+app.MapPost("/api/auth/sessions/revoke-all",
+    (HttpContext context, Database database) =>
+    {
+        var caller = SignedInOperator(context, database, sessions);
+
+        if (caller is null)
+        {
+            return Results.Json(new { error = "not signed in" }, statusCode: 401);
+        }
+
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var rows = session.Query<OperatorSession>()
+            .Where(s => s.OperatorAccountId == caller.Id && s.RevokedAt == null).ToList();
+
+        var ended = sessions.RevokeAll(rows, "signed out everywhere");
+
+        foreach (var row in rows)
+        {
+            session.Update(row);
+        }
+
+        transaction.Commit();
+
+        // Including the one that asked. "Everywhere" that quietly means
+        // "everywhere else" is the wrong answer when somebody believes their
+        // session has been taken.
+        return Results.Ok(new { outcome = "signed-out-everywhere", sessionsEnded = ended });
+    });
 
 app.MapPost("/api/jobs/inventory",
     (InventoryJobRequest request, HttpContext context, JobService jobs) =>
@@ -1694,8 +2049,99 @@ static string ExtendedKeyUsageName(string oid) => oid switch
     _ => oid,
 };
 
+/// <summary>
+/// The bearer token a signed-in console presents, from either header.
+/// </summary>
+/// <remarks>
+/// <c>Authorization: Bearer</c> is what anything generic will send. The second
+/// name exists because the console is served from the same origin as the API
+/// behind one proxy, and a deployment that already strips or rewrites
+/// Authorization for something else should not take the console down with it.
+/// </remarks>
+static string? SessionTokenFrom(HttpContext context)
+{
+    var authorization = context.Request.Headers.Authorization.ToString();
+
+    if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+    {
+        var value = authorization["Bearer ".Length..].Trim();
+
+        if (value.Length > 0)
+        {
+            return value;
+        }
+    }
+
+    var header = context.Request.Headers["X-Blinky-Session"].ToString();
+
+    return string.IsNullOrWhiteSpace(header) ? null : header.Trim();
+}
+
+/// <summary>
+/// The account behind a presented session token, or null.
+/// </summary>
+/// <remarks>
+/// Every call is a lookup, which is the cost 0053b accepts on purpose: it is
+/// what makes ending a session take effect on the next request rather than
+/// whenever a self-contained token happens to expire.
+/// </remarks>
+static OperatorAccount? SignedInOperator(HttpContext context, Database database,
+    OperatorSessions sessions)
+{
+    var presented = SessionTokenFrom(context);
+
+    if (presented is null)
+    {
+        return null;
+    }
+
+    using var session = database.OpenSession();
+    using var transaction = session.BeginTransaction();
+
+    var fingerprint = SessionTokens.Fingerprint(presented);
+    var row = session.Query<OperatorSession>().FirstOrDefault(s => s.TokenHash == fingerprint);
+    var check = sessions.Check(row);
+
+    if (!check.Accepted)
+    {
+        transaction.Commit();
+        return null;
+    }
+
+    var account = session.Get<OperatorAccount>(check.Session!.OperatorAccountId);
+
+    // An account disabled while signed in stops here rather than at the next
+    // expiry, which is the same argument the session itself makes.
+    if (account is null || account.State != Blinky.Domain.OperatorAccountState.Active)
+    {
+        transaction.Commit();
+        return null;
+    }
+
+    session.Update(check.Session);
+    transaction.Commit();
+
+    return account;
+}
+
+/// <summary>
+/// Whether the caller may act as an operator, by either route.
+/// </summary>
+/// <remarks>
+/// A session first, because that is the one that can say who. The shared token
+/// stays because fifteen call sites and every script in <c>scripts/</c> use it,
+/// and removing it in the same change that introduces sessions would break the
+/// CRL publisher and the lab scripts at the moment there is nothing to replace
+/// them with. Patch 0053e is where it goes, after named service credentials
+/// exist - and it goes entirely, rather than being left discouraged.
+/// </remarks>
 static bool IsOperator(HttpContext context, string expected)
 {
+    if (context.Items.TryGetValue("operator", out var signedIn) && signedIn is OperatorAccount)
+    {
+        return true;
+    }
+
     if (string.IsNullOrEmpty(expected))
     {
         return false;
@@ -1738,6 +2184,18 @@ internal sealed record CardholderRequest(
     string? Upn = null,
     string? ObjectSid = null,
     string? DistinguishedName = null);
+
+/// <summary>Signing in: a name, a password, and the six digits when they are due.</summary>
+/// <remarks>
+/// The password travels on every step of the ceremony rather than being
+/// exchanged once for a half-finished ticket. A pending credential is a
+/// credential - it can be stolen, it has to expire, and it needs its own rules.
+/// </remarks>
+internal sealed record SignInRequest(string? Username, string? Password, string? TotpCode = null);
+
+/// <summary>Replacing a password, which is also how the bootstrap closes.</summary>
+internal sealed record PasswordChangeRequest(
+    string? Username, string? CurrentPassword, string? NewPassword);
 
 /// <summary>An operator taking a token out of service.</summary>
 internal sealed record BlockTokenRequest(string State, string? Comment = null);

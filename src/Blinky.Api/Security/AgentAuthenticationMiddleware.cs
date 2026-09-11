@@ -60,6 +60,16 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         "/api/directory/test-write-access",
         "/api/directory/users",
 
+        // Signing in cannot require being signed in, and these carry their own
+        // checks: a password, a code, or a session token.
+        "/api/auth/sign-in",
+        "/api/auth/totp/enrol",
+        "/api/auth/password",
+        "/api/auth/me",
+        "/api/auth/sign-out",
+        "/api/auth/sessions",
+        "/api/auth/sessions/revoke-all",
+
         "/api/profiles",
         "/api/cardholders",
 
@@ -73,6 +83,71 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         "/api/credentials/{id:guid}/suspend",
         "/api/credentials/{id:guid}/revoke",
     ];
+
+    private static readonly OperatorSessions Sessions = new(() => DateTime.UtcNow);
+
+    /// <summary>
+    /// Puts the signed-in account in <c>context.Items["operator"]</c> when the
+    /// request carries a live session, and leaves nothing there otherwise.
+    /// </summary>
+    /// <remarks>
+    /// Resolved once here rather than in every handler, which is also what
+    /// makes ending a session take effect on the next request instead of
+    /// whenever a self-contained token would have expired.
+    /// <para>
+    /// Swallows its own failures on purpose. This runs ahead of endpoints with
+    /// their own authentication - signing in, most obviously - so a database
+    /// that is briefly unreachable should let those refuse for their own
+    /// reasons rather than turn every operator route into an error about
+    /// sessions.
+    /// </para>
+    /// </remarks>
+    private void ResolveSession(HttpContext context, Database database)
+    {
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var presented = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? authorization["Bearer ".Length..].Trim()
+            : context.Request.Headers["X-Blinky-Session"].ToString().Trim();
+
+        if (string.IsNullOrEmpty(presented))
+        {
+            return;
+        }
+
+        try
+        {
+            using var session = database.OpenSession();
+            using var transaction = session.BeginTransaction();
+
+            var fingerprint = SessionTokens.Fingerprint(presented);
+            var row = session.Query<OperatorSession>()
+                .FirstOrDefault(s => s.TokenHash == fingerprint);
+
+            var check = Sessions.Check(row);
+
+            if (!check.Accepted)
+            {
+                transaction.Commit();
+                return;
+            }
+
+            var account = session.Get<OperatorAccount>(check.Session!.OperatorAccountId);
+
+            // An account disabled while somebody is signed in stops here, for
+            // the same reason the session itself can be ended.
+            if (account is not null && account.State == Blinky.Domain.OperatorAccountState.Active)
+            {
+                context.Items["operator"] = account;
+                session.Update(check.Session);
+            }
+
+            transaction.Commit();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not resolve a session token; falling back.");
+        }
+    }
 
     public async Task InvokeAsync(HttpContext context, Database database)
     {
@@ -94,6 +169,13 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
             || path.Equals(EnrolmentPath, StringComparison.OrdinalIgnoreCase)
             || IsOperatorRoute())
         {
+            // Resolved here so the handlers do not each have to, and so a
+            // session that has been ended stops working on the next request
+            // rather than at the end of its own lifetime. Absent or invalid
+            // leaves nothing behind and the handler falls back to the shared
+            // token, which is what still carries the scripts until 0053e.
+            ResolveSession(context, database);
+
             await next(context);
             return;
         }

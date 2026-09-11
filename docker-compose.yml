@@ -84,6 +84,10 @@ services:
       # extension and Windows refuses the logon with
       # CERT_TRUST_REVOCATION_STATUS_UNKNOWN.
       Blinky__Ca__PublicUrl: ${CA_PUBLIC_URL:-}
+
+      # Unset on purpose: no responder runs in this stack. Setting it puts an
+      # OCSP address into every certificate issued afterwards, and an address
+      # nothing answers is worse than none - see 0041a.
       Blinky__Ca__OcspUrl: ${CA_OCSP_URL:-}
 
       # Where the CRL is also written, as DER. Samba publishes it into the
