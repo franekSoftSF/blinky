@@ -150,7 +150,8 @@ public sealed class JobService(Database database, ILogger<JobService> logger)
     }
 
     public (Job Job, bool Created) Create(JobType type, string idempotencyKey,
-        Func<Guid, JobEnvelope> buildEnvelope, Guid? agentId = null, TimeSpan? deadline = null)
+        Func<Guid, JobEnvelope> buildEnvelope, Guid? agentId = null, TimeSpan? deadline = null,
+        Guid? cardholderId = null)
     {
         using var session = database.OpenSession();
         using var transaction = session.BeginTransaction();
@@ -168,6 +169,12 @@ public sealed class JobService(Database database, ILogger<JobService> logger)
             State = JobState.Pending,
             IdempotencyKey = idempotencyKey,
             AgentId = agentId,
+
+            // Who the work is for, where there is a who. Set at creation and
+            // never afterwards: a credential's link to a person is part of what
+            // the job was asked to do, not something reconstructed later from a
+            // subject line.
+            CardholderId = cardholderId,
             Payload = "{}",
             DeadlineAt = now.Add(deadline ?? TimeSpan.FromHours(1)),
             CreatedAt = now,

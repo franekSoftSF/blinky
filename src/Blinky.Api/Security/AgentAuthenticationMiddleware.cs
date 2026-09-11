@@ -60,6 +60,7 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         "/api/directory/test-write-access",
         "/api/directory/users",
 
+        "/api/profiles",
         "/api/cardholders",
 
         // Route patterns, not paths. A help desk request arrives as

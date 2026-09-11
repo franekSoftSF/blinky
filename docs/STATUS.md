@@ -1,6 +1,6 @@
 # Project status — Blinky
 
-**Last updated:** 2026-09-07
+**Last updated:** 2026-09-11
 **Phase:** 2 — Issue something. **The gate is met**
 **Overall:** on 24 August 2026 a person logged into the lab domain with a card
 this system personalised and issued, against a Samba4 KDC, with no ADCS anywhere
@@ -309,7 +309,7 @@ write it.
 | 0020 | Cloud.AI | `ICertificateAuthority`, `CaCapabilities`, profiles | **done** | Both topologies issue through one interface; capabilities describe the difference |
 | 0021 | Cloud.AI | Built-in CA: generation script, key tiers | **done, unverified** | `scripts/new-ca.sh` builds both shapes and the chains verify. The SoftHSM key tier is not written — only `file`, and it refuses without an explicit opt-in |
 | 0028 | Cloud.AI | Built-in CA topology: single or two-tier | **done** | Chain validates in both; `pathlen` asserted so the reversal cannot return |
-| 0022 | Cloud.AI | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | EKUs, UPN SAN and the SID extension are issued and asserted, and `smartcard-logon` refuses to issue without a resolved SID — proved by a 422 on the first live enrolment. On 2026-08-21 the profile issued for real against a directory: `CN=Admin`, UPN `Admin@blinky.lab`, SID read from `BLINKY.LAB`, certificate on the card and visible in Yubico Authenticator. A `client-auth` profile remains for use before a directory does. The profile model still lives in code rather than in the database, and is invisible to the console — see [11](11-console-enrolment.md) |
+| 0022 | Cloud.AI | Certificate profiles, smart-card logon extensions, SID extension | **partly done** | The profile model still lives in code, but is now shaped for the move: the certificate facts are slot-free `ProfileDescriptor` rows in `Profiles.All` and `ByName` builds from one of them, so a descriptor becomes a database row without anything above it changing. EKUs, UPN SAN and the SID extension are issued and asserted, and `smartcard-logon` refuses to issue without a resolved SID — proved by a 422 on the first live enrolment. On 2026-08-21 the profile issued for real against a directory: `CN=Admin`, UPN `Admin@blinky.lab`, SID read from `BLINKY.LAB`, certificate on the card and visible in Yubico Authenticator. A `client-auth` profile remains for use before a directory does. The profile model still lives in code rather than in the database, and is invisible to the console — see [11](11-console-enrolment.md) |
 | 0023 | Cloud.AI | Key generation, on-card CSR signing, attestation-gated submission | **done** | Proved on two tokens: management key authenticated mutually (AES-192 and 3DES), key generated, attestation verified, card signed its own request |
 | 0024 | Cloud.AI | Certificate write-back, `Issued`→`Installed`, store refresh | **done** | Written, read back, thumbprint compared, `Credential` in `Installed` and the slot in `Provisioned` — end to end through the job engine, twice. The Windows store half was answered on 2026-08-24 on BY-WIN-CLIENT01, and only with Yubico's minidriver: the inbox PIV minidriver produced no key container at all. On this bench machine ActivClient still owns the binding |
 | 0025 | Cloud.AI | Personalisation: management key, PUK escrow, PIN policy | **done** | Token 29051525 went from factory to fully personalised on 2026-08-24 and was used to log into Windows for half an hour. `ykman piv info` reports no default management key and no default PIN, and prints "Management key is stored on the YubiKey, protected by PIN". Two gaps named rather than hidden: the master lives in `.env` rather than an HSM, so `/api/system/status` reports `productionReady: false`, and a card is personalised only at its first enrolment, so anything issued before this keeps its factory key |
@@ -344,7 +344,7 @@ in front of a person and the lifecycle jobs were not.
 |---|---|---|---|---|
 | 0050 | Codex | Angular shell, nginx proxy, auth | **done** | Built into an image and served by the edge on the same origin as the API — `/` to the console, `/api` to the API, deep links answered with `index.html`. Running in compose and on the CMS host |
 | 0051 | Codex | Token and cardholder inventory | **partly done** | Tokens and their state are listed. The `MODEL` column shows the form factor because that is all the API sends, and cardholders have no endpoint at all |
-| 0052 | both | Lifecycle actions from the console | **partly done** | Recycle creates a job. Enrolment cannot: profiles and cardholders are invisible to the API and a failed job cannot say why. The API half is Cloud.AI's and is specified with endpoint shapes in [11](11-console-enrolment.md); the page is Codex's and cannot be finished before it |
+| 0052 | Codex | Lifecycle actions from the console | **partly done** | **The API half is finished.** All five gaps in [11](11-console-enrolment.md) are closed: `GET /api/profiles` says what can be issued and what each profile demands of the person it is issued to; the cardholder catalogue and the directory lookup behind it landed on 2026-08-22; a failed job carries its `Result` into the overview; and `POST /api/jobs/enrol` takes a `cardholderId`, reads the identity from that row, sets `Job.CardholderId`, and refuses an unknown profile or an identity the profile cannot use at the post rather than a minute later on an agent. What is left is the page |
 | 0053 | Codex | Who an operator is, and what they may do | **open** | Five patches. Everything today goes through one shared `X-Blinky-Operator` token: the audit trail cannot say *who*, nothing expires, and it leaks. It stays while the lab is being tested and goes when 0053e lands |
 | 0053a | Cloud.AI | Operator authentication by certificate | **open** | mTLS on the console listener, against the user CA rather than the agent CA. The operator's identity arrives in its own header; `X-Client-Verify` stays blanked on 8443, because the smoke test checks a browser cannot forge an agent identity |
 | 0053b | Cloud.AI | A session that can be ended | **open** | Server-side, so "log out everywhere" and a revoked card cut off at the next refresh rather than at token expiry |
@@ -539,25 +539,22 @@ Ordered, each item small enough to finish in one sitting.
    is 0029's problem arriving early, by a route 0029 does not cover: not a card
    reset behind Blinky's back, but Blinky's own job dying between issuing and
    writing.
-2. **The API gaps that block enrolment from the console** *(Cloud.AI, and it unblocks Codex.)* — profiles and
-   cardholders are invisible to it, and a failed job cannot say why. Written up
-   with endpoint shapes in [11](11-console-enrolment.md). Until these exist,
-   issuing means a JSON body typed by hand, and the console cannot be finished
-   against them.
-3. **0029 — reconcile credentials with what a sweep finds.** *(Cloud.AI.)* A token reset
+2. **0029 — reconcile credentials with what a sweep finds.** *(Cloud.AI.)* A token reset
    outside Blinky leaves `Credential` rows reading `Installed` for certificates
    that no longer exist. The sweep corrects the slot and says nothing about the
    credential.
-4. **A card can be personalised only by being issued to** *(Cloud.AI.)* — 0025 runs
+3. **A card can be personalised only by being issued to** *(Cloud.AI.)* — 0025 runs
    inside enrolment, so there is no way to take a card away from its factory
    defaults without also putting a credential on it, and every card issued
    before 0025 landed still holds its factory management key.
-5. **0022's remaining half** *(Cloud.AI.)* — profiles in the database rather than in
-   code, where the console can see them.
+4. **0022's remaining half** *(Cloud.AI.)* — profiles in the database rather than in
+   code. The console can see them now either way; what is left is that a new
+   profile still means a rebuild.
 
-Item 2 is the one to start first if two people are working: everything Codex
-can do on the console now is finished, and the rest of it waits on those
-endpoints.
+**The enrolment page is the one to start first if two people are working.** It
+was blocked on the API and is not any more: every endpoint doc 11 asks for
+exists, and nothing on the console side of enrolment is built. That work is
+Codex's, and the rest of this list is not.
 
 Smaller, and each an hour: an interrupted enrolment leaves a key in a slot that
 nothing below firmware 5.7 can clear, so recovery means `ykman piv reset` from

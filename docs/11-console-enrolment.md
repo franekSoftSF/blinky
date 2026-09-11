@@ -37,11 +37,23 @@ found by hand — `samba-tool user show` for the SID, the source for the profile
 names, [PivSlot.cs](../src/Blinky.Piv/PivSlot.cs) for the slot spelling. That
 is the whole problem.
 
-## Backend — five gaps
+## Backend — five gaps, all closed
 
-These are API work, not console work.
+These were API work, not console work. All five are done; what each one turned
+into is under its heading. The table is here because the gaps were closed over
+three weeks and this document was not touched in between, so anybody reading it
+between 22 August and 11 September was reading a list of things to do that were
+already done.
 
-### 1. Profiles are invisible
+| Gap | Closed by | When |
+|---|---|---|
+| 1. Profiles are invisible | `GET /api/profiles` | 2026-09-11 |
+| 2. Nothing exposes cardholders | `5ab6670` — the LDAP-backed catalogue | 2026-08-22 |
+| 3. Enrolment takes three loose strings | `cardholderId` on `POST /api/jobs/enrol` | 2026-09-11 |
+| 4. A failed job says nothing | `3c0e277` — `Result` and `UpdatedAt` in the overview | 2026-08-21 |
+| 5. There is no directory lookup | `5ab6670` — `Blinky.Directory` | 2026-08-22 |
+
+### 1. Profiles are invisible — **done**
 
 `Profiles` is a static class with two constants. Nothing enumerates it, so a
 console dropdown would be a hardcoded copy that drifts. It also carries a rule
@@ -58,9 +70,16 @@ GET /api/profiles
 ```
 
 Patch 0022's open half is the same list moving into the database. This endpoint
-should be written so that move does not change its shape.
+is written so that move does not change its shape: the certificate facts now
+live in `Profiles.All` as `ProfileDescriptor` rows without a slot, and
+`ByName` builds an `IssuanceProfile` from one of them. A descriptor becomes a
+database row when 0022 lands, and nothing above this class has to change.
 
-### 2. Nothing exposes cardholders
+A slot is deliberately not part of a descriptor. It is chosen per enrolment,
+and folding it in is how a profile list ends up quietly describing everything
+as though it were `9A`.
+
+### 2. Nothing exposes cardholders — **done**
 
 [`Cardholder`](../src/Blinky.Domain/Entities/Cardholder.cs) exists, is mapped,
 holds `DisplayName`, `Upn`, `ObjectSid`, `DistinguishedName` and
@@ -79,14 +98,31 @@ POST /api/cardholders     { displayName, upn, objectSid, distinguishedName? }
 `POST` should reject a malformed SID (`S-1-5-21-` and four sub-authorities) at
 the boundary rather than storing a string that fails at issuance.
 
-### 3. Enrolment should take a cardholder, not three loose strings
+Both landed in `5ab6670`, and the `POST` went further than this asked: given a
+`directoryAccount` it resolves the whole person from the directory and ignores
+anything else the caller sent, because half an identity from each source is the
+worst of both. `GET` returns an `issuable` flag — active, with a UPN and a SID
+— so the page does not have to re-derive the rule.
+
+### 3. Enrolment should take a cardholder, not three loose strings — **done**
 
 Keep the current shape working — the smoke path and any script depend on it —
 and accept `cardholderId` as an alternative. When given, `displayName`, `upn`
 and `objectSid` come from the row, and `Job.CardholderId` is finally set, which
 is what makes a credential traceable to a person afterwards.
 
-### 4. A failed job says nothing
+Done as written. A cardholder that is not active is refused with its state
+rather than issued to, and `JobService.Create` takes the id so the link is made
+where the job is made and not reconstructed afterwards from a subject line.
+
+**One behaviour change worth knowing about.** The route now refuses, at the
+post, a profile name it does not know and a profile whose identity requirements
+the request cannot meet — `smartcard-logon` with no resolved SID, or no UPN.
+The refusal is not new; the issuance service has always made it. What changed
+is when it arrives. A job created and failed a minute later fails on an agent,
+and by then nobody is looking at the thing that created it.
+
+### 4. A failed job says nothing — **done**
 
 `/api/console/overview` projects jobs as
 
@@ -99,21 +135,27 @@ j.Id, type, state, j.TokenSerial, j.Attempt, j.CreatedAt
 ones an operator can fix: a wrong PIN, a slot that already holds a key, a token
 still on its factory management key. One field, and the page becomes usable.
 
-Include `Result` and `UpdatedAt`.
+Include `Result` and `UpdatedAt`. Both went in with `3c0e277`, the day after
+this was written.
 
-### 5. There is no directory lookup
+### 5. There is no directory lookup — **done**
 
 The proper fix behind gap 2: an LDAP client that resolves a name to a UPN and a
-SID, so nobody types either. The API has **no LDAP dependency at all** today —
-`DirectorySource` is an enum with nothing behind it.
+SID, so nobody types either. Written when this document was: *"The API has no
+LDAP dependency at all today — `DirectorySource` is an enum with nothing behind
+it."* That stopped being true on 22 August. `src/Blinky.Directory` holds
+`IDirectory`, `LdapDirectory` and the SID parser; the API references it and
+exposes `/api/directory/users` beside three endpoints for testing the
+connection, the resolution and the write access it deliberately does not have.
 
-Deliberately last. Onboarding by hand is unpleasant with ten people and
-impossible with a thousand, but it is correct at both, and it unblocks the
-console now. The lookup then fills the same table rather than replacing it.
+It was meant to be last and arrived with gap 2 instead, which is the better
+order: onboarding by hand is correct at ten people and impossible at a
+thousand, and nobody had to do it at either scale.
 
 ## Console — the page
 
-Frontend work, against the endpoints above.
+Frontend work, against the endpoints above. **This is the whole of what is
+left of 0052.** Every endpoint the page needs now exists.
 
 **Where.** The token row in `inventory.ts` already shows slots and their
 management state. Enrolment belongs on an empty or unmanaged slot of a token

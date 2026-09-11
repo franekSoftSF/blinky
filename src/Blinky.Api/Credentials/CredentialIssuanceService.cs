@@ -427,16 +427,64 @@ public static class Profiles
     /// </remarks>
     public const string ClientAuthentication = "client-auth";
 
-    public static IssuanceProfile ByName(string name, string slotId) => name switch
-    {
-        SmartCardLogon => new IssuanceProfile(SmartCardLogon, slotId, "ECCP256", 365,
+    /// <summary>
+    /// Every profile this build offers, without a slot.
+    /// </summary>
+    /// <remarks>
+    /// A slot is not a property of a profile; it is chosen per enrolment, which
+    /// is why <see cref="ByName"/> takes one and this does not. Keeping the
+    /// slot-free facts in one place is also what lets a console list profiles
+    /// without inventing a slot to ask about, and what 0022 turns into rows: a
+    /// descriptor here becomes a row there, and nothing above this class has to
+    /// change shape when it does.
+    /// </remarks>
+    public static IReadOnlyList<ProfileDescriptor> All { get; } =
+    [
+        new(SmartCardLogon, "ECCP256", 365,
             ["1.3.6.1.5.5.7.3.2", Pki.BuiltIn.BuiltInCertificateAuthority.SmartCardLogonOid],
             IncludeUpnSan: true, IncludeSidExtension: true),
 
-        ClientAuthentication => new IssuanceProfile(ClientAuthentication, slotId, "ECCP256", 365,
+        new(ClientAuthentication, "ECCP256", 365,
             ["1.3.6.1.5.5.7.3.2"],
             IncludeUpnSan: false, IncludeSidExtension: false),
+    ];
 
-        _ => throw new IssuancePolicyException($"There is no profile called {name}."),
-    };
+    /// <summary>
+    /// The profile by that name, or null. Null rather than an exception because
+    /// a caller checking whether a name is real is asking a question, and an
+    /// endpoint that has to catch a policy exception to answer 400 reads as if
+    /// something went wrong when nothing did.
+    /// </summary>
+    public static ProfileDescriptor? DescriptorByName(string name) =>
+        All.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.Ordinal));
+
+    public static IssuanceProfile ByName(string name, string slotId)
+    {
+        var descriptor = DescriptorByName(name)
+                         ?? throw new IssuancePolicyException(
+                             $"There is no profile called {name}.");
+
+        return new IssuanceProfile(descriptor.Name, slotId, descriptor.KeyAlgorithm,
+            descriptor.ValidityDays, descriptor.ExtendedKeyUsages,
+            descriptor.IncludeUpnSan, descriptor.IncludeSidExtension);
+    }
 }
+
+/// <summary>
+/// A profile as something can be listed and reasoned about before a slot or a
+/// person is chosen.
+/// </summary>
+/// <remarks>
+/// <see cref="IncludeSidExtension"/> is the field a console cannot do without:
+/// it is the difference between a profile that will issue for a person with no
+/// resolved SID and one that will refuse, and a page that offers the second
+/// without knowing produces a job that fails a minute later for a reason the
+/// operator never sees.
+/// </remarks>
+public sealed record ProfileDescriptor(
+    string Name,
+    string KeyAlgorithm,
+    int ValidityDays,
+    IReadOnlyList<string> ExtendedKeyUsages,
+    bool IncludeUpnSan,
+    bool IncludeSidExtension);

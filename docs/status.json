@@ -18,7 +18,7 @@
     ]
   },
   "status": {
-    "updated": "2026-09-07",
+    "updated": "2026-09-11",
     "phase": 2,
     "phaseTitle": "Issue something",
     "state": "gate-met",
@@ -664,7 +664,7 @@
       "state": "partly-done",
       "owner": "cloud-ai",
       "proof": "EKUs, UPN SAN and the SID extension are issued and asserted",
-      "gap": "The profile model lives in code rather than in the database"
+      "gap": "The profile model lives in code rather than in the database. Shaped for the move since 2026-09-11: the certificate facts are slot-free ProfileDescriptor rows in Profiles.All and ByName builds from one of them, so a descriptor becomes a database row without anything above it changing."
     },
     {
       "id": "0023",
@@ -896,7 +896,9 @@
       "title": "Lifecycle actions from the console",
       "state": "partly-done",
       "owner": "both",
-      "proof": "Recycle creates a job from the console. Enrolment cannot: profiles and cardholders are invisible to the API, and a failed job cannot say why. Endpoint shapes in doc 11."
+      "owner": "codex",
+      "proof": "The API half is finished. All five gaps in doc 11 are closed: GET /api/profiles lists what can be issued and what each profile demands of the person it is issued to; the cardholder catalogue and the directory lookup behind it landed on 2026-08-22; a failed job carries its Result into the overview; and POST /api/jobs/enrol takes a cardholderId, reads the identity from that row rather than from three loose strings, sets Job.CardholderId, and refuses an unknown profile or an identity the profile cannot use at the post rather than a minute later on an agent.",
+      "gap": "The page. Nothing on the console side of enrolment is built - the dialog, the person search, the confirmation that spells out the UPN and the SID before they are claimed, and AwaitingUser shown as waiting rather than as stuck. Specified in doc 11."
     },
     {
       "id": "0053",

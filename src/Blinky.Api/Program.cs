@@ -266,6 +266,81 @@ app.MapPost("/api/jobs/enrol",
                 statusCode: 401);
         }
 
+        // A person, named once, instead of three strings that have to agree.
+        //
+        // The row wins over anything the caller also sent, the same way
+        // POST /api/cardholders resolves an account: half an identity from each
+        // source is the worst of both, and this is the identity the certificate
+        // will assert.
+        //
+        // It is also the only way Job.CardholderId is ever set, which is what
+        // makes a credential traceable to a person after the job is a row in a
+        // table.
+        var displayName = request.DisplayName;
+        var upn = request.Upn;
+        var objectSid = request.ObjectSid;
+        Guid? cardholderId = null;
+
+        if (request.CardholderId is { } personId)
+        {
+            using var people = database.OpenSession();
+            var person = people.Get<Cardholder>(personId);
+
+            if (person is null)
+            {
+                return Results.Json(new { error = "there is no cardholder with that id" },
+                    statusCode: 404);
+            }
+
+            if (person.State != Blinky.Domain.CardholderState.Active)
+            {
+                return Results.Json(new
+                {
+                    error = "that cardholder is not active",
+                    state = person.State.ToString(),
+                }, statusCode: 409);
+            }
+
+            displayName = person.DisplayName;
+            upn = person.Upn;
+            objectSid = person.ObjectSid;
+            cardholderId = person.Id;
+        }
+
+        // Refused here rather than at issuance, because a job created now fails
+        // a minute later on an agent, and by then nobody is looking at the
+        // thing that created it. The refusal itself is not new - the issuance
+        // service has always made it - only its timing and its audience.
+        var profile = Profiles.DescriptorByName(request.ProfileName);
+
+        if (profile is null)
+        {
+            return Results.Json(new
+            {
+                error = $"there is no profile called {request.ProfileName}",
+                known = Profiles.All.Select(p => p.Name),
+            }, statusCode: 400);
+        }
+
+        if (profile.IncludeSidExtension && string.IsNullOrWhiteSpace(objectSid))
+        {
+            return Results.Json(new
+            {
+                error = $"{profile.Name} needs a resolved objectSid and this one has none",
+                detail = "Since KB5014754 a domain controller ignores a certificate mapped by "
+                         + "name alone, so a logon certificate without the SID extension is one "
+                         + "that will be rejected at the only moment it matters.",
+            }, statusCode: 422);
+        }
+
+        if (profile.IncludeUpnSan && string.IsNullOrWhiteSpace(upn))
+        {
+            return Results.Json(new
+            {
+                error = $"{profile.Name} puts a UPN in the certificate and this one has none",
+            }, statusCode: 422);
+        }
+
         // The slot is part of the key: two credentials on one token are two
         // jobs, and re-posting the same one is not a second key on the card.
         //
@@ -304,9 +379,9 @@ app.MapPost("/api/jobs/enrol",
 
         var (job, created) = jobs.Create(JobType.Enroll, key,
             id => JobEnvelope.Enrolment(id, key, DateTimeOffset.UtcNow.AddHours(1),
-                request.TokenSerial, request.SlotId, request.ProfileName, request.DisplayName,
-                request.Upn, request.ObjectSid, request.KeyAlgorithm, replaceKey),
-            request.AgentId);
+                request.TokenSerial, request.SlotId, request.ProfileName, displayName,
+                upn, objectSid, request.KeyAlgorithm, replaceKey),
+            request.AgentId, cardholderId: cardholderId);
 
         return Results.Ok(new { job.Id, created, state = job.State.ToString() });
     });
@@ -732,6 +807,34 @@ app.MapGet("/api/directory/users",
 // Gap 2. The entity has existed all along and nothing exposed it, so
 // Job.CardholderId was never set and no credential could be traced to a person
 // afterwards.
+
+// What can be issued, and what each of them demands of the person it is issued
+// to. Without this a console dropdown is a hardcoded copy of a list in the
+// source, and the copy drifts the first time a profile is added.
+//
+// requiresObjectSid is the field that matters. smartcard-logon refuses without
+// a resolved SID and that refusal is right; a page that offers the profile
+// without knowing the rule posts a job that fails a minute later, somewhere the
+// operator is no longer looking.
+app.MapGet("/api/profiles",
+    (HttpContext context) =>
+    {
+        if (!IsOperator(context, operatorToken))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        return Results.Ok(Profiles.All.Select(p => new
+        {
+            p.Name,
+            requiresUpn = p.IncludeUpnSan,
+            requiresObjectSid = p.IncludeSidExtension,
+            keyAlgorithm = p.KeyAlgorithm,
+            days = p.ValidityDays,
+            extendedKeyUsage = p.ExtendedKeyUsages.Select(ExtendedKeyUsageName),
+        }));
+    });
 
 app.MapGet("/api/cardholders",
     (string? q, HttpContext context, Database database) =>
@@ -1569,6 +1672,22 @@ static byte[] PukKek(IConfiguration configuration)
             $"Blinky:Puk:Kek decodes to {kek.Length} bytes; AES-256 needs 32.");
 }
 
+/// <summary>
+/// An extended key usage as a person reads it, falling back to the OID.
+/// </summary>
+/// <remarks>
+/// Only the two this build issues are named. An unknown OID comes back as
+/// itself rather than as "Unknown": a console showing a dotted number is
+/// something an operator can look up, and a console showing "Unknown" is a
+/// dead end.
+/// </remarks>
+static string ExtendedKeyUsageName(string oid) => oid switch
+{
+    "1.3.6.1.5.5.7.3.2" => "Client Authentication",
+    Blinky.Pki.BuiltIn.BuiltInCertificateAuthority.SmartCardLogonOid => "Smart Card Logon",
+    _ => oid,
+};
+
 static bool IsOperator(HttpContext context, string expected)
 {
     if (string.IsNullOrEmpty(expected))
@@ -1652,6 +1771,17 @@ internal sealed record EnrolmentJobRequest(
     string? Upn,
     string? ObjectSid,
     string? Reason = null,
+
+    /// <summary>
+    /// A person already on file, instead of the three strings above.
+    /// </summary>
+    /// <remarks>
+    /// Added rather than substituted: the loose strings are how every script
+    /// and the smoke path ask today, and breaking them to make a console nicer
+    /// would be the wrong trade. When this is given the three are read from the
+    /// row and whatever the caller sent for them is ignored.
+    /// </remarks>
+    Guid? CardholderId = null,
 
     /// <summary>
     /// "Rsa2048", "EccP256", and so on. Null leaves the choice to the agent.
