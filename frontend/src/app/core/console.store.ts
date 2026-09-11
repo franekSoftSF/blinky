@@ -1,4 +1,4 @@
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { AuthStore } from './auth.store';
 import { firstValueFrom } from 'rxjs';
@@ -229,6 +229,15 @@ export class ConsoleStore {
       }
     } catch (error) {
       this.online.set(false);
+
+      // A session the server has ended sends the person back to the sign-in
+      // screen rather than leaving them looking at stale data with an error
+      // beside it. This is the other half of a session that can be ended: an
+      // administrator ending one has to be visible to whoever was using it.
+      if (error instanceof HttpErrorResponse && error.status === 401) {
+        this.auth.forget();
+      }
+
       this.error.set(error instanceof Error ? error.message : 'Nie można połączyć się z API.');
     } finally {
       this.loading.set(false);

@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthStore } from './core/auth.store';
@@ -63,7 +63,19 @@ export class App {
     this.router.events
       .pipe(filter((e) => e instanceof NavigationEnd))
       .subscribe((e) => this.currentUrl.set((e as NavigationEnd).urlAfterRedirects));
-    void this.store.load();
+    // Loaded when there is a session, not once at startup.
+    //
+    // The constructor runs before anybody has signed in, so the single call
+    // that used to be here always ran unauthenticated, always came back 401,
+    // and left "API data unavailable" on the screen for the rest of the
+    // session - including after somebody signed in, because nothing ever asked
+    // again. The console looked broken while its own logs showed a live
+    // session doing nothing.
+    effect(() => {
+      if (this.auth.signedIn()) {
+        void this.store.load(true);
+      }
+    });
   }
   protected refresh(): void {
     void this.store.load(true);
