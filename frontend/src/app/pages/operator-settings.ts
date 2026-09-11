@@ -1,13 +1,21 @@
-import { Component, inject, signal } from '@angular/core';
-import { ConsoleStore } from '../core/console.store';
+import { Component, inject } from '@angular/core';
+import { Router } from '@angular/router';
+import { AuthStore } from '../core/auth.store';
 
+/**
+ * Console settings.
+ *
+ * The first section used to be a box for pasting the shared operator token.
+ * Patch 0053e removed the token, so the question this page answers changed
+ * from "what secret are you holding" to "who are you, and how do you stop".
+ */
 @Component({
   selector: 'app-operator-settings',
   template: ` <section class="settings-hero">
       <div>
         <p class="eyebrow">USTAWIENIA</p>
         <h1>Ustawienia konsoli</h1>
-        <p>Dostęp operatora i informacje o lokalnej aplikacji.</p>
+        <p>Twoja sesja i informacje o aplikacji.</p>
       </div>
       <div class="yubi-mark">
         <span>Y</span>
@@ -19,41 +27,24 @@ import { ConsoleStore } from '../core/console.store';
         <header>
           <div class="section-number">01</div>
           <div>
-            <h2>Dostęp operatora</h2>
-            <p>Autoryzacja zapytań administracyjnych</p>
+            <h2>Ta sesja</h2>
+            <p>Kto jest zalogowany i jak to zakończyć</p>
           </div>
-          <span class="privacy-badge">TYLKO PAMIĘĆ</span>
+          <span class="privacy-badge">SESJA</span>
         </header>
         <div class="setting-body operator-setting">
           <div>
-            <h3>Token sesji operatora</h3>
+            <h3>{{ auth.operatorName() ?? 'Nie zalogowano' }}</h3>
             <p>
-              Token pozostaje wyłącznie w pamięci otwartej strony. Nie zapisujemy go w przeglądarce,
-              adresie ani logach.
+              Rola: {{ auth.role() ?? '—' }}. Sesja kończy się po pół godziny bezczynności i po
+              dwunastu godzinach niezależnie od tego, jak bywała używana. Możesz ją zakończyć
+              stąd, a administrator może ją zakończyć z serwera — dlatego nie jest to token,
+              którego nikt nie potrafi odebrać.
             </p>
-            @if (message()) {
-              <span class="connection-feedback" [attr.data-online]="connected()">{{
-                message()
-              }}</span>
-            }
           </div>
           <div class="operator-connect">
-            <label
-              >Token operatora<input
-                type="password"
-                autocomplete="off"
-                [value]="token()"
-                (input)="token.set($any($event.target).value)"
-                (keydown.enter)="connect()"
-                placeholder="Wprowadź token…" /></label
-            ><button
-              class="primary"
-              type="button"
-              [disabled]="connecting() || !token().trim()"
-              (click)="connect()"
-            >
-              {{ connecting() ? 'Łączenie…' : 'Połącz z API' }}
-            </button>
+            <button class="primary" type="button" (click)="signOut()">Wyloguj</button>
+            <button type="button" (click)="signOutEverywhere()">Wyloguj wszędzie</button>
           </div>
         </div>
       </article>
@@ -70,25 +61,22 @@ import { ConsoleStore } from '../core/console.store';
     </section>`,
 })
 export class OperatorSettings {
-  private readonly store = inject(ConsoleStore);
-  protected readonly token = signal('');
-  protected readonly connecting = signal(false);
-  protected readonly connected = signal(false);
-  protected readonly message = signal('');
-  protected async connect(): Promise<void> {
-    const token = this.token().trim();
-    if (!token || this.connecting()) return;
-    this.connecting.set(true);
-    this.message.set('');
-    this.store.setOperatorToken(token);
-    await this.store.load(true);
-    this.connected.set(this.store.online());
-    this.message.set(
-      this.store.online()
-        ? 'Połączono z API. Token pozostaje w pamięci tej strony.'
-        : 'API odrzuciło token lub jest niedostępne. Pozostajesz na stronie ustawień.',
-    );
-    this.token.set('');
-    this.connecting.set(false);
+  private readonly router = inject(Router);
+  protected readonly auth = inject(AuthStore);
+
+  protected async signOut(): Promise<void> {
+    await this.auth.signOut();
+    await this.router.navigateByUrl('/sign-in');
+  }
+
+  /**
+   * Including the session that asked.
+   *
+   * "Everywhere" that quietly means "everywhere else" is the wrong answer when
+   * somebody presses it because they believe their session has been taken.
+   */
+  protected async signOutEverywhere(): Promise<void> {
+    await this.auth.signOutEverywhere();
+    await this.router.navigateByUrl('/sign-in');
   }
 }

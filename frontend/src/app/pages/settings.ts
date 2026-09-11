@@ -36,35 +36,6 @@ import {
         ><a href="#about">03 <span>O aplikacji</span></a>
       </aside>
       <div class="settings-content">
-        <article class="panel setting-section" id="operator">
-          <header>
-            <div class="section-number">01</div>
-            <div>
-              <h2>Dostęp operatora</h2>
-              <p>Autoryzacja zapytań administracyjnych</p>
-            </div>
-            <span class="privacy-badge">Tylko pamięć</span>
-          </header>
-          <div class="setting-body operator-setting">
-            <div>
-              <h3>Token sesji operatora</h3>
-              <p>
-                Token pozostaje wyłącznie w pamięci otwartej strony. Nie zapisujemy go w
-                przeglądarce, adresie ani logach.
-              </p>
-            </div>
-            <form (submit)="save($event)">
-              <label
-                >Token operatora<input
-                  type="password"
-                  autocomplete="off"
-                  [value]="token()"
-                  (input)="token.set($any($event.target).value)"
-                  placeholder="Wprowadź token…" /></label
-              ><button class="primary" type="submit">Połącz z API</button>
-            </form>
-          </div>
-        </article>
 
         <section id="directory" class="directory-heading">
           <div>
@@ -288,12 +259,6 @@ export class DirectoryDiagnostics {
   protected readonly connection = signal<DirectoryConnectionResult | null>(null);
   protected readonly resolve = signal<DirectoryResolveResult | null>(null);
   protected readonly access = signal<DirectoryAccessResult | null>(null);
-  protected save(event: Event): void {
-    event.preventDefault();
-    this.store.setOperatorToken(this.token());
-    this.token.set('');
-    void this.store.load(true);
-  }
   protected async testConnection(): Promise<void> {
     await this.run('connection', () => this.store.testDirectory(), this.connection);
   }

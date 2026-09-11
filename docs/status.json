@@ -987,10 +987,10 @@
       "id": "0053e",
       "phase": 5,
       "title": "The shared token retired",
-      "state": "open",
+      "state": "done-unverified",
       "owner": "cloud-ai",
-      "proof": "Operator actions now record who took them: ActorFor names the signed-in account, and a caller using the shared secret is recorded as shared-token rather than as operator, so what is left of the hole is countable in the audit view instead of invisible. The offline PUK disclosure - one of the two events retention may never remove - was written with the literal operator and now carries a name. The console now has a sign-in screen: the whole ceremony on one page - credentials, the installer password bought once and replaced, the second factor enrolled from a secret shown there, and the code. A route guard sends anybody without a session to it. ConsoleStore sends the session first and falls back to the shared header, which is the last thing left to delete.",
-      "gap": "Only the deletion remains: the X-Blinky-Operator header and the field that fills it out of frontend/, the nineteen IsOperator call sites down to sessions alone, and OPERATOR_TOKEN out of .env.example, the compose file and the installer. Kept for one more patch so the sign-in screen can be proved on the deployment first."
+      "proof": "The shared token is gone. IsOperator takes a session and nothing else, the header is out of the console store, the operator-token boxes are off both settings pages, and OPERATOR_TOKEN is out of .env.example, the compose file and install-server.sh. Two source-level tests hold it, because a second way in would work perfectly and quietly return the system to not knowing who did anything. The service-credential half was not built and the reason is recorded: nothing automated ever used the token.",
+      "gap": "Not yet signed into from a browser by a person. Deployed only after that, because the console has no other way in and a defect in the screen would lock everybody out."
     },
     {
       "id": "0054",

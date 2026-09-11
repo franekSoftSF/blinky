@@ -115,43 +115,45 @@ public class AuthRouteTests
     }
 
     /// <summary>
-    /// The caller that used the shared secret is named as having used it.
+    /// A session is the only way to be an operator.
     /// </summary>
     /// <remarks>
-    /// Writing "operator" for both a signed-in person and the shared token
-    /// would hide the difference that matters. Naming the fallback makes the
-    /// remaining hole countable in the audit view until 0053e closes it.
+    /// Patch 0053e removed the shared <c>X-Blinky-Operator</c> token. It was
+    /// one secret for everybody, so the audit trail could record that a
+    /// credential had been revoked and never by whom, nothing expired, and
+    /// taking access from one person meant taking it from all of them.
+    /// <para>
+    /// Checked in the source because the failure is silent: a second way in,
+    /// added back for a script or for somebody's convenience, would work
+    /// perfectly and quietly return this system to not knowing who did
+    /// anything.
+    /// </para>
     /// </remarks>
     [Fact]
-    public void The_shared_token_is_named_in_the_audit_rather_than_disguised()
+    public void Only_a_session_makes_an_operator()
     {
         var program = SourceOf("src", "Blinky.Api", "Program.cs");
 
-        Assert.Contains("static string ActorFor(HttpContext context)", program,
+        Assert.Contains("static bool IsOperator(HttpContext context) =>", program,
             StringComparison.Ordinal);
-        Assert.Contains("\"shared-token\"", program, StringComparison.Ordinal);
+
+        // The header as it would be read, not the name as it is explained. The
+        // comment above IsOperator says the token is gone and why, and a test
+        // that forbade the words would forbid recording the reason.
+        Assert.DoesNotContain("Headers[\"X-Blinky-Operator\"]", program,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Blinky:Operator:Token", program, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// A session is one of the two ways to be an operator.
+    /// And the console has no second way in either.
     /// </summary>
-    /// <remarks>
-    /// The shared token stays until 0053e, because fifteen call sites and every
-    /// script in scripts/ use it and there is nothing yet to replace them with.
-    /// What must not happen is the session route quietly falling out and
-    /// leaving the shared token as the only one again.
-    /// </remarks>
     [Fact]
-    public void Being_signed_in_is_enough_to_be_an_operator()
+    public void The_console_presents_only_its_session()
     {
-        var program = SourceOf("src", "Blinky.Api", "Program.cs");
+        var store = SourceOf("frontend", "src", "app", "core", "console.store.ts");
 
-        var isOperator = Regex.Match(program,
-            """static bool IsOperator\(HttpContext context, string expected\)(?<body>.*?)\n\}""",
-            RegexOptions.Singleline);
-
-        Assert.True(isOperator.Success, "IsOperator should still exist");
-        Assert.Contains("context.Items", isOperator.Groups["body"].Value, StringComparison.Ordinal);
-        Assert.Contains("\"operator\"", isOperator.Groups["body"].Value, StringComparison.Ordinal);
+        Assert.DoesNotContain("X-Blinky-Operator", store, StringComparison.Ordinal);
+        Assert.Contains("this.auth.authorization()", store, StringComparison.Ordinal);
     }
 }

@@ -234,7 +234,6 @@ ensure POSTGRES_PASSWORD "$(secret 24)"
 ensure BOOTSTRAP_TOKEN "$(secret 24)"
 
 # What the console and any operator tooling presents on every call.
-ensure OPERATOR_TOKEN "$(secret 24)"
 
 # The CA's PKCS#12 password. Not a person's password: nothing types it.
 ensure CA_PASSWORD "$(secret 24)"

@@ -295,10 +295,8 @@ app.MapPost("/api/jobs/{id:guid}/result",
 // Creating work belongs to an operator, never to an agent: the API creates
 // jobs on request and never decides on its own that work exists.
 //
-// Until RBAC arrives in 0053 the operator proves themselves with a shared
-// token. That is a stop-gap and is named as one - but an unauthenticated write
-// endpoint would not have been the smaller compromise.
-var operatorToken = builder.Configuration["Blinky:Operator:Token"] ?? string.Empty;
+// Who the operator is comes from a session - see the /api/auth routes below
+// and patch 0053b. There is no second way in.
 
 var signIn = new OperatorSignIn(() => DateTime.UtcNow);
 var sessions = new OperatorSessions(() => DateTime.UtcNow);
@@ -613,7 +611,7 @@ app.MapPost("/api/auth/sessions/revoke-all",
 app.MapPost("/api/jobs/inventory",
     (InventoryJobRequest request, HttpContext context, JobService jobs) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -632,7 +630,7 @@ app.MapPost("/api/jobs/enrol",
     (EnrolmentJobRequest request, HttpContext context, JobService jobs,
         Database database) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -765,7 +763,7 @@ app.MapPost("/api/jobs/enrol",
 app.MapPost("/api/jobs/recycle",
     (RecycleJobRequest request, HttpContext context, JobService jobs) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -826,7 +824,7 @@ app.MapGet("/api/system/status",
         Blinky.Directory.IDirectory directory, IConfiguration configuration,
         Database database, CancellationToken ct) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -966,7 +964,7 @@ app.MapGet("/api/system/status",
 app.MapPost("/api/directory/test",
     async (HttpContext context, Blinky.Directory.IDirectory directory, CancellationToken ct) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -995,7 +993,7 @@ app.MapPost("/api/directory/test-resolve",
     async (ResolveTestRequest request, HttpContext context,
         Blinky.Directory.IDirectory directory, CancellationToken ct) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1066,7 +1064,7 @@ app.MapPost("/api/directory/test-write-access",
     async (WriteAccessTestRequest request, HttpContext context,
         Blinky.Directory.IDirectory directory, CancellationToken ct) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1127,7 +1125,7 @@ app.MapGet("/api/directory/users",
     async (string? q, HttpContext context, Blinky.Directory.IDirectory directory,
         CancellationToken ct) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1191,7 +1189,7 @@ app.MapGet("/api/directory/users",
 app.MapGet("/api/profiles",
     (HttpContext context) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1211,7 +1209,7 @@ app.MapGet("/api/profiles",
 app.MapGet("/api/cardholders",
     (string? q, HttpContext context, Database database) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1250,7 +1248,7 @@ app.MapPost("/api/cardholders",
     async (CardholderRequest request, HttpContext context, Database database,
         Blinky.Directory.IDirectory directory, CancellationToken ct) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1357,7 +1355,7 @@ app.MapPost("/api/cardholders",
 app.MapGet("/api/tokens/{serial:long}/helpdesk",
     (long serial, HttpContext context, Database database) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1483,7 +1481,7 @@ app.MapPost("/api/credentials/{id:guid}/suspend",
     async (Guid id, HttpContext context, CredentialIssuanceService credentials,
         CancellationToken ct) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1505,7 +1503,7 @@ app.MapPost("/api/tokens/{serial:long}/block",
     async (long serial, BlockTokenRequest request, HttpContext context,
         CredentialIssuanceService credentials, CancellationToken ct) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1550,7 +1548,7 @@ app.MapPost("/api/tokens/{serial:long}/block",
 app.MapPost("/api/tokens/{serial:long}/unblock",
     (long serial, HttpContext context, CredentialIssuanceService credentials) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1643,7 +1641,7 @@ app.MapPost("/api/tokens/{serial:long}/puk/rotated",
 app.MapPost("/api/tokens/offline-unblock",
     (OfflineUnblockRequest request, HttpContext context, PukEscrow escrow) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1673,7 +1671,7 @@ app.MapPost("/api/tokens/offline-unblock",
 app.MapPost("/api/tokens/puk/refused",
     (PukRefused refused, HttpContext context, PukEscrow escrow) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1725,7 +1723,7 @@ app.MapPost("/api/credentials/{id:guid}/revoke",
     async (Guid id, RevokeCredentialRequest request, HttpContext context,
         CredentialIssuanceService credentials, CancellationToken ct) =>
     {
-        if (!IsOperator(context, operatorToken))
+        if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
@@ -1891,7 +1889,7 @@ app.MapGet("/pki/issuing.crl", (IConfiguration configuration) =>
 
 app.MapGet("/api/console/overview", (HttpContext context, Database database) =>
 {
-    if (!IsOperator(context, operatorToken))
+    if (!IsOperator(context))
     {
         return Results.Json(new { error = "an operator token is required" }, statusCode: 401);
     }
@@ -2082,7 +2080,7 @@ static string ExtendedKeyUsageName(string oid) => oid switch
 static string ActorFor(HttpContext context) =>
     context.Items.TryGetValue("operator", out var signedIn) && signedIn is OperatorAccount account
         ? account.Username
-        : "shared-token";
+        : "unknown";
 
 /// <summary>
 /// The bearer token a signed-in console presents, from either header.
@@ -2170,25 +2168,23 @@ static OperatorAccount? SignedInOperator(HttpContext context, Database database,
 /// them with. Patch 0053e is where it goes, after named service credentials
 /// exist - and it goes entirely, rather than being left discouraged.
 /// </remarks>
-static bool IsOperator(HttpContext context, string expected)
-{
-    if (context.Items.TryGetValue("operator", out var signedIn) && signedIn is OperatorAccount)
-    {
-        return true;
-    }
-
-    if (string.IsNullOrEmpty(expected))
-    {
-        return false;
-    }
-
-    var presented = context.Request.Headers["X-Blinky-Operator"].ToString();
-
-    return !string.IsNullOrEmpty(presented)
-           && System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-               System.Text.Encoding.UTF8.GetBytes(presented),
-               System.Text.Encoding.UTF8.GetBytes(expected));
-}
+/// <summary>
+/// Whether the caller is a signed-in operator.
+/// </summary>
+/// <remarks>
+/// One way in, as of patch 0053e. The shared <c>X-Blinky-Operator</c> token is
+/// gone: it was one secret for everybody, so the audit trail could say a
+/// credential had been revoked and never by whom, nothing expired, and taking
+/// access from one person meant taking it from all of them.
+/// <para>
+/// It could only go once the console could sign in, because until then it was
+/// the console's only way in. It could go without a service-credential scheme
+/// because nothing automated ever used it: the installer only generated it, and
+/// the revocation-list publisher reads <c>/pki/</c>, which is public.
+/// </para>
+/// </remarks>
+static bool IsOperator(HttpContext context) =>
+    context.Items.TryGetValue("operator", out var signedIn) && signedIn is OperatorAccount;
 
 /// <summary>What an agent reports when it checks in.</summary>
 /// <summary>Asks for one token inventory pass on one agent.</summary>
