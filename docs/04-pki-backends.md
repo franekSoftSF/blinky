@@ -296,7 +296,7 @@ container is not a realistic dependency, so:
 | Transport | How | When |
 |---|---|---|
 | **CES/CEP** over HTTPS | MS-WSTEP `RequestSecurityToken` to the Certificate Enrollment Web Service; MS-XCEP to the Policy Web Service for template discovery. Kerberos, client certificate, or username auth | Preferred. Pure HTTPS, works from the container, nothing extra to install on a Windows box |
-| **`Blinky.AdcsConnector`** | A small Windows service next to the CA that exposes the same contract over HTTPS and calls `ICertRequest3` locally | For estates that never deployed CES, which is most of them |
+| **`Blinky.AdcsConnector`** | A small Windows service next to the CA that exposes the same contract over HTTPS and calls `ICertRequest3` locally — [15](15-adcs-connector.md) | For estates that never deployed CES, which is most of them |
 
 Same `AdcsCertificateAuthority` class, two `IAdcsTransport` implementations. The
 choice is one configuration value, and the rest of the system does not know

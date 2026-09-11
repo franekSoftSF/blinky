@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- net10.0-windows so that Blinky.AdcsConnector is reachable from here. A
+         net10.0 test project cannot reference it, the connector targets Windows
+         because ICertRequest3 is DCOM, and leaving it untested was the
+         alternative. Little is lost: the solution already builds on Windows
+         only - Blinky.Agent.Ui is WPF - and CI runs windows-latest. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
@@ -27,6 +32,7 @@
     <ProjectReference Include="..\..\src\Blinky.Directory\Blinky.Directory.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Pki\Blinky.Pki.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Agent.Service\Blinky.Agent.Service.csproj" />
+    <ProjectReference Include="..\..\src\Blinky.AdcsConnector\Blinky.AdcsConnector.csproj" />
   </ItemGroup>
 
   <ItemGroup>

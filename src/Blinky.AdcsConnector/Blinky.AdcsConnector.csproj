@@ -5,21 +5,42 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-Blinky.AdcsConnector-6548feb7-7b35-4ce4-89c3-1ca6b1d49e4d</UserSecretsId>
+    <!-- ICertRequest3 and ICertAdmin2 are reached by late binding rather than
+         through an interop assembly. certcli.dll ships a type library, but
+         embedding it pins the connector to the SDK that generated it and adds
+         a build-time dependency on a Windows SDK component that is not
+         installed on a build agent by default. The call surface is six
+         methods. -->
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.Hosting" />
-  </ItemGroup>
-  <ItemGroup>
+    <!-- Microsoft.Extensions.Hosting is not listed: the ASP.NET Core framework
+         reference below already carries it, and NuGet treats naming it again
+         as an error rather than a duplicate. -->
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Extensions.Hosting" />
     <PackageReference Include="Serilog.Settings.Configuration" />
     <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Kestrel, in a worker project. The connector is a service that happens
+         to listen, not a web application: it has no content, no views and no
+         second listener, and Host.CreateApplicationBuilder plus this reference
+         is the smaller of the two shapes. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Contracts only. The connector deliberately does not reference
+         Blinky.Pki: it builds no request, signs nothing and holds no
+         enrolment agent key - see docs/15-adcs-connector.md. A reference to
+         the CA interface would invite exactly the drift that makes the two
+         transports stop being interchangeable. -->
     <ProjectReference Include="..\Blinky.Contracts\Blinky.Contracts.csproj" />
-    <ProjectReference Include="..\Blinky.Pki\Blinky.Pki.csproj" />
   </ItemGroup>
 
 </Project>

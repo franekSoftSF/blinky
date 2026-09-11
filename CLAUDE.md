@@ -37,10 +37,10 @@ good outcome; silence is not.
 | `src/Blinky.Worker` | Job engine, CRL/OCSP, expiry scanner |
 | `src/Blinky.Agent.Service` | Workstation service (LocalSystem), owns the reader |
 | `src/Blinky.Agent.Ui` | Tray and prompts, in the user's session |
-| `src/Blinky.AdcsConnector` | DCOM `ICertRequest3`, `net10.0-windows` |
+| `src/Blinky.AdcsConnector` | DCOM `ICertRequest3`, `net10.0-windows` — a transport and nothing more, spec in [docs/15](docs/15-adcs-connector.md) |
 | `frontend/` | Angular console, pnpm |
 | `tools/` | Probes and the schema generator, not shipped |
-| `tests/Blinky.UnitTests` | xunit, one project, fixtures under `Fixtures/` |
+| `tests/Blinky.UnitTests` | xunit, one project, fixtures under `Fixtures/`. `net10.0-windows`, so that the connector is testable at all |
 | `scripts/` | Lab, CA and installer shell scripts — part of the product |
 | `docs/` | Numbered design documents plus the two status files |
 

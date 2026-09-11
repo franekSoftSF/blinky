@@ -325,9 +325,22 @@ write it.
 
 ### Phase 3 — ADCS — **open**
 
-0030–0034, all Cloud.AI. None started; definitions of done in
-[07 — Roadmap](07-roadmap.md). 0035 — writing to the directory — is deferred on
-purpose, with the reason in the roadmap.
+0030–0034, all Cloud.AI. Definitions of done in [07 — Roadmap](07-roadmap.md).
+0035 — writing to the directory — is deferred on purpose, with the reason in the
+roadmap.
+
+One piece of 0032 exists: `Blinky.AdcsConnector` is now a working Windows
+service rather than a skeleton. It listens over mutual TLS, authorises callers
+by SHA-256 fingerprint, and calls `ICertRequest3` and `ICertAdmin2` by late
+binding — submit, retrieve, revoke and a describe that 0033 was shaped around.
+Its access control and its parsing are under test. **Nothing in Blinky calls
+it**: 0030 has not been written, so there is no `IAdcsTransport` and no
+`AdcsCertificateAuthority`, and both `Blinky.Api` and `Blinky.Worker` still
+register the built-in CA as the only `ICertificateAuthority` there can be. It
+has also never met a Microsoft CA. What is left, in the order it has to arrive,
+is listed in [15 — the ADCS connector](15-adcs-connector.md), along with three
+things in the DCOM calls that are reasoned from the shape of the API rather
+than from behaviour anybody here observed.
 
 ### Phase 4 — The boring lifecycle — **in progress**
 
@@ -477,7 +490,7 @@ exercised against the thing it is really for.
 | `Blinky.Agent.Ui` | **done** | Tray, certificate list, PIN change, unblock online and by telephone. Polish and English, light and dark |
 | `Blinky.Pki` — built-in CA | **partial** | Issues, revokes, publishes a CRL, both topologies. SoftHSM tier outstanding |
 | `Blinky.Pki` — ADCS | open | 0030–0033 |
-| `Blinky.AdcsConnector` | skeleton | 0032 |
+| `Blinky.AdcsConnector` | **partial** | Listens, authorises, and calls `ICertRequest3` and `ICertAdmin2`. Nothing calls it and it has never met a CA — [15](15-adcs-connector.md) |
 | Angular console | **partial** | Shell, inventory and recycle are up and served by the edge; enrolment waits on the API gaps in [11](11-console-enrolment.md) |
 | `blinky-samba-setup` | **done** | Publishes the chain into the directory and issues the KDC's PKINIT certificate. Verified on BY-DC01 |
 | `Blinky.Fido` | open | 0070. CTAP2 over HID — a second transport beside PC/SC, sharing nothing with it below the token |
