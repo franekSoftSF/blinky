@@ -183,6 +183,49 @@ and only that container — needs to reach `graph.microsoft.com`,
 [09](09-lab.md) needs a tenant and an org that no script in this repository can
 provision. Worth deciding on purpose rather than discovering at deployment.
 
+## Phase 8 — The workstation app, and signing in
+
+The brief is [14 — The workstation app, and signing in](14-workstation-app-and-sign-in.md).
+Numbered after Phase 7 and not thereby scheduled after it; the phases have
+never run in order, and 0046–0048a of Phase 4 landed before Phase 3 started.
+
+Three things make this phase unlike the others, and all three are arguments in
+[14](14-workstation-app-and-sign-in.md) rather than assumptions here.
+
+It **replaces working code**: `Blinky.Agent.Ui` is finished and proved on
+hardware, and 0082 re-implements every screen in it. It is removed by 0090 and
+not a patch earlier.
+
+It **gives up an ACL the operating system was enforcing**. The named pipe was
+granted to `INTERACTIVE` and `LocalSystem`; a loopback socket is open to every
+process of every user on the machine. 0080 exists to rebuild that guarantee and
+is the riskiest patch here by a wide margin — a local agent API is a shape with
+a long history of advisories behind it, nearly all of them one of the four
+checks in its definition of done.
+
+And it **reverses a decision**: 0053a says operators sign in with smart cards,
+and 0084 gives them a password and a TOTP code.
+
+| # | Patch | DoD |
+|---|---|---|
+| 0080 | The agent's loopback API, and the ACL it has to replace | The service serves HTTPS on an ephemeral loopback port with a certificate generated at install. **The pipe's guarantee is rebuilt in four checkable pieces, each with its own test**: the connecting process is resolved to a PID and refused unless it runs as the interactive user of the console session; the port and a per-session token are readable only by that user and `SYSTEM`; a request carrying **any** `Origin` header is refused and no CORS header is ever emitted, so a web page cannot drive the agent; and the certificate is pinned by the client rather than placed in a Windows trust store. A second signed-in user cannot reach it, and neither can a browser |
+| 0081 | `frontend/` becomes a library and two applications | The console builds and runs exactly as it does today, from `projects/console`, with its shared components in `projects/ui` and nothing about the served bundle changed. Done **before** 0082: splitting a workspace after two applications exist means moving every file twice |
+| 0082 | `Blinky.Workstation`: Angular in a Tauri v2 shell | The certificate list of 0046 is drawn by the new app against an otherwise **unchanged** `Blinky.Agent.Service`, using the components the console uses. No APDU is issued from the app and it holds no PC/SC handle — asserted, not intended. HTTP happens in the Rust layer behind a Tauri command, never as `fetch` from the WebView, because a pinned certificate cannot be checked by the browser engine. The app reaches the backend only through the agent. Bundled as MSI and NSIS, and a workstation needs no .NET for the UI |
+| 0083 | Signing in at the workstation: Kerberos, or a password | Both produce a user identity the **backend** verifies, never the agent. A domain machine signs in with a SPNEGO ticket from the interactive session and no password is typed; a machine with no domain signs in with a password that is checked at the backend, hashed with a per-user salt, rate-limited and lockable per account. A password never reaches the agent's log, the local API's log or the database in the clear |
+| 0084 | Enrolment the person started | A user opens the app, signs in, asks for a credential, and the job is created for them. **No window appears that nobody asked for** — the ceremony is reachable only from an application already in front of somebody, and it waits as long as the person needs. 0049's user-requested renewal folds in here |
+| 0085 | The same ceremony, driven by an operator | An operator enrols on somebody else's behalf from the console: the request is theirs, the card is at the cardholder's workstation, the app there runs the ceremony, and the agent never becomes the requester. Needs 0023a's signed request underneath it, and inherits whatever 0086 decides about who an operator is |
+| 0086 | The admin panel's own way in: a bootstrap superadmin, password and TOTP | One superadmin created at deployment, with **TOTP required from the first sign-in** rather than added later. The certificate path of 0053a is not cancelled by this; it becomes the upgrade, and a role may require it. The bootstrap closes after first use, as 0053d already demands |
+| 0087 | TOTP, properly: enrolment, drift, recovery codes | A code is accepted once and not again inside its window; clock drift is tolerated by a stated number of steps and no more; recovery codes are shown **once** and stored hashed. Without these the first lost telephone is a break-glass event |
+| 0088 | FIDO2 as an operator's second factor — **after Phase 7** | The same CTAP2 work 0070–0076 needs, turned on ourselves: an operator registers a passkey against this console. Deliberately not built twice, and deliberately not before the ceremony exists |
+| 0089 | Full CRUD for the models the panel manages | Every entity that describes configuration or people is listable, readable, creatable, editable and deletable from the panel. Every entity that records something that happened — `AuditEvent`, `Job`, `Credential`, PUK disclosures — is not, and a test asserts the second list rather than trusting the reviewer of the next patch to remember it |
+| 0090 | `Blinky.Agent.Ui` is removed | Deleted in one commit, once 0082 and 0084 do everything 0046 through 0048a do. Not before: two clients on one local API means two places to fix the same defect |
+
+**Phase gate:** a user on a domain workstation and a user on a machine with no
+domain each open the app, sign in their own way, and enrol a card they asked
+for; an operator enrols on behalf of a third person through the same ceremony;
+and an administrator signs into the panel with a password and a TOTP code,
+having been forced to set the second factor before anything else.
+
 ## Later
 
 Named so they are not mistaken for oversights: OCSP responder, SCP03/SCP11

@@ -78,6 +78,17 @@ dotnet run --project tools/PivProbe -- transcript.json   # read-only, real card
 - **Comments explain why, not what.** The existing ones state the reason a thing
   is the way it is, usually because the obvious alternative was tried and
   failed. Match that; do not add narration.
+- **A new model arrives with full CRUD — unless it records something that
+  happened.** Anything describing configuration or people is listable,
+  readable, creatable, editable and deletable from the admin panel in the same
+  change that adds it; a model that exists in the database and nowhere in the
+  UI is a model only its author can change. The exception is not optional:
+  `AuditEvent`, `Job`, `Credential` and the PUK disclosure rows are history,
+  and they get create-and-transition instead. A credential is revoked, never
+  deleted — the row outlives the card, which is the point of the state machines
+  in [docs/02-data-model.md](docs/02-data-model.md). An audit trail that
+  supports `DELETE` is not an audit trail. See
+  [docs/14](docs/14-workstation-app-and-sign-in.md).
 
 ## Secrets, cards and other things that bite
 

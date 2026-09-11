@@ -69,6 +69,12 @@
       "done": "A stranger can go from clone to smart-card logon using only the repository."
     },
     {
+      "id": 8,
+      "title": "The workstation app, and signing in",
+      "state": "open",
+      "done": "A user on a domain workstation and a user on a machine with no domain each open the app, sign in their own way, and enrol a card they asked for; an operator enrols on behalf of a third person through the same ceremony; and an administrator signs into the panel with a password and a TOTP code, having been forced to set the second factor before anything else. Numbered after phase 7 and not thereby scheduled after it."
+    },
+    {
       "id": 7,
       "title": "FIDO2 on the same key",
       "state": "open",
@@ -204,6 +210,24 @@
     }
   ],
   "decisions": [
+    {
+      "id": "workstation-app",
+      "choice": "Angular in a Tauri v2 shell, replacing the WPF tray; one UI technology for the whole product, and the same components as the console",
+      "state": "locked",
+      "decidedOn": "2026-09-11"
+    },
+    {
+      "id": "workstation-seam",
+      "choice": "A loopback HTTPS API on the agent, not the named pipe - chosen for shape, at the cost of an ACL the operating system was enforcing, with four checks in 0080 to rebuild it",
+      "state": "locked",
+      "decidedOn": "2026-09-11"
+    },
+    {
+      "id": "new-model-crud",
+      "choice": "Full CRUD for anything describing configuration or people; create-and-transition for anything recording an event",
+      "state": "locked",
+      "decidedOn": "2026-09-11"
+    },
     {
       "id": "runtime",
       "choice": ".NET 10",
@@ -373,6 +397,12 @@
         3
       ],
       "needs": "lab test"
+    },
+    {
+      "id": "operator-identity-shape",
+      "question": "Does operator authentication by certificate stay the target, with password and TOTP as the way in - or does it become optional?",
+      "blocks": [5, 8],
+      "needs": "a decision. It settles whether 0023a's enrolment-agent signature names a person or a service, which is the difference between cryptographic evidence and an audit line. On the table: superadmin keeps password and TOTP forever because it is the way back in when nothing else works, and operator moves to a certificate once operators have cards"
     },
     {
       "id": "foreign-token-capabilities",
@@ -994,6 +1024,94 @@
       "state": "open",
       "owner": "cloud-ai",
       "proof": "dev-certs.sh writes the agent CA unencrypted next to the certificates, which is right for a laptop and must never reach a customer. And a revocation list for it: an agent whose state is not Enrolled is already refused by AgentAuthenticationMiddleware - that is the defence and it works - but nothing checks a CRL at the TLS layer, so a withdrawn certificate still completes a handshake before being turned away."
+    },
+    {
+      "id": "0080",
+      "phase": 8,
+      "title": "The agent's loopback API, and the ACL it has to replace",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "The riskiest patch in this phase. A named pipe was granted to INTERACTIVE and LocalSystem and the operating system enforced it; a loopback socket is open to every process of every user on the machine. Keeping the pipe was possible - every call goes through a Tauri command into Rust anyway, and Rust opens a pipe as easily as a socket - and was rejected for shape: the product already speaks HTTP and JSON, and a local API leaves room for something other than this one application. Four checks rebuild the guarantee, each with its own test: the connecting process resolved to a PID and refused unless it runs as the interactive user of the console session; port and token readable only by that user and SYSTEM; any Origin header refused with no CORS ever emitted; the certificate pinned by the client rather than placed in a Windows trust store."
+    },
+    {
+      "id": "0081",
+      "phase": 8,
+      "title": "frontend/ becomes a library and two applications",
+      "state": "open",
+      "owner": "codex",
+      "gap": "A single-project Angular workspace today. Must happen before 0082: splitting it after two applications exist means moving every file twice."
+    },
+    {
+      "id": "0082",
+      "phase": 8,
+      "title": "Blinky.Workstation: Angular in a Tauri v2 shell",
+      "state": "open",
+      "owner": "codex",
+      "gap": "Replaces the screens of Blinky.Agent.Ui, which is finished and proved on hardware - 0046, 0047, 0048 and 0048a - using the components the console uses. HTTP happens in the Rust layer behind a Tauri command and never as fetch from the WebView, because a pinned certificate cannot be checked by the browser engine. The app reaches the backend only through the agent."
+    },
+    {
+      "id": "0083",
+      "phase": 8,
+      "title": "Signing in at the workstation: Kerberos, or a password",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "Kerberos is already the design in doc 05; the password is the new part, for a machine with no domain. Verified at the backend and never by the agent, hashed with a per-user salt, rate-limited and lockable per account."
+    },
+    {
+      "id": "0084",
+      "phase": 8,
+      "title": "Enrolment the person started",
+      "state": "open",
+      "owner": "both",
+      "gap": "No window appears that nobody asked for. The ceremony is reachable only from an application already in front of somebody and waits as long as the person needs. 0049 folds in here."
+    },
+    {
+      "id": "0085",
+      "phase": 8,
+      "title": "The same ceremony, driven by an operator",
+      "state": "open",
+      "owner": "both",
+      "gap": "Needs 0023a underneath it, and inherits whatever 0086 decides about who an operator is."
+    },
+    {
+      "id": "0086",
+      "phase": 8,
+      "title": "The admin panel's way in: a bootstrap superadmin, password and TOTP",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "Reverses 0053a, which said operators sign in with smart cards. The reason is the one 0053d half-states: a smart card cannot be required to sign into the system that issues smart cards before it has issued any. The certificate path is not cancelled - it becomes the upgrade, and a role may require it."
+    },
+    {
+      "id": "0087",
+      "phase": 8,
+      "title": "TOTP, properly: enrolment, drift, recovery codes",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "A code accepted once and not again inside its window, a stated drift tolerance and no more, recovery codes shown once and stored hashed. Without them the first lost telephone is a break-glass event."
+    },
+    {
+      "id": "0088",
+      "phase": 8,
+      "title": "FIDO2 as an operator second factor",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "The CTAP2 work of 0070-0076 turned on ourselves. Deliberately after phase 7 and deliberately not built twice."
+    },
+    {
+      "id": "0089",
+      "phase": 8,
+      "title": "Full CRUD for the models the panel manages",
+      "state": "open",
+      "owner": "both",
+      "gap": "Everything describing configuration or people gets all five. Everything recording an event - AuditEvent, Job, Credential, PUK disclosures - gets create-and-transition, asserted by a test rather than left to the next reviewer to remember."
+    },
+    {
+      "id": "0090",
+      "phase": 8,
+      "title": "Blinky.Agent.Ui is removed",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "Deleted in one commit once 0082 and 0084 do everything 0046 through 0048a do, and not a patch earlier: two clients on one local API means two places to fix the same defect."
     },
     {
       "id": "0070",

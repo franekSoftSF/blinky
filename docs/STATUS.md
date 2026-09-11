@@ -226,6 +226,9 @@ Three things in that table are the design working rather than data:
 | rpId and origin | Per-provider, per-tenant data carried in the job, never constants | They differ between providers and between Okta orgs, custom domains included. A hardcoded origin is a credential registered against the wrong relying party — which fails at sign-in, not at provisioning |
 | Provisional FIDO2 PIN | Generated on the workstation, shown once, stored nowhere | Same rule as the PIV PIN, for the same reason. Where Okta delivers it by email instead, it never reaches Blinky at all |
 | Passkey providers | Entra and Okta behind one interface; Google analysed and not built | Google exposes no API that accepts an attestation on behalf of a user, so the honest answer is a documented gap and a federation alternative, not a half-feature |
+| Workstation app | Angular in a Tauri v2 shell, replacing the WPF tray | One UI technology for the whole product, and the same components as the console. WPF is a toolkit nothing else here uses and the console cannot share a line with |
+| The seam between app and service | A loopback HTTPS API on the agent, not the named pipe | Chosen for shape: the product already speaks HTTP and JSON, and a local API leaves room for something other than this one application. The cost is an ACL the operating system was enforcing, rebuilt by hand in 0080 — recorded as a cost, not as a free choice |
+| A new model's endpoints | Full CRUD when it describes configuration or people; create-and-transition when it records an event | A model in the database and nowhere in the UI is a model only its author can change. An audit trail that supports `DELETE` is not an audit trail |
 | Docs language | English | Open source, matches CredLoop and NanitorBridge |
 | Licence | Apache-2.0 | Patent grant; NHibernate stays a dynamically linked NuGet dependency |
 
@@ -239,6 +242,7 @@ Three things in that table are the design working rather than data:
 | CLI-first v1 instead of the Angular console | Phase 5 | revisit if Phase 2 runs long |
 | Which HSM in production | Phase 6 (0062) | needs site input |
 | Do foreign tokens get a capability model — attestation yes/no, management key yes/no — and may a profile issue onto a token that cannot attest? | *Later* § non-Yubico tokens | measurement, then a decision |
+| Does operator authentication by certificate stay the target, with password and TOTP as the way in — or does it become optional? | Phases 5 and 8 (0053a, 0086, 0023a) | a decision |
 | Does the lab get an Entra tenant and an Okta org | Phase 7 (0076 onwards) | needs a decision and a subscription; contract tests need neither |
 | Google prepare-only mode, or federation and nothing else | Phase 7 (§ Later) | product decision, not a technical one |
 
@@ -362,6 +366,52 @@ in front of a person and the lifecycle jobs were not.
 | 0062 | Cloud.AI | Production compose profile | **open** | Real TLS, the PKCS#11 tier, no default credentials, health checks, and a documented backup of the HSM and the database |
 | 0063 | Cloud.AI | Documentation pass and screenshots | **open** | No pass and no screenshots yet. Three defects on the clone-to-logon path are fixed under this number, because they are what a stranger following the repository would have hit: `provision-dc.sh` orders `samba-ad-dc` after `network-online.target` and reloads it when it bound only to the loopback; `resign-issuing-ca.sh` is idempotent, having silently invalidated NTAuth, the workstation stores and the KDC chain three times in one day; `blinky-samba-setup.sh` rebuilds `kdc-chain.pem` around the certificate already on the controller when refreshed with `--from-url` alone |
 | 0064 | Cloud.AI | The agent CA belongs to the deployment, and revocation is enforced at the edge | **open** | `dev-certs.sh` writes the agent CA unencrypted beside the certificates, which is right for a laptop and must never reach a customer. And nothing checks a CRL at the TLS layer: a withdrawn agent certificate still completes a handshake before the middleware turns it away |
+
+### Phase 8 — The workstation app, and signing in — **open**
+
+New, and written before any of it is built. The brief is
+[14](14-workstation-app-and-sign-in.md); the definitions of done are in
+[07 — Roadmap](07-roadmap.md). Numbered after Phase 7 and not thereby scheduled
+after it.
+
+The direction: enrolment stops being a window that appears on its own and
+becomes something a person starts inside an application they opened and signed
+into. The application is Angular in a Tauri v2 shell, built from the same
+components as the console, so an operator who has used one has used the other.
+
+Three things about it are worth reading before the table.
+
+**It replaces finished code.** 0046, 0047, 0048 and 0048a are done and proved
+on hardware. 0082 re-implements every screen in them and 0090 deletes the old
+ones, at parity and not a patch earlier.
+
+**It gives up an ACL the operating system was enforcing.** The seam becomes a
+loopback HTTPS API on the agent. The pipe was granted to `INTERACTIVE` and
+`LocalSystem`; a socket on `127.0.0.1` is open to every process of every user
+on the machine. Keeping the pipe was possible — every call goes through a Tauri
+command into Rust anyway, and Rust opens a pipe as easily as a socket — and was
+rejected for shape rather than for capability. 0080 is the patch that rebuilds
+the guarantee, and it is the riskiest thing in this phase.
+
+**It reverses 0053a**, which said that a system for managing smart cards whose
+operators sign in with smart cards is the only honest arrangement. The reason
+is sound and 0053d half-stated it already: a smart card cannot be required to
+sign into the system that issues smart cards before it has issued any. The
+certificate path becomes the upgrade rather than the front door.
+
+| # | Owner | Patch | State | Proof |
+|---|---|---|---|---|
+| 0080 | Cloud.AI | The agent's loopback API, and the ACL it has to replace | **open** | Four checks, each with its own test: the caller resolved to a PID and refused unless it runs as the interactive user of the console session; port and token readable only by that user and `SYSTEM`; any `Origin` header refused and no CORS emitted, so a web page cannot drive the agent; the certificate pinned rather than trusted |
+| 0081 | Codex | `frontend/` becomes a library and two applications | **open** | Before 0082, not after: splitting a workspace once two applications exist means moving every file twice |
+| 0082 | Codex | `Blinky.Workstation`: Angular in a Tauri v2 shell | **open** | HTTP in the Rust layer behind a Tauri command, never `fetch` from the WebView — a pinned certificate cannot be checked by the browser engine. The app reaches the backend only through the agent |
+| 0083 | Cloud.AI | Signing in at the workstation: Kerberos, or a password | **open** | Kerberos is already the design in [05](05-agent-protocol.md). The password is new, for a machine with no domain: verified at the backend and never by the agent, per-user salt, rate-limited and lockable |
+| 0084 | both | Enrolment the person started | **open** | No window appears that nobody asked for. 0049 folds in here |
+| 0085 | both | The same ceremony, driven by an operator | **open** | Needs 0023a underneath it |
+| 0086 | Cloud.AI | The panel's way in: bootstrap superadmin, password and TOTP | **open** | TOTP required from the first sign-in, not added later. The bootstrap closes after first use, as 0053d already demands |
+| 0087 | Cloud.AI | TOTP, properly: enrolment, drift, recovery codes | **open** | A code accepted once inside its window and not again; a stated drift tolerance; recovery codes shown once and stored hashed |
+| 0088 | Cloud.AI | FIDO2 as an operator second factor | **open** | The CTAP2 work of 0070–0076 turned on ourselves. After Phase 7, and not built twice |
+| 0089 | both | Full CRUD for the models the panel manages | **open** | And a test for the exception: `AuditEvent`, `Job`, `Credential` and the disclosure rows record what happened and are not editable |
+| 0090 | Cloud.AI | `Blinky.Agent.Ui` is removed | **open** | One commit, at parity |
 
 ### Phase 7 — FIDO2 — **open**
 
@@ -531,7 +581,23 @@ APDUs at all because CTAP2 goes over HID.
 
 ## What to do next
 
-Ordered, each item small enough to finish in one sitting.
+**Signing in to the console is the one that matters.** Everything below it is
+smaller. Today the console has no accounts: one `X-Blinky-Operator` token
+stands for every operator, so the audit trail cannot say *who* revoked a
+credential or disclosed a PUK, nothing expires, nothing can be withdrawn, and
+the secret leaks the way shared secrets leak — shell history, a memory stick, a
+chat window. The system that is supposed to prove who holds which credential
+cannot say who is using it.
+
+That is Phase 8's 0086 and 0087 together with three patches already written in
+Phase 5, and they are one piece of work rather than five: **0086** a superadmin
+with a password and TOTP, **0087** TOTP done properly with recovery codes,
+**0053b** a session that can be ended, **0053c** roles so an auditor cannot
+issue, and **0053e** named service credentials so the shared token can finally
+be deleted rather than merely discouraged. 0053a — the certificate — is the
+upgrade afterwards and is not in the way.
+
+The rest, ordered, each small enough to finish in one sitting.
 
 1. **Revoke the orphaned credential.** *(Cloud.AI.)* The attempt that failed at the last step
    left a `Credential` row reading `Issued` for a certificate that reached no
