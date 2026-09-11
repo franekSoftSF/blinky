@@ -987,10 +987,9 @@
       "id": "0053e",
       "phase": 5,
       "title": "The shared token retired",
-      "state": "done-unverified",
+      "state": "done",
       "owner": "cloud-ai",
-      "proof": "The shared token is gone. IsOperator takes a session and nothing else, the header is out of the console store, the operator-token boxes are off both settings pages, and OPERATOR_TOKEN is out of .env.example, the compose file and install-server.sh. Two source-level tests hold it, because a second way in would work perfectly and quietly return the system to not knowing who did anything. The service-credential half was not built and the reason is recorded: nothing automated ever used the token.",
-      "gap": "Not yet signed into from a browser by a person. Deployed only after that, because the console has no other way in and a defect in the screen would lock everybody out."
+      "proof": "Proved on BY-CACMS on 2026-09-11. A person signed in through the browser - password, the installer password replaced, a second factor enrolled from a QR code and confirmed - and the account row now reads must_change_password false with the second factor confirmed. The shared token was then presented to /api/profiles and refused with 401, as was a request carrying nothing. Two live sessions survived the deployment, because a session is a row rather than a thing the process remembers. The service-credential half was never built and the reason is recorded: nothing automated ever used the token - the installer only generated it, and the revocation-list publisher reads /pki/, which is public."
     },
     {
       "id": "0054",
