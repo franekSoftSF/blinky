@@ -38,10 +38,29 @@ check() {
 }
 
 # Status code, seen from inside the compose network.
+#
+# --user root, because the image runs as uid 100 and the client material it is
+# given to present belongs to root. On a laptop where dev-certs.sh wrote those
+# files as the developer this makes no difference; on a server installed by
+# install-server.sh they are root:blinky mode 640, the container cannot read
+# the key, and curl fails during the handshake. Every check needing a client
+# certificate then reports 000 - a number that says "no connection" for what is
+# entirely a permission, and sends the reader to look at TLS.
+#
+# Root inside a throwaway container on a read-only mount, rather than a looser
+# mode on the host: test-agent.key is signed by this deployment's agent CA, so
+# making it world-readable would hand every local account an agent identity.
 status() {
-    MSYS_NO_PATHCONV=1 docker run --rm --network "$NETWORK" \
+    MSYS_NO_PATHCONV=1 docker run --rm --network "$NETWORK" --user root \
         -v "$(pwd)/certs:/certs:ro" "$CURL_IMAGE" \
         -sk -o /dev/null -w '%{http_code}' "$@" 2>/dev/null
+}
+
+skipped=0
+
+skip() {
+    printf '  skip  %-54s %s\n' "$1" "$2"
+    skipped=$((skipped + 1))
 }
 
 if ! docker network inspect "$NETWORK" >/dev/null 2>&1; then
@@ -92,12 +111,28 @@ enrol() {
         | grep -oE "enrolled: [0-9a-f-]+" | cut -d" " -f2
 }
 
-first=$(enrol)
-second=$(enrol)
+# This pair needs the SDK, because AgentEnrol is run from source rather than
+# shipped. A server has no reason to carry one - the lab's CMS host does not -
+# and reporting "no" there blames the backend for a missing toolchain.
+if ! command -v dotnet >/dev/null 2>&1; then
+    skip "an agent enrols and the issued certificate works" "no dotnet SDK on this host"
+    skip "enrolling the same machine twice reuses the agent" "no dotnet SDK on this host"
+else
+    first=$(enrol)
+    second=$(enrol)
 
-check "an agent enrols and the issued certificate works" "yes" \
-    "$([ -n "$first" ] && echo yes || echo no)"
-check "enrolling the same machine twice reuses the agent" "$first" "$second"
+    check "an agent enrols and the issued certificate works" "yes" \
+        "$([ -n "$first" ] && echo yes || echo no)"
+
+    # Compared as "the same non-empty id", not just "the same". Two failed
+    # enrolments both produce an empty string, which is equal to itself, so the
+    # obvious version of this check reports success precisely when nothing
+    # worked - and it did, beside the failure above, for as long as it existed.
+    check "enrolling the same machine twice reuses the agent" \
+        "same:${first:-<none>}" \
+        "$([ -n "$first" ] && [ "$first" = "$second" ] \
+            && echo "same:$first" || echo "differed:${second:-<none>}")"
+fi
 check "a bad bootstrap token is refused" 401 \
     "$(status -X POST -H "Content-Type: application/json" \
         -d '{"hostname":"x","domain":"y","bootstrapToken":"wrong","certificateSigningRequest":""}' \
@@ -116,9 +151,11 @@ check "console port is published" 200 \
         "https://${BLINKY_HOST:-localhost}:${CONSOLE_PORT:-8443}/health")"
 
 echo
+suffix=""
+[ "$skipped" -gt 0 ] && suffix=", $skipped skipped"
 if [ "$fail" -eq 0 ]; then
-    echo "all $pass checks passed"
+    echo "all $pass checks passed$suffix"
 else
-    echo "$fail of $((pass + fail)) checks failed"
+    echo "$fail of $((pass + fail)) checks failed$suffix"
 fi
 exit $((fail > 0))
