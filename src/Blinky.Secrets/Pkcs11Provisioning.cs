@@ -195,6 +195,8 @@ public sealed class Pkcs11Provisioning : IDisposable
             throw new KeyUnavailableException($"The PKCS#11 module {module} does not exist.");
         }
 
+        NativeLoader.Prepare();
+
         return factories.Pkcs11LibraryFactory.LoadPkcs11Library(
             factories, module, AppType.MultiThreaded);
     }

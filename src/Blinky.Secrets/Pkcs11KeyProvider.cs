@@ -65,6 +65,8 @@ public sealed class Pkcs11KeyProvider : IKeyProvider
                 + "container has to hold, not a service it can reach.");
         }
 
+        NativeLoader.Prepare();
+
         pin = ReadPin(options);
 
         try
