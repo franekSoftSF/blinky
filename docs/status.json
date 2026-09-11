@@ -962,10 +962,10 @@
       "id": "0053b",
       "phase": 5,
       "title": "A session that can be ended",
-      "state": "done-unverified",
+      "state": "done",
       "owner": "cloud-ai",
-      "proof": "Wired to the middleware, so a session is resolved once per request and an ended one stops working on the next rather than whenever a self-contained token would have expired. IsOperator accepts a session or the shared token; the shared token stays until 0053e, because fifteen call sites and every script in scripts/ use it and there is nothing yet to replace them with.",
-      "gap": "Built and unit-tested; never run against the deployment."
+      "proof": "Proved on BY-CACMS on 2026-09-11: a session token reached /api/profiles with no shared operator token and got 200; POST /api/auth/sign-out returned 200; the same token on the same endpoint immediately afterwards got 401. That is the difference the patch exists for - a self-contained token would have kept working until it expired.",
+      "gap": "The session list and log-out-everywhere are built but have not been exercised from a console, because there is no page yet."
     },
     {
       "id": "0053c",
@@ -1090,10 +1090,9 @@
       "id": "0086",
       "phase": 8,
       "title": "The admin panel's way in: a bootstrap superadmin, password and TOTP",
-      "state": "done-unverified",
+      "state": "done",
       "owner": "cloud-ai",
-      "gap": "Built and unit-tested; never run against the deployment. Nothing has signed in through it yet.",
-      "proof": "Endpoints under /api/auth: sign-in, the second factor, a password change and the session list. The bootstrap administrator is seeded at start only when there are no accounts at all, from BOOTSTRAP_ADMIN_PASSWORD, and arrives owing both a real password and a second factor. Every step of the ceremony re-presents the password rather than exchanging it once for a half-finished ticket: a pending credential is a credential, and this way there is one kind of token in the system instead of two. A password change ends every session founded on the old one."
+      "proof": "Proved end to end on BY-CACMS on 2026-09-11. A wrong password is refused; the installer-generated one is accepted once and asks for a real one; the old one stops working the moment it is replaced; the new one then asks for a second factor; enrolling returns a secret and an otpauth URI; and signing in with the code from that secret returns a session naming the administrator. A defect only that run could find: the endpoint returned totp-enrolment-required before looking at the code, so a secret could be handed out and never confirmed and the account could never finish signing in. The state machine was right the whole time and every unit test was green, because they checked the rule and not the branch beside it."
     },
     {
       "id": "0087",
