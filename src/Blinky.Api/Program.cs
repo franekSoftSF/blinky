@@ -400,7 +400,18 @@ app.MapPost("/api/auth/sign-in",
             case SignInOutcome.PasswordChangeRequired:
                 return Results.Ok(new { outcome = "password-change-required" });
 
-            case SignInOutcome.TotpEnrolmentRequired:
+            case SignInOutcome.TotpEnrolmentRequired
+                when string.IsNullOrWhiteSpace(request.TotpCode)
+                     || string.IsNullOrEmpty(account!.TotpSecret):
+
+                // Only when there is nothing to check yet. An account that has
+                // been given a secret and is now presenting a code is finishing
+                // its enrolment, and falling through to the same verification
+                // is the whole of what "confirmed by use" means. Returning here
+                // regardless was a dead end: the secret could be handed out and
+                // never confirmed, so the account could never finish signing in
+                // at all. Every unit test passed, because the state machine was
+                // right and this branch was not.
                 return Results.Ok(new { outcome = "totp-enrolment-required" });
         }
 
