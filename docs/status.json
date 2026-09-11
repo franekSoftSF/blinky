@@ -951,8 +951,10 @@
       "id": "0053b",
       "phase": 5,
       "title": "A session that can be ended",
-      "state": "open",
+      "state": "partly-done",
       "owner": "cloud-ai",
+      "proof": "Server-side sessions: an entity, a mapping, and the rules with fourteen cases behind them. Revocation takes effect on the next request and is reported ahead of expiry, so an operator who ended a session sees that it was ended rather than that it lapsed. Two clocks bound it from different directions - an idle window that activity moves and an absolute one that nothing moves - because a console left open in a tab polls, and polling would otherwise make a credential immortal. The database holds SHA-256 of the token and never the token.",
+      "gap": "No endpoints yet, so nothing issues or presents one. The console still authenticates with the shared X-Blinky-Operator token.",
       "proof": "A JWT cannot be revoked, which for an administrative console is the wrong trade. A server-side session gives log-out-everywhere, an accurate answer to who is signed in, and a way to cut somebody off the moment their card reaches a revocation list."
     },
     {

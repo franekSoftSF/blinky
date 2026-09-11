@@ -56,6 +56,32 @@ public sealed class OperatorAccountMapping : ClassMapping<OperatorAccount>
     }
 }
 
+public sealed class OperatorSessionMapping : ClassMapping<OperatorSession>
+{
+    public OperatorSessionMapping()
+    {
+        Table("operator_sessions");
+        Id(x => x.Id, m => { m.Column("id"); m.Generator(Generators.GuidComb); });
+        Property(x => x.OperatorAccountId,
+            m => { m.Column("operator_account_id"); m.NotNullable(true); });
+
+        // Unique, because this is what a request is looked up by. An index that
+        // is merely fast would let two rows answer one token, and nothing above
+        // this could say which of them the request belonged to.
+        Property(x => x.TokenHash,
+            m => { m.Column("token_hash"); m.NotNullable(true); m.Unique(true); });
+        Property(x => x.CreatedFrom, m => m.Column("created_from"));
+        Property(x => x.CreatedAt, m => Conventions.AsTimestamp(m, "created_at"));
+        Property(x => x.LastSeenAt, m => Conventions.AsTimestamp(m, "last_seen_at"));
+        Property(x => x.IdleExpiresAt, m => Conventions.AsTimestamp(m, "idle_expires_at"));
+        Property(x => x.AbsoluteExpiresAt,
+            m => Conventions.AsTimestamp(m, "absolute_expires_at"));
+        Property(x => x.RevokedAt,
+            m => Conventions.AsTimestamp(m, "revoked_at", notNull: false));
+        Property(x => x.RevokedReason, m => m.Column("revoked_reason"));
+    }
+}
+
 public sealed class TokenMapping : ClassMapping<Token>
 {
     public TokenMapping()

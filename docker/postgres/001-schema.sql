@@ -37,6 +37,20 @@ create table operator_accounts (
        primary key (id)
     );
 
+create table operator_sessions (
+        id uuid not null,
+       operator_account_id uuid not null,
+       token_hash varchar(255) not null unique,
+       created_from varchar(255),
+       created_at timestamptz not null,
+       last_seen_at timestamptz not null,
+       idle_expires_at timestamptz not null,
+       absolute_expires_at timestamptz not null,
+       revoked_at timestamptz,
+       revoked_reason varchar(255),
+       primary key (id)
+    );
+
 create table tokens (
         id uuid not null,
        serial int8 not null unique,
