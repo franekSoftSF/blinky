@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthStore } from '../core/auth.store';
+import { I18n } from '../core/i18n';
 
 /**
  * Console settings.
@@ -27,24 +28,19 @@ import { AuthStore } from '../core/auth.store';
         <header>
           <div class="section-number">01</div>
           <div>
-            <h2>Ta sesja</h2>
-            <p>Kto jest zalogowany i jak to zakończyć</p>
+            <h2>{{ i18n.t('thisSession') }}</h2>
+            <p>{{ i18n.t('whoSignedIn') }}</p>
           </div>
           <span class="privacy-badge">SESJA</span>
         </header>
         <div class="setting-body operator-setting">
           <div>
-            <h3>{{ auth.operatorName() ?? 'Nie zalogowano' }}</h3>
-            <p>
-              Rola: {{ auth.role() ?? '—' }}. Sesja kończy się po pół godziny bezczynności i po
-              dwunastu godzinach niezależnie od tego, jak bywała używana. Możesz ją zakończyć
-              stąd, a administrator może ją zakończyć z serwera — dlatego nie jest to token,
-              którego nikt nie potrafi odebrać.
-            </p>
+            <h3>{{ auth.operatorName() ?? i18n.t('notSignedIn') }}</h3>
+            <p>{{ i18n.t('roleLabel') }}: {{ auth.role() ?? '—' }}. {{ i18n.t('sessionNote') }}</p>
           </div>
           <div class="operator-connect">
-            <button class="primary" type="button" (click)="signOut()">Wyloguj</button>
-            <button type="button" (click)="signOutEverywhere()">Wyloguj wszędzie</button>
+            <button class="primary" type="button" (click)="signOut()">{{ i18n.t('signOut') }}</button>
+            <button type="button" (click)="signOutEverywhere()">{{ i18n.t('signOutEverywhere') }}</button>
           </div>
         </div>
       </article>
@@ -63,6 +59,7 @@ import { AuthStore } from '../core/auth.store';
 export class OperatorSettings {
   private readonly router = inject(Router);
   protected readonly auth = inject(AuthStore);
+  protected readonly i18n = inject(I18n);
 
   protected async signOut(): Promise<void> {
     await this.auth.signOut();

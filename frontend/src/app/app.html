@@ -99,10 +99,18 @@
         <div class="operator">
           <span>OP</span>
           <div>
-            <strong>{{ i18n.t('operator') }}</strong
-            ><small>{{ i18n.t('administrator') }}</small>
+            <strong>{{ auth.operatorName() ?? i18n.t('operator') }}</strong
+            ><small>{{ auth.role() ?? i18n.t('administrator') }}</small>
           </div>
         </div>
+
+        <!-- In the header rather than only on the settings page. Signing out is
+             the one thing somebody wants within reach from wherever they are,
+             and hiding it three clicks away is how people leave a console
+             signed in on a machine they walked away from. -->
+        <button class="icon-button" type="button" [title]="i18n.t('signOut')" (click)="signOut()">
+          ⏻
+        </button>
       </div>
     </header>
     <main><router-outlet /></main>

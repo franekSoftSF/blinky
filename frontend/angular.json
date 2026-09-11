@@ -37,6 +37,9 @@
               "src/pages.scss",
               "src/settings.scss",
               "src/refresh-action.scss"
+            ],
+            "allowedCommonJsDependencies": [
+              "qrcode"
             ]
           },
           "configurations": {

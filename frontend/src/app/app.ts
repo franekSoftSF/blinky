@@ -17,7 +17,7 @@ export class App {
   private readonly store = inject(ConsoleStore);
   protected readonly i18n = inject(I18n);
   protected readonly theme = inject(Theme);
-  private readonly auth = inject(AuthStore);
+  protected readonly auth = inject(AuthStore);
 
   /**
    * Whether to draw the console around the page at all.
@@ -28,6 +28,12 @@ export class App {
    * door.
    */
   protected readonly signedIn = this.auth.signedIn;
+
+  /** Reachable from every page, because that is where somebody leaving is. */
+  protected async signOut(): Promise<void> {
+    await this.auth.signOut();
+    await this.router.navigateByUrl('/sign-in');
+  }
   protected readonly menuOpen = signal(false);
   protected readonly administrationOpen = signal(true);
   protected readonly apiOnline = this.store.online;

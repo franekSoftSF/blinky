@@ -1,6 +1,8 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthStore } from '../core/auth.store';
+import { I18n } from '../core/i18n';
+import { toDataURL } from 'qrcode';
 
 /**
  * Signing in to the console.
@@ -19,23 +21,28 @@ import { AuthStore } from '../core/auth.store';
   template: `
     <section class="sign-in">
       <header>
-        <p class="eyebrow">BLINKY CMS</p>
-        <h1>Logowanie do konsoli</h1>
-        <p class="lede">
-          Konsola zarządza poświadczeniami na kartach. Dostęp do niej jest imienny, żeby audyt
-          mógł powiedzieć, kto co zrobił.
-        </p>
+        <div class="sign-in-top">
+          <p class="eyebrow">BLINKY CMS</p>
+
+          <!-- The shell's language switch lives behind the sign-in, which is
+               exactly where somebody who cannot read this page cannot reach
+               it. -->
+          <button class="language" type="button" (click)="i18n.toggle()">
+            {{ i18n.language() === 'pl' ? 'EN' : 'PL' }}
+          </button>
+        </div>
+        <h1>{{ i18n.t('signInTitle') }}</h1>
+        <p class="lede">{{ i18n.t('signInLede') }}</p>
       </header>
 
       @if (auth.error(); as message) {
         <p class="sign-in-error" role="alert">{{ message }}</p>
       }
 
-      <!-- Krok 1: kto i czym. -->
       @if (auth.stage() === 'credentials' || auth.stage() === 'totp-required') {
         <form class="sign-in-form" (submit)="submit($event)">
           <label>
-            Nazwa konta
+            {{ i18n.t('accountName') }}
             <input
               name="username"
               autocomplete="username"
@@ -46,7 +53,7 @@ import { AuthStore } from '../core/auth.store';
           </label>
 
           <label>
-            Hasło
+            {{ i18n.t('passwordLabel') }}
             <input
               type="password"
               name="password"
@@ -59,7 +66,7 @@ import { AuthStore } from '../core/auth.store';
 
           @if (auth.stage() === 'totp-required') {
             <label>
-              Kod z aplikacji
+              {{ i18n.t('codeLabel') }}
               <input
                 name="totp"
                 inputmode="numeric"
@@ -73,21 +80,17 @@ import { AuthStore } from '../core/auth.store';
           }
 
           <button class="primary" type="submit" [disabled]="auth.busy() || !ready()">
-            {{ auth.busy() ? 'Sprawdzanie…' : 'Zaloguj' }}
+            {{ auth.busy() ? i18n.t('checking') : i18n.t('signInAction') }}
           </button>
         </form>
       }
 
-      <!-- Krok 2a: hasło od instalatora kupuje dokładnie jedno logowanie. -->
       @if (auth.stage() === 'password-change-required') {
         <form class="sign-in-form" (submit)="changePassword($event)">
-          <p class="sign-in-note">
-            To konto ma hasło wygenerowane przy instalacji. Takie hasło leży w pliku, w historii
-            powłoki i w pakiecie diagnostycznym, więc kupuje jedno logowanie — teraz ustaw własne.
-          </p>
+          <p class="sign-in-note">{{ i18n.t('bootstrapNote') }}</p>
 
           <label>
-            Nowe hasło
+            {{ i18n.t('newPassword') }}
             <input
               type="password"
               name="new-password"
@@ -98,7 +101,7 @@ import { AuthStore } from '../core/auth.store';
           </label>
 
           <label>
-            Powtórz nowe hasło
+            {{ i18n.t('repeatPassword') }}
             <input
               type="password"
               name="repeat-password"
@@ -108,47 +111,43 @@ import { AuthStore } from '../core/auth.store';
             />
           </label>
 
-          <p class="sign-in-hint">
-            Co najmniej dwanaście znaków. Długość jest jedyną regułą celowo: wymagania na wielką
-            literę i cyfrę wypychają ludzi w stronę jednego wykrzyknika na końcu, a to mniejszy
-            zbiór niż dłuższe zdanie.
-          </p>
+          <p class="sign-in-hint">{{ i18n.t('passwordRule') }}</p>
 
           <button class="primary" type="submit" [disabled]="auth.busy() || !passwordsAgree()">
-            {{ auth.busy() ? 'Zapisywanie…' : 'Ustaw hasło' }}
+            {{ auth.busy() ? i18n.t('saving') : i18n.t('setPassword') }}
           </button>
         </form>
       }
 
-      <!-- Krok 2b: drugi składnik, wymagany od pierwszego logowania. -->
       @if (auth.stage() === 'totp-enrolment-required') {
         <div class="sign-in-form">
           @if (!auth.enrolment()) {
-            <p class="sign-in-note">
-              To konto nie ma jeszcze drugiego składnika. Drugi składnik, który można dodać
-              później, to drugi składnik, którego nikt nie ma — więc wpinamy go teraz.
-            </p>
+            <p class="sign-in-note">{{ i18n.t('totpNeeded') }}</p>
             <button class="primary" type="button" [disabled]="auth.busy()" (click)="enrol()">
-              {{ auth.busy() ? 'Przygotowywanie…' : 'Pokaż sekret' }}
+              {{ auth.busy() ? i18n.t('preparing') : i18n.t('showSecret') }}
             </button>
           } @else {
-            <p class="sign-in-note">
-              Wprowadź ten sekret do aplikacji uwierzytelniającej, a potem przepisz kod, który
-              ona pokaże. Sekret staje się drugim składnikiem dopiero po pierwszym użyciu.
-            </p>
+            <p class="sign-in-note">{{ i18n.t('scanNote') }}</p>
+
+            @if (qr(); as image) {
+              <figure class="qr">
+                <img [src]="image" alt="" />
+              </figure>
+            }
+
+            <!-- The secret stays reachable underneath. A QR code is nothing to
+                 anybody using a screen reader, and unusable on the machine that
+                 is also the telephone. -->
+            <details>
+              <summary>{{ i18n.t('cannotScan') }}</summary>
+              <label>
+                {{ i18n.t('secretLabel') }}
+                <input readonly [value]="auth.enrolment()!.secret" (focus)="selectAll($event)" />
+              </label>
+            </details>
 
             <label>
-              Sekret
-              <input readonly [value]="auth.enrolment()!.secret" (focus)="selectAll($event)" />
-            </label>
-
-            <label>
-              Adres otpauth
-              <input readonly [value]="auth.enrolment()!.uri" (focus)="selectAll($event)" />
-            </label>
-
-            <label>
-              Kod z aplikacji
+              {{ i18n.t('codeLabel') }}
               <input
                 name="totp"
                 inputmode="numeric"
@@ -166,7 +165,7 @@ import { AuthStore } from '../core/auth.store';
               [disabled]="auth.busy() || code().trim().length !== 6"
               (click)="submit()"
             >
-              {{ auth.busy() ? 'Sprawdzanie…' : 'Potwierdź i zaloguj' }}
+              {{ auth.busy() ? i18n.t('checking') : i18n.t('confirmAndSignIn') }}
             </button>
           }
         </div>
@@ -178,8 +177,29 @@ import { AuthStore } from '../core/auth.store';
       .sign-in {
         max-width: 34rem;
         margin: 3rem auto;
+        padding: 0 1.25rem;
         display: grid;
         gap: 1.5rem;
+      }
+      .sign-in-top {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .language {
+        font: inherit;
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        padding: 0.2rem 0.6rem;
+        cursor: pointer;
+        background: transparent;
+        border: 1px solid currentColor;
+        border-radius: 2px;
+        opacity: 0.7;
+      }
+      .language:hover {
+        opacity: 1;
       }
       .sign-in h1 {
         margin: 0.25rem 0 0.5rem;
@@ -198,6 +218,30 @@ import { AuthStore } from '../core/auth.store';
       }
       .sign-in-form input {
         width: 100%;
+      }
+      .qr {
+        margin: 0;
+        display: grid;
+        justify-items: center;
+      }
+      .qr img {
+        width: 13rem;
+        height: 13rem;
+        /* The quiet zone the code needs, and the white ground it needs more: a
+           scanner reading this on a dark theme finds no contrast at all. */
+        background: #fff;
+        padding: 0.75rem;
+        border-radius: 4px;
+      }
+      details summary {
+        cursor: pointer;
+        opacity: 0.8;
+        font-size: 0.85rem;
+      }
+      details label {
+        display: grid;
+        gap: 0.35rem;
+        margin-top: 0.75rem;
       }
       .sign-in-note,
       .sign-in-hint {
@@ -218,6 +262,7 @@ import { AuthStore } from '../core/auth.store';
 })
 export class SignIn implements OnInit {
   readonly auth = inject(AuthStore);
+  readonly i18n = inject(I18n);
   private readonly router = inject(Router);
 
   readonly username = signal('');
@@ -225,6 +270,9 @@ export class SignIn implements OnInit {
   readonly code = signal('');
   readonly newPassword = signal('');
   readonly repeated = signal('');
+
+  /** The otpauth URI as a picture, drawn here and never fetched. */
+  readonly qr = signal<string | null>(null);
 
   /**
    * Takes credentials back out of the address bar.
@@ -243,8 +291,7 @@ export class SignIn implements OnInit {
   ngOnInit(): void {
     if (!location.search) return;
 
-    const scrubbed = location.pathname + location.hash;
-    history.replaceState(history.state, '', scrubbed);
+    history.replaceState(history.state, '', location.pathname + location.hash);
   }
 
   ready(): boolean {
@@ -265,12 +312,23 @@ export class SignIn implements OnInit {
       // Nothing is kept once there is a session to keep instead.
       this.password.set('');
       this.code.set('');
+      this.qr.set(null);
       await this.router.navigateByUrl('/');
     }
   }
 
   async enrol(): Promise<void> {
     await this.auth.beginTotpEnrolment(this.username().trim(), this.password());
+
+    const enrolment = this.auth.enrolment();
+    if (!enrolment) return;
+
+    // Drawn in the page, from the URI the API returned. Nothing is sent
+    // anywhere to render it: a shared secret handed to a QR service is a
+    // shared secret somebody else has.
+    this.qr.set(
+      await toDataURL(enrolment.uri, { margin: 1, width: 512, errorCorrectionLevel: 'M' }),
+    );
   }
 
   async changePassword(event?: Event): Promise<void> {
