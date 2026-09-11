@@ -108,3 +108,36 @@ public enum SecretKind
     /// </remarks>
     PukPending,
 }
+
+/// <summary>
+/// What an operator may do. From a local table now, from directory groups
+/// where there is a directory - patch 0053c.
+/// </summary>
+public enum OperatorRole
+{
+    /// <summary>Reads everything, changes nothing. Cannot issue.</summary>
+    Auditor,
+
+    /// <summary>The ordinary job: issue, renew, revoke, unblock.</summary>
+    Operator,
+
+    /// <summary>And manages operators. The bootstrap account is one.</summary>
+    Administrator,
+}
+
+/// <summary>Whether an <see cref="Entities.OperatorAccount"/> may sign in.</summary>
+public enum OperatorAccountState
+{
+    Active,
+
+    /// <summary>
+    /// Turned off by an administrator, and reversible.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from a lockout, which the account earns by failing and which
+    /// expires on its own. "Somebody left" and "somebody is being guessed at"
+    /// are different situations and the console should not show one word for
+    /// both.
+    /// </remarks>
+    Disabled,
+}

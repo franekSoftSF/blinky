@@ -19,6 +19,24 @@ create table cardholders (
        primary key (id)
     );
 
+create table operator_accounts (
+        id uuid not null,
+       username varchar(255) not null unique,
+       display_name varchar(255) not null,
+       password_hash varchar(255) not null,
+       totp_secret varchar(255),
+       totp_confirmed_at timestamptz,
+       role text not null,
+       state text not null,
+       failed_attempts int4 not null,
+       locked_until timestamptz,
+       last_sign_in_at timestamptz,
+       must_change_password boolean not null,
+       created_at timestamptz not null,
+       updated_at timestamptz not null,
+       primary key (id)
+    );
+
 create table tokens (
         id uuid not null,
        serial int8 not null unique,

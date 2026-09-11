@@ -24,6 +24,38 @@ public sealed class CardholderMapping : ClassMapping<Cardholder>
     }
 }
 
+public sealed class OperatorAccountMapping : ClassMapping<OperatorAccount>
+{
+    public OperatorAccountMapping()
+    {
+        Table("operator_accounts");
+        Id(x => x.Id, m => { m.Column("id"); m.Generator(Generators.GuidComb); });
+
+        // Unique at the database rather than only in the handler. Two rows for
+        // one name is a question about which of them an audit entry meant, and
+        // no answer written later can settle it.
+        Property(x => x.Username,
+            m => { m.Column("username"); m.NotNullable(true); m.Unique(true); });
+        Property(x => x.DisplayName, m => { m.Column("display_name"); m.NotNullable(true); });
+        Property(x => x.PasswordHash, m => { m.Column("password_hash"); m.NotNullable(true); });
+        Property(x => x.TotpSecret, m => m.Column("totp_secret"));
+        Property(x => x.TotpConfirmedAt,
+            m => Conventions.AsTimestamp(m, "totp_confirmed_at", notNull: false));
+        Property(x => x.Role, m => Conventions.AsEnumString<OperatorRole>(m, "role"));
+        Property(x => x.State, m => Conventions.AsEnumString<OperatorAccountState>(m, "state"));
+        Property(x => x.FailedAttempts,
+            m => { m.Column("failed_attempts"); m.NotNullable(true); });
+        Property(x => x.LockedUntil,
+            m => Conventions.AsTimestamp(m, "locked_until", notNull: false));
+        Property(x => x.LastSignInAt,
+            m => Conventions.AsTimestamp(m, "last_sign_in_at", notNull: false));
+        Property(x => x.MustChangePassword,
+            m => { m.Column("must_change_password"); m.NotNullable(true); });
+        Property(x => x.CreatedAt, m => Conventions.AsTimestamp(m, "created_at"));
+        Property(x => x.UpdatedAt, m => Conventions.AsTimestamp(m, "updated_at"));
+    }
+}
+
 public sealed class TokenMapping : ClassMapping<Token>
 {
     public TokenMapping()
