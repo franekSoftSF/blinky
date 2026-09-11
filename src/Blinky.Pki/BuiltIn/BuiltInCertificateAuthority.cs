@@ -242,11 +242,17 @@ public sealed class BuiltInCertificateAuthority(
                         urls.CrlUrls));
             }
 
-            if (urls.CaIssuerUrls.Count > 0)
+            //   Without an OCSP address the check falls to the CRL, which is
+            //   correct today because no responder is running. The list is
+            //   passed through rather than hard-coded empty because this
+            //   extension is written once, at issuance: a certificate that
+            //   went onto a card without the address cannot be given it later
+            //   except by issuing again.
+            if (urls.CaIssuerUrls.Count > 0 || urls.OcspUrls.Count > 0)
             {
                 certificate.CertificateExtensions.Add(
                     new X509AuthorityInformationAccessExtension(
-                        ocspUris: [], caIssuersUris: urls.CaIssuerUrls));
+                        ocspUris: urls.OcspUrls, caIssuersUris: urls.CaIssuerUrls));
             }
         }
 

@@ -301,6 +301,69 @@ public sealed class BuiltInCertificateAuthorityTests
     }
 
     [Fact]
+    public async Task An_issued_certificate_can_name_a_responder()
+    {
+        // Off in every deployment today, and wired anyway. Authority
+        // information access is written once, when the certificate is issued:
+        // a card personalised before the address exists is never checked over
+        // OCSP, and the only correction is to issue again and take the card
+        // back off the person carrying it.
+        using var ca = Authority(CaTopology.TwoTier,
+            publication: CaPublication.FromBaseUrl("http://ca.example",
+                "http://ocsp.example"));
+
+        var issued = await ca.IssueAsync(Request());
+        using var certificate = X509Certificate2.CreateFromPem(issued.CertificatePem);
+
+        var aia = certificate.Extensions
+            .Single(e => e.Oid?.Value == "1.3.6.1.5.5.7.1.1");
+
+        var contents = System.Text.Encoding.ASCII.GetString(aia.RawData);
+
+        // Both, because adding one must not drop the other: without the issuer
+        // address a machine that does not hold the CA cannot build the chain.
+        Assert.Contains("http://ocsp.example", contents, StringComparison.Ordinal);
+        Assert.Contains("http://ca.example/pki/issuing.crt", contents, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Without_a_responder_the_certificate_claims_none()
+    {
+        // Nothing answers OCSP in this stack, so nothing may say otherwise. A
+        // relying party handed an address nobody serves waits for it and then
+        // fails a check it would have satisfied from the CRL.
+        using var ca = Authority(CaTopology.TwoTier,
+            publication: CaPublication.FromBaseUrl("http://ca.example"));
+
+        var issued = await ca.IssueAsync(Request());
+        using var certificate = X509Certificate2.CreateFromPem(issued.CertificatePem);
+
+        var aia = certificate.Extensions
+            .Single(e => e.Oid?.Value == "1.3.6.1.5.5.7.1.1");
+
+        // id-ad-ocsp, 1.3.6.1.5.5.7.48.1, encoded as it appears inside the
+        // extension. Checked as bytes rather than as text because an absent
+        // access method has no URL to look for.
+        ReadOnlySpan<byte> idAdOcsp =
+            [0x06, 0x08, 0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x30, 0x01];
+
+        Assert.True(aia.RawData.AsSpan().IndexOf(idAdOcsp) < 0,
+            "The certificate names an OCSP responder and none is running.");
+    }
+
+    [Fact]
+    public void A_responder_is_taken_whole_rather_than_built_from_the_base_address()
+    {
+        // The responder is allowed to live somewhere else entirely, which is
+        // where a deployment that runs one usually puts it.
+        var published = CaPublication.FromBaseUrl("http://ca.example",
+            "http://ocsp.example/responder/");
+
+        Assert.Equal("http://ocsp.example/responder", published!.OcspUrls[0]);
+        Assert.Empty(CaPublication.FromBaseUrl("http://ca.example")!.OcspUrls);
+    }
+
+    [Fact]
     public void A_base_address_that_is_not_set_publishes_nothing()
     {
         Assert.Null(CaPublication.FromBaseUrl(null));

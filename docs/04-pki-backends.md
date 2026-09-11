@@ -205,6 +205,31 @@ An OCSP responder is an optional container. It matters for revocation latency;
 it does not matter for a first deployment, where a six-hour CRL is fine and one
 fewer moving part is worth more.
 
+**The responder's address is decided before the responder exists.** Authority
+information access is written into a certificate when it is issued and cannot
+be added afterwards, so a card personalised today without an OCSP URL is a card
+that will never be checked over OCSP — and the only correction is to issue
+again and take the card back off the person holding it. Deciding the address
+now costs a setting; deciding it later costs a visit to every holder.
+
+So `CaPublication` carries `OcspUrls` beside the CRL and CA-issuer lists, and
+`Blinky:Ca:OcspUrl` sets it. Three things about it are deliberate:
+
+- **Unset by default**, and nothing in this stack answers OCSP yet. A
+  certificate advertising a responder that does not exist is worse than one
+  advertising none: a validator that tries it may fail closed rather than fall
+  back to the CRL.
+- **Taken whole, never assembled** from the base address. A responder is
+  usually somewhere else — a different host, a different scheme, a different
+  port — and deriving it from `Blinky:Ca:PublicUrl` would quietly produce an
+  address that resolves to the console.
+- **The extension is emitted when either list is non-empty**, so a deployment
+  can publish CA issuers without a responder, which is what every deployment
+  does today.
+
+Turning the responder on is a separate patch — 0041a in
+[07](07-roadmap.md) — and it is the change that sets this URL.
+
 ### Publishing into the directory
 
 For logon to work the CA has to be trusted by the domain, which means the CA

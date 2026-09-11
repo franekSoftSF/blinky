@@ -50,8 +50,14 @@ builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
         // unset, certificates are issued with neither extension, which is
         // what they were until 21 August 2026 and why the first smart-card
         // logon reported CERT_TRUST_REVOCATION_STATUS_UNKNOWN.
+        //
+        // OcspUrl is separate and unset in every deployment today, because
+        // nothing answers OCSP yet - 0041a. It exists now because the address
+        // lands in the certificate at issuance and cannot be added to a card
+        // afterwards. Set it in the change that starts a responder.
         Blinky.Pki.BuiltIn.CaPublication.FromBaseUrl(
-            builder.Configuration["Blinky:Ca:PublicUrl"])));
+            builder.Configuration["Blinky:Ca:PublicUrl"],
+            builder.Configuration["Blinky:Ca:OcspUrl"])));
 
 // The directory, or an honest absence of one. Registered either way so the
 // endpoints exist and answer "there is no directory here" rather than failing

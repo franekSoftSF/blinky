@@ -37,6 +37,31 @@ public sealed record CaPublication(
     IReadOnlyList<string> CaIssuerUrls)
 {
     /// <summary>
+    /// Where an OCSP responder answers for this CA. Empty unless a deployment
+    /// names one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not derived from the base address, and not a positional member, because
+    /// there is no responder in this stack yet - that is 0041a, and it is not
+    /// written. What is here is the half that cannot wait for it: authority
+    /// information access is fixed when the certificate is issued, so a card
+    /// personalised before this URL exists is never checked over OCSP, and the
+    /// only correction is to issue again and take the card back off the person
+    /// holding it. Deciding the address now costs a setting; deciding it later
+    /// costs a visit to every holder.
+    /// </para>
+    /// <para>
+    /// Empty by default for the same reason the base address is optional. An
+    /// address in the extension that nothing answers turns a check a relying
+    /// party would have skipped into one that waits and then fails, and
+    /// validators disagree about whether to fall back to the CRL. Set this in
+    /// the change that starts the responder, not before.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> OcspUrls { get; init; } = [];
+
+    /// <summary>
     /// Builds the pair from one base address, using the paths this project
     /// serves them at.
     /// </summary>
@@ -46,7 +71,7 @@ public sealed record CaPublication(
     /// elaborate — a CDN, a second distribution point — constructs the record
     /// directly.
     /// </remarks>
-    public static CaPublication? FromBaseUrl(string? baseUrl)
+    public static CaPublication? FromBaseUrl(string? baseUrl, string? ocspUrl = null)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
@@ -57,6 +82,15 @@ public sealed record CaPublication(
 
         return new CaPublication(
             [$"{root}/pki/issuing.crl"],
-            [$"{root}/pki/issuing.crt"]);
+            [$"{root}/pki/issuing.crt"])
+        {
+            // Given whole rather than assembled from the base address. A
+            // responder is allowed to be somewhere else entirely - a different
+            // host, a different port, a service somebody else runs - and a
+            // deployment that has one usually does put it there.
+            OcspUrls = string.IsNullOrWhiteSpace(ocspUrl)
+                ? []
+                : [ocspUrl.TrimEnd('/')],
+        };
     }
 }

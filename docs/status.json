@@ -822,6 +822,15 @@
       "owner": "cloud-ai"
     },
     {
+      "id": "0041a",
+      "phase": 4,
+      "title": "An OCSP responder, and the address that is already in the certificates",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Half of it is done and is the half that cannot wait: CaPublication carries OcspUrls, BuiltInCertificateAuthority emits authority information access when either list is non-empty, and Blinky:Ca:OcspUrl configures it. Unset in every deployment, because nothing answers OCSP yet and a certificate advertising a responder that does not exist is worse than one advertising none.",
+      "gap": "No responder. The address exists early because authority information access is fixed at issuance and cannot be added to a card afterwards - deciding it later means re-issuing to everyone holding one."
+    },
+    {
       "id": "0042",
       "phase": 4,
       "title": "PIN unblock via escrowed PUK, with audit",

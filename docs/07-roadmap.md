@@ -111,6 +111,7 @@ the profile's CA instance differing.
 |---|---|---|
 | 0040 | Expiry scanner and scheduled renewal | A credential 30 days from expiry produces exactly one renewal job, once, with `supersedes_id` set |
 | 0041 | Revocation, CRL regeneration and publication | Revoking regenerates the CRL immediately; the CRL is reachable at the CDP URL in the issued certificate |
+| 0041a | An OCSP responder, and the address that is already in the certificates | A responder answers for the built-in CA, and a certificate issued after 0041 already names it - the address goes into authority information access at issuance and cannot be added to a card afterwards, which is why `Blinky:Ca:OcspUrl` exists before anything answers it. Turning it on is setting that URL and starting the container; it is not re-issuing anybody |
 | 0042 | PIN unblock via escrowed PUK, with audit | An operator unblocks a blocked PIN; the disclosure event is recorded and exempt from retention. On a token with `puk_state=Disabled` or `NotApplicable` the action is absent from the console, not offered and then failed |
 | 0043 | Lost / stolen / terminate / retire flows | Marking a token lost revokes every credential on it and does not attempt a wipe |
 | 0044 | Stale-slot detection and reconciliation | A certificate replaced by `ykman` behind Blinky's back is detected and raised, not silently overwritten |
