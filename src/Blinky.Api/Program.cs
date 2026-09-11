@@ -6,8 +6,10 @@ using Blinky.Api.Jobs;
 using Blinky.Api.Security;
 using Blinky.Api.Tokens;
 using Blinky.Contracts;
+using Blinky.Domain;
 using Blinky.Domain.Entities;
 using Blinky.Infrastructure;
+using Blinky.Secrets;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -91,16 +93,30 @@ builder.Services.AddSingleton<Blinky.Directory.IDirectory>(_ =>
 builder.Services.AddSingleton<CredentialIssuanceService>();
 
 
+// Where the two master secrets live. Built once, at start, so that an
+// unreachable device or a wrong PIN stops the deployment coming up instead of
+// surfacing as somebody's failed enrolment an hour later. Everything above this
+// line takes an IKeyProvider and cannot tell a configuration value from a
+// token - see docs/06-security.md and src/Blinky.Secrets.
+var secrets = KeyProviders.Read(builder.Configuration);
+
+builder.Services.AddSingleton(secrets);
+
+builder.Services.AddSingleton(services => KeyProviders.Build(builder.Configuration, secrets,
+    services.GetRequiredService<ILoggerFactory>()));
+
 // The key that protects every escrowed PUK. Refused rather than generated when
 // absent: a KEK invented at startup would encrypt this run's PUKs with a value
 // that dies with the process, and the tokens would be unrecoverable without
 // anything having looked wrong.
-builder.Services.AddSingleton(
-    new ManagementKeyDerivation(ManagementKeyMaster(builder.Configuration)));
+builder.Services.AddSingleton(services => new ManagementKeyDerivation(
+    services.GetRequiredService<IKeyProvider>(), secrets.ManagementKeyVersion));
 
 builder.Services.AddSingleton(services => new PukEscrow(
     services.GetRequiredService<Database>(),
-    PukKek(builder.Configuration),
+    services.GetRequiredService<IKeyProvider>(),
+    secrets.PukKekVersion,
+    secrets.LegacyPukKek,
     services.GetRequiredService<ILogger<PukEscrow>>()));
 
 builder.Services.AddSingleton(services => new AgentEnrolmentService(
@@ -110,6 +126,22 @@ builder.Services.AddSingleton(services => new AgentEnrolmentService(
     services.GetRequiredService<ILogger<AgentEnrolmentService>>()));
 
 var app = builder.Build();
+
+// Open the key provider now rather than at the first enrolment. A module that
+// is missing, a token that was never provisioned and a PIN that is wrong are
+// all deployment faults, and a deployment fault belongs in the first ten lines
+// of a container log rather than in a job that failed at somebody's desk.
+//
+// Unlike the schema check below this does not continue: a PIN attempt is
+// spent when it is wrong, and a service that keeps starting and keeps trying
+// locks the token.
+var keys = app.Services.GetRequiredService<IKeyProvider>();
+
+app.Logger.LogInformation(
+    "Master secrets: {Provider} - {Custody}. Keys present: {Keys}",
+    keys.Name,
+    keys.Custody.Description,
+    keys.Keys.Count == 0 ? "none" : string.Join(", ", keys.Keys.Select(k => k.Label)));
 
 // Compare the mappings against the live schema once, at start. This logs and
 // continues on purpose: a missing column should produce one readable line while
@@ -822,7 +854,8 @@ app.MapPost("/api/credentials/issue",
 app.MapGet("/api/system/status",
     async (HttpContext context, Blinky.Pki.ICertificateAuthority ca,
         Blinky.Directory.IDirectory directory, IConfiguration configuration,
-        Database database, CancellationToken ct) =>
+        Database database, IKeyProvider keyProvider,
+        KeyProviders.SecretsOptions secretsOptions, CancellationToken ct) =>
     {
         if (!IsOperator(context))
         {
@@ -907,6 +940,68 @@ app.MapGet("/api/system/status",
                     new { tier = "Hsm", implemented = false,
                           detail = "A PKCS#11 device that will not export the key at all." },
                 },
+            },
+
+            // Where the two master secrets live, which provider answered, and
+            // what has been asked of it since this process started. Named
+            // separately from keyCustody above because they are two questions:
+            // a deployment can hold the CA key in a device while its
+            // management-key master is still a configuration value, and a
+            // console that reported one number for both would hide that.
+            //
+            // No PIN, no module configuration beyond the path, and no key
+            // material. The labels are not secret - they are derived from the
+            // purpose and the version, and an operator has to be able to match
+            // them against what the token holds.
+            secrets = new
+            {
+                provider = keyProvider.Name,
+
+                custody = new
+                {
+                    keyProvider.Custody.Tier,
+                    keyProvider.Custody.Description,
+                    keyProvider.Custody.ProductionReady,
+                    keyProvider.Custody.Detail,
+                },
+
+                // What this deployment writes with now. An older generation
+                // stays readable; these are the ones new material is created
+                // under.
+                writingWith = new
+                {
+                    managementKey = secretsOptions.ManagementKeyVersion,
+                    pukKek = secretsOptions.PukKekVersion,
+                },
+
+                // Every generation the provider actually found, which is not
+                // the same list: a rotation that was configured but never
+                // provisioned looks exactly like one that worked, until an
+                // enrolment.
+                keys = keyProvider.Keys
+                    .OrderBy(k => k.Key.Purpose)
+                    .ThenBy(k => k.Key.Version)
+                    .Select(k => new
+                    {
+                        purpose = k.Key.Purpose.ToString(),
+                        version = k.Key.Version,
+                        k.Label,
+                        k.NonExportable,
+                        usage = Usage(keyProvider, k.Key),
+                    }),
+
+                // The state docs/06-security.md calls supported rather than
+                // broken: no master means every card keeps its factory
+                // management key.
+                managementKeyMasterConfigured = keyProvider.Has(
+                    new KeyRef(KeyPurpose.ManagementKeyMaster,
+                        secretsOptions.ManagementKeyVersion)),
+
+                // Whether anything can still open the PUKs escrowed before the
+                // provider existed. Worth saying out loud, because the answer
+                // becomes no the moment somebody tidies the old value out of
+                // the environment.
+                legacyPukEnvelopesReadable = secretsOptions.LegacyPukKek.Length > 0,
             },
 
             revocationList = new
@@ -1578,7 +1673,7 @@ app.MapPost("/api/tokens/{serial:long}/unblock",
 // asking visible.
 app.MapPost("/api/tokens/{serial:long}/management-key",
     (long serial, HttpContext context, ManagementKeyDerivation derivation,
-        ILoggerFactory loggers) =>
+        Database database, ILoggerFactory loggers) =>
     {
         var agent = (Agent)context.Items["agent"]!;
 
@@ -1589,14 +1684,53 @@ app.MapPost("/api/tokens/{serial:long}/management-key",
             return Results.Json(new { configured = false }, statusCode: 200);
         }
 
+        // Which generation of the master this card was diversified under. The
+        // column existed and nothing ever wrote it, so every diversified token
+        // read back as Lost - see TokenClassification.ManagementKey.
+        //
+        // The rule for a token that has no version recorded is not "the current
+        // one". A card personalised before versioning existed can only have
+        // been done under generation one, and telling it apart from a factory
+        // card is what PukState's sibling ManagementKeyState is for: a card
+        // still on the factory key has not been diversified under anything, so
+        // it gets whatever this deployment writes with now.
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        var token = session.Query<Token>().SingleOrDefault(t => t.Serial == serial);
+
+        var version = token switch
+        {
+            null => derivation.Version,
+            { ManagementKeyVersion: > 0 } known => known.ManagementKeyVersion,
+            { ManagementKeyState: ManagementKeyState.Default or ManagementKeyState.Unknown } =>
+                derivation.Version,
+            _ => 1,
+        };
+
+        if (token is not null && token.ManagementKeyVersion != version)
+        {
+            token.ManagementKeyVersion = version;
+            token.UpdatedAt = DateTime.UtcNow;
+            session.Update(token);
+        }
+
+        transaction.Commit();
+
+        // Recorded at disclosure rather than on the agent's word that the card
+        // took it, and that is safe rather than sloppy: the card's own metadata
+        // decides Default from Diversified, so a key that was never written
+        // still reads as a factory card. What the version adds is the answer to
+        // "diversified under which master", which nothing else can supply.
         loggers.CreateLogger("Blinky.ManagementKey").LogInformation(
-            "Agent {Agent} took the management key for token {Serial}",
-            agent.Hostname, serial);
+            "Agent {Agent} took the management key for token {Serial}, generation {Version}",
+            agent.Hostname, serial, version);
 
         return Results.Ok(new
         {
             configured = true,
-            secret = Convert.ToBase64String(derivation.For(serial)),
+            version,
+            secret = Convert.ToBase64String(derivation.For(serial, version)),
         });
     });
 
@@ -1987,64 +2121,19 @@ app.Run();
 /// the first wrong byte would leak the prefix to anything that can time a
 /// request.
 /// </summary>
+
 /// <summary>
-/// Thirty-two bytes of base64 from configuration, and nothing else will do.
+/// What has been asked of one key since this process started.
 /// </summary>
 /// <remarks>
-/// Deliberately not optional and deliberately not generated. Escrow that
-/// silently starts working with a throwaway key looks identical to escrow that
-/// works, right up to the first unblock after a restart.
+/// Null when nothing has, and null when the provider is not the auditing one -
+/// which cannot happen in a running deployment and can in a test, and either
+/// way is better reported as absent than as zero.
 /// </remarks>
-/// <summary>
-/// The master every token's management key is derived from.
-/// </summary>
-/// <remarks>
-/// Absent is allowed, and that is the difference from the PUK KEK above. A
-/// deployment without one leaves every card on the factory management key -
-/// which is the state every card is in today, and a state worth being able to
-/// run in while this is rolled out. It is reported by /api/system/status
-/// rather than being silently fine.
-///
-/// Losing it is losing every card: nothing anywhere records what a card's key
-/// is, so there is no other way back to one. That is the trade docs/06 makes
-/// deliberately - a stolen database yields no key either.
-/// </remarks>
-static byte[] ManagementKeyMaster(IConfiguration configuration)
-{
-    var configured = configuration["Blinky:ManagementKey:Master"];
-
-    if (string.IsNullOrWhiteSpace(configured))
-    {
-        return [];
-    }
-
-    var master = Convert.FromBase64String(configured);
-
-    return master.Length >= 32
-        ? master
-        : throw new InvalidOperationException(
-            $"Blinky:ManagementKey:Master decodes to {master.Length} bytes; "
-            + "32 is the minimum. Generate one with: openssl rand -base64 32");
-}
-
-static byte[] PukKek(IConfiguration configuration)
-{
-    var configured = configuration["Blinky:Puk:Kek"];
-
-    if (string.IsNullOrWhiteSpace(configured))
-    {
-        throw new InvalidOperationException(
-            "Blinky:Puk:Kek is not set. PUK escrow needs a 32-byte key, base64 encoded; "
-            + "generate one with: openssl rand -base64 32");
-    }
-
-    var kek = Convert.FromBase64String(configured);
-
-    return kek.Length == 32
-        ? kek
-        : throw new InvalidOperationException(
-            $"Blinky:Puk:Kek decodes to {kek.Length} bytes; AES-256 needs 32.");
-}
+static object? Usage(IKeyProvider provider, KeyRef key) =>
+    provider is AuditingKeyProvider audited && audited.Usage.TryGetValue(key, out var usage)
+        ? new { usage.Operations, usage.Failures, usage.LastUsedAt }
+        : null;
 
 /// <summary>
 /// An extended key usage as a person reads it, falling back to the OID.

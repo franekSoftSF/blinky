@@ -4,6 +4,7 @@ using Blinky.Api.Persistence;
 using Blinky.Contracts;
 using Blinky.Domain;
 using Blinky.Domain.Entities;
+using Blinky.Secrets;
 using NHibernate.Linq;
 
 namespace Blinky.Api.Secrets;
@@ -31,9 +32,33 @@ namespace Blinky.Api.Secrets;
 /// The KEK protecting these is one of the three secrets in docs/06-security.md
 /// whose loss means every escrowed PUK.
 /// </para>
+/// <para>
+/// <b>Two schemes, and the envelope says which.</b> Version one used the
+/// configured KEK directly as the AES-GCM key, which is exactly the shape a
+/// device cannot serve: using a key as an AES key means holding its bytes.
+/// From version two the KEK is a derivation root held by an
+/// <see cref="IKeyProvider"/>, and each envelope gets its own key derived from
+/// it, the associated data and the nonce. That makes the catastrophic failure
+/// of GCM structurally impossible here - no two envelopes share a key, so no
+/// two share a key and a nonce - and it needs one operation from the device
+/// rather than a cipher mode whose support varies between providers.
+/// Version one envelopes stay readable, because the alternative is a migration
+/// that bricks every token escrowed before the upgrade.
+/// </para>
 /// </remarks>
-public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> logger)
+/// <param name="legacyKek">
+/// The raw configured KEK. Decryption of version one envelopes only, and empty
+/// in a deployment that never had any.
+/// </param>
+public sealed class PukEscrow(
+    Database database,
+    IKeyProvider provider,
+    int kekVersion,
+    byte[] legacyKek,
+    ILogger<PukEscrow> logger)
 {
+    private readonly KeyRef kek = new(KeyPurpose.PukKek, kekVersion);
+
     /// <summary>
     /// Eight digits, which is the PIV maximum and what every token ships with.
     /// </summary>
@@ -392,16 +417,28 @@ public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> 
         // else's PUK.
         var associated = $"puk|{token.Serial}";
 
-        using var aes = new AesGcm(kek, tag.Length);
-        aes.Encrypt(nonce, plaintext, ciphertext, tag, Encoding.ASCII.GetBytes(associated));
+        var envelopeKey = EnvelopeKey(kek, associated, nonce);
 
-        CryptographicOperations.ZeroMemory(plaintext);
+        try
+        {
+            using var aes = new AesGcm(envelopeKey, tag.Length);
+            aes.Encrypt(nonce, plaintext, ciphertext, tag, Encoding.ASCII.GetBytes(associated));
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(envelopeKey);
+            CryptographicOperations.ZeroMemory(plaintext);
+        }
 
         return new SecretEnvelope
         {
             Token = token,
             Kind = kind,
-            KeyVersion = 1,
+
+            // Which scheme and which generation opened this. Read back by
+            // Unwrap rather than assumed, so a rotation leaves the rows written
+            // before it readable instead of merely present.
+            KeyVersion = kek.Version,
             Ciphertext = ciphertext,
             Nonce = nonce,
             Tag = tag,
@@ -413,14 +450,88 @@ public sealed class PukEscrow(Database database, byte[] kek, ILogger<PukEscrow> 
     private string Unwrap(SecretEnvelope envelope)
     {
         var plaintext = new byte[envelope.Ciphertext.Length];
+        var key = OpeningKey(envelope);
 
-        using var aes = new AesGcm(kek, envelope.Tag.Length);
+        try
+        {
+            using var aes = new AesGcm(key, envelope.Tag.Length);
 
-        aes.Decrypt(envelope.Nonce, envelope.Ciphertext, envelope.Tag, plaintext,
-            Encoding.ASCII.GetBytes(envelope.AssociatedData));
+            aes.Decrypt(envelope.Nonce, envelope.Ciphertext, envelope.Tag, plaintext,
+                Encoding.ASCII.GetBytes(envelope.AssociatedData));
+        }
+        finally
+        {
+            if (envelope.KeyVersion != PukKekVersions.Legacy)
+            {
+                CryptographicOperations.ZeroMemory(key);
+            }
+        }
 
         return Encoding.ASCII.GetString(plaintext);
     }
+
+    /// <summary>
+    /// The key that opens one envelope, chosen by the generation it records.
+    /// </summary>
+    private byte[] OpeningKey(SecretEnvelope envelope)
+    {
+        if (envelope.KeyVersion == PukKekVersions.Legacy)
+        {
+            if (legacyKek.Length == 0)
+            {
+                throw new PukUnavailableException(
+                    "This PUK was escrowed under the configured KEK, and no KEK is configured "
+                    + "any more. Set Blinky:Puk:Kek back to the value it was escrowed with, or "
+                    + "the token can only be recovered by resetting it.");
+            }
+
+            return legacyKek;
+        }
+
+        return EnvelopeKey(new KeyRef(KeyPurpose.PukKek, envelope.KeyVersion),
+            envelope.AssociatedData, envelope.Nonce);
+    }
+
+    private byte[] EnvelopeKey(KeyRef key, string associated, byte[] nonce)
+    {
+        if (!provider.Has(key))
+        {
+            throw new PukUnavailableException(
+                $"No PUK key-encryption key is available for {key.Label}. Set Blinky:Puk:Kek, "
+                + "or provision the key into the token with scripts/new-secret-keys.sh.");
+        }
+
+        return PukEnvelope.Key(provider, key, associated, nonce);
+    }
+}
+
+/// <summary>
+/// One key per envelope, derived from the root, the token it belongs to and the
+/// nonce it will be used with.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The nonce is in the derivation as well as in the cipher. That is not belt
+/// and braces: it is what makes every envelope key unique, so the one mistake
+/// AES-GCM does not forgive - the same key with the same nonce twice - cannot
+/// be made here even by a caller that repeats a nonce.
+/// </para>
+/// <para>
+/// Its own type rather than a method on the escrow so that the scheme can be
+/// tested without a database. The escrow needs one to do anything at all, and
+/// "the derivation is right" should not be a question that waits for Postgres.
+/// </para>
+/// </remarks>
+public static class PukEnvelope
+{
+    /// <summary>The domain string one envelope's key is derived under.</summary>
+    public static string Info(KeyRef key, string associatedData, byte[] nonce) =>
+        $"{key.Domain}|{associatedData}|{Convert.ToHexString(nonce)}";
+
+    /// <summary>The AES-256 key for one envelope.</summary>
+    public static byte[] Key(IKeyProvider provider, KeyRef key, string associatedData,
+        byte[] nonce) =>
+        KeyDerivation.Expand(provider, key, Info(key, associatedData, nonce), 32);
 }
 
 /// <summary>The current PUK, its replacement, and the row that tracks the swap.</summary>

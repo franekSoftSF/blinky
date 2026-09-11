@@ -18,6 +18,7 @@
     <ProjectReference Include="..\Blinky.Directory\Blinky.Directory.csproj" />
     <ProjectReference Include="..\Blinky.Pki\Blinky.Pki.csproj" />
     <ProjectReference Include="..\Blinky.Piv\Blinky.Piv.csproj" />
+    <ProjectReference Include="..\Blinky.Secrets\Blinky.Secrets.csproj" />
   </ItemGroup>
 
   <ItemGroup>

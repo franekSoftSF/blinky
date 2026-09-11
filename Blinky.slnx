@@ -10,6 +10,7 @@
     <Project Path="src/Blinky.Piv/Blinky.Piv.csproj" />
     <Project Path="src/Blinky.Directory/Blinky.Directory.csproj" />
     <Project Path="src/Blinky.Pki/Blinky.Pki.csproj" />
+    <Project Path="src/Blinky.Secrets/Blinky.Secrets.csproj" />
     <Project Path="src/Blinky.Worker/Blinky.Worker.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -21,5 +22,6 @@
     <Project Path="tools/IssueOnCard/IssueOnCard.csproj" />
     <Project Path="tools/PivProbe/PivProbe.csproj" />
     <Project Path="tools/SchemaTool/SchemaTool.csproj" />
+    <Project Path="tools/SecretsTool/SecretsTool.csproj" />
   </Folder>
 </Solution>

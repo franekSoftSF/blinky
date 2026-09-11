@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Blinky.Api\Blinky.Api.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Directory\Blinky.Directory.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Pki\Blinky.Pki.csproj" />
+    <ProjectReference Include="..\..\src\Blinky.Secrets\Blinky.Secrets.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Agent.Service\Blinky.Agent.Service.csproj" />
   </ItemGroup>
 

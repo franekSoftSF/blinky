@@ -1,5 +1,4 @@
-using System.Security.Cryptography;
-using System.Text;
+using Blinky.Secrets;
 
 namespace Blinky.Api.Secrets;
 
@@ -17,17 +16,23 @@ namespace Blinky.Api.Secrets;
 /// So this is a function, not a table. Nothing here reads or writes anything;
 /// the same master and the same serial give the same key on any machine, for
 /// as long as the master exists — which is also the whole risk, and why the
-/// master belongs in an HSM once there is one.
+/// master belongs behind <see cref="IKeyProvider"/> rather than in a byte array
+/// this class holds.
 /// </para>
 /// <para>
-/// HKDF rather than a hash of the two values concatenated. A plain
-/// <c>SHA256(master || serial)</c> would work today and is the shape that
-/// invites a length-extension or a collision between "serial 1" followed by
-/// something and "serial 12" - and the cost of doing it properly is one call.
+/// The derivation is HKDF-Expand over a domain string, which is what it always
+/// was: for a 32-byte output, <c>HKDF.DeriveKey(master, info)</c> is one HMAC
+/// block under the extract of that master, so a deployment that imports the
+/// extract of the master it already has keeps every card's key unchanged. The
+/// extract half moved out of this file because it cannot be performed by a
+/// device holding the master as a key — see <see cref="KeyDerivation"/>, where
+/// that is explained and where the equality is pinned by a test.
 /// </para>
 /// </remarks>
-public sealed class ManagementKeyDerivation(byte[] master)
+public sealed class ManagementKeyDerivation(IKeyProvider provider, int version)
 {
+    private readonly KeyRef key = new(KeyPurpose.ManagementKeyMaster, version);
+
     /// <summary>
     /// Long enough for every management key algorithm PIV defines: AES-256 is
     /// the largest at 32 bytes, and the agent takes what its own card needs.
@@ -40,30 +45,15 @@ public sealed class ManagementKeyDerivation(byte[] master)
     public const int SecretLength = 32;
 
     /// <summary>
-    /// Separates this use of the master from any other that ever shares it.
+    /// Which generation of the master this derives from.
     /// </summary>
-    private const string Purpose = "blinky/management-key/v1";
-
-    /// <summary>The key material for one token.</summary>
     /// <remarks>
-    /// The serial is rendered as decimal text rather than as bytes so that the
-    /// value is reproducible from a printed serial number by hand, in the
-    /// situation where somebody has to.
+    /// Recorded against the token when a key is handed out, so that a rotation
+    /// is a new version beside the old one and a job per card, rather than a
+    /// fleet nobody can tell apart. <c>Token.ManagementKeyVersion</c> is the
+    /// column this lands in.
     /// </remarks>
-    public byte[] For(long serial)
-    {
-        if (master.Length == 0)
-        {
-            throw new InvalidOperationException(
-                "No management key master is configured, so no key can be derived. "
-                + "See MANAGEMENT_KEY_MASTER in .env.");
-        }
-
-        var info = Encoding.UTF8.GetBytes(
-            $"{Purpose}/{serial.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
-
-        return HKDF.DeriveKey(HashAlgorithmName.SHA256, master, SecretLength, salt: null, info);
-    }
+    public int Version => key.Version;
 
     /// <summary>Whether a master is configured at all.</summary>
     /// <remarks>
@@ -71,5 +61,41 @@ public sealed class ManagementKeyDerivation(byte[] master)
     /// card is in today. Worth being able to say so out loud rather than
     /// failing at the first write.
     /// </remarks>
-    public bool IsConfigured => master.Length > 0;
+    public bool IsConfigured => provider.Has(key);
+
+    /// <summary>The key material for one token.</summary>
+    /// <remarks>
+    /// The serial is rendered as decimal text rather than as bytes so that the
+    /// value is reproducible from a printed serial number by hand, in the
+    /// situation where somebody has to.
+    /// </remarks>
+    /// <param name="generation">
+    /// Which master to derive from, for a card that was diversified under an
+    /// older one. Omitted means the generation this deployment writes with.
+    /// </param>
+    /// <remarks>
+    /// A rotation is a new generation beside the old one, so a card is only
+    /// manageable for as long as the master it was personalised under is still
+    /// held. That is why the provider looks for every generation up to the
+    /// configured one, and why this takes the card's, not the deployment's.
+    /// </remarks>
+    public byte[] For(long serial, int? generation = null)
+    {
+        var wanted = generation is { } version && version != key.Version
+            ? new KeyRef(KeyPurpose.ManagementKeyMaster, version)
+            : key;
+
+        if (!provider.Has(wanted))
+        {
+            throw new InvalidOperationException(
+                $"No management key master is configured for {wanted.Label}, so no key can be "
+                + "derived. See MANAGEMENT_KEY_MASTER in .env, or provision the key into the "
+                + "token with scripts/new-secret-keys.sh.");
+        }
+
+        var info = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"{wanted.Domain}/{serial}");
+
+        return KeyDerivation.Expand(provider, wanted, info, SecretLength);
+    }
 }

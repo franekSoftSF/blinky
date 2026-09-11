@@ -18,7 +18,7 @@
     ]
   },
   "status": {
-    "updated": "2026-09-11",
+    "updated": "2026-09-12",
     "phase": 2,
     "phaseTitle": "Issue something",
     "state": "gate-met",
@@ -195,6 +195,18 @@
       "type": "cli",
       "phase": 1,
       "state": "done"
+    },
+    {
+      "name": "Blinky.Secrets",
+      "type": "library",
+      "phase": 2,
+      "state": "done-unverified"
+    },
+    {
+      "name": "tools/SecretsTool",
+      "type": "cli",
+      "phase": 2,
+      "state": "done-unverified"
     },
     {
       "name": "Blinky.Fido",
@@ -731,7 +743,16 @@
       "state": "done",
       "owner": "cloud-ai",
       "proof": "On 2026-08-24, token 29051525 (firmware 5.7.1) went from factory to fully personalised and was used to log in to Windows for half an hour. ykman piv info reports no default management key and no default PIN, and prints 'Management key is stored on the YubiKey, protected by PIN'. The management key is derived per token from a master and written nowhere; the PIN was chosen by the holder under protest of the enrolment, which refuses a card still on the factory value; the PUK was replaced and escrowed. Both unblock paths were exercised on that card - online through the agent, and offline by reading a challenge to an operator and typing the answer back - and the audit distinguishes them by actor and reason.",
-      "gap": "The master lives in .env rather than an HSM, so /api/system/status reports productionReady false. A card is personalised only at its first enrolment, so every card issued before this keeps its factory management key and PUK and cannot be brought in without wiping it. There is no way to personalise a card without also issuing to it, which means a card already carrying a working credential cannot have its PIN or PUK replaced."
+      "gap": "The master can now live in a token rather than in .env - see 0025a - but the default is still .env, so a deployment that has not provisioned one reports productionReady false. A card is personalised only at its first enrolment, so every card issued before this keeps its factory management key and PUK and cannot be brought in without wiping it. There is no way to personalise a card without also issuing to it, which means a card already carrying a working credential cannot have its PIN or PUK replaced."
+    },
+    {
+      "id": "0025a",
+      "phase": 2,
+      "title": "The master secrets behind PKCS#11, with SoftHSM2 as the reference module",
+      "state": "done-unverified",
+      "owner": "cloud-ai",
+      "proof": "src/Blinky.Secrets holds one interface with one operation - a keyed MAC computed where the key lives - and no way to ask for a key. Two providers behind it: Configuration, which is the arrangement that existed before and is still the default, and Pkcs11, which is a module path and a token label. Keys are separated by purpose and by generation with derived labels, the provider discovers every generation up to the configured one so a rotation can overlap, and it reads CKA_SENSITIVE and CKA_EXTRACTABLE back from the token and refuses a key the device would hand out. Use is counted and logged with neither input nor output, and reported per key on /api/system/status alongside which provider answered. The HKDF extract half moved out of the process because a token holding the master as a key cannot perform it; the token holds the extract instead, which for a 32-byte output makes the derivation bit-for-bit what it was, so an existing deployment imports the extract of its current master and every card keeps the key it holds. That equality is pinned by a test. Token.ManagementKeyVersion is written for the first time, which also fixes diversified cards reading back as Lost. 419 unit tests pass.",
+      "gap": "The nine PKCS#11 integration tests have never run: no module on the machine this was written on, and CI is windows-latest. They skip with a reason rather than passing, and docs/09-lab.md has the two commands that run them. Everything about the token path is therefore written and unproved - the derivation arithmetic either side of a migration is proved, the module interaction is not. The compose wiring and the Dockerfile change are unverified for the same reason. The PUK escrow needed a real transition rather than a compatible one, because the KEK was used directly as a cipher key: generation two derives a key per envelope, generation one stays readable through the configured KEK, and Blinky:Puk:Kek has to stay set for as long as any generation-one envelope exists. Nothing re-wraps them. The CA issuing key is not part of this - it is still the file tier, and 0021 owns it."
     },
     {
       "id": "0026",
