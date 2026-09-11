@@ -1651,7 +1651,11 @@ app.MapPost("/api/tokens/offline-unblock",
 
         try
         {
-            var answer = escrow.AnswerOffline(request.Challenge, "operator");
+            // Named, not "operator". This row is the record that a recovery
+            // secret for somebody's card was read out to a person over a
+            // telephone, and it is one of the two events retention may never
+            // remove. A name is the only thing that makes it an answer.
+            var answer = escrow.AnswerOffline(request.Challenge, ActorFor(context));
 
             return answer is null
                 ? Results.NotFound(new { error = "no such token" })
@@ -2059,6 +2063,26 @@ static string ExtendedKeyUsageName(string oid) => oid switch
     Blinky.Pki.BuiltIn.BuiltInCertificateAuthority.SmartCardLogonOid => "Smart Card Logon",
     _ => oid,
 };
+
+/// <summary>
+/// Who to record as the actor of an operator action.
+/// </summary>
+/// <remarks>
+/// The signed-in account's username where there is one, and the literal
+/// <c>shared-token</c> where the caller presented the shared secret instead.
+/// <para>
+/// Naming the fallback rather than writing "operator" for both is the whole
+/// point. A PUK disclosure recorded as "operator" says an unknown person was
+/// given the recovery secret for somebody's card; the same row reading
+/// <c>shared-token</c> says the same thing and admits it, which means the
+/// remaining hole is countable in the audit view rather than invisible. It
+/// disappears when 0053e removes the shared token.
+/// </para>
+/// </remarks>
+static string ActorFor(HttpContext context) =>
+    context.Items.TryGetValue("operator", out var signedIn) && signedIn is OperatorAccount account
+        ? account.Username
+        : "shared-token";
 
 /// <summary>
 /// The bearer token a signed-in console presents, from either header.

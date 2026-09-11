@@ -986,10 +986,11 @@
     {
       "id": "0053e",
       "phase": 5,
-      "title": "Named service credentials, and the shared token retired",
+      "title": "The shared token retired",
       "state": "open",
       "owner": "cloud-ai",
-      "proof": "One credential per caller, so the audit trail says which script acted rather than \"an operator\". The shared token goes here and not before: fifteen call sites and every script in scripts/ use it today."
+      "proof": "Operator actions now record who took them: ActorFor names the signed-in account, and a caller using the shared secret is recorded as shared-token rather than as operator, so what is left of the hole is countable in the audit view instead of invisible. The offline PUK disclosure - one of the two events retention may never remove - was written with the literal operator and now carries a name.",
+      "gap": "Premise checked on 2026-09-11 and half of it was wrong: nothing automated uses the shared token. install-server.sh only generates it and the revocation-list publisher reads /pki/, which is public. There is no caller to issue a named service credential to. The removal itself is blocked on the console, which signs in by pasting X-Blinky-Operator and has no sign-in page - deleting the token today takes it offline."
     },
     {
       "id": "0054",

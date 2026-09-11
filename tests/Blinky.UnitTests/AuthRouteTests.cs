@@ -89,6 +89,50 @@ public class AuthRouteTests
     }
 
     /// <summary>
+    /// A PUK disclosure records a name, not the word "operator".
+    /// </summary>
+    /// <remarks>
+    /// That row is the record that the recovery secret for somebody's card was
+    /// read out to a person over a telephone, and it is one of the two events
+    /// retention may never remove. It was written with the literal
+    /// <c>"operator"</c>, which turns the question "who was given it" into a
+    /// row that cannot answer.
+    /// <para>
+    /// Checked in the source because the value is chosen at one call site and
+    /// a literal is exactly the kind of thing that comes back during an
+    /// unrelated edit.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void Disclosing_a_puk_records_who_asked()
+    {
+        var program = SourceOf("src", "Blinky.Api", "Program.cs");
+
+        Assert.Contains("escrow.AnswerOffline(request.Challenge, ActorFor(context))",
+            program, StringComparison.Ordinal);
+        Assert.DoesNotContain("AnswerOffline(request.Challenge, \"operator\")",
+            program, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The caller that used the shared secret is named as having used it.
+    /// </summary>
+    /// <remarks>
+    /// Writing "operator" for both a signed-in person and the shared token
+    /// would hide the difference that matters. Naming the fallback makes the
+    /// remaining hole countable in the audit view until 0053e closes it.
+    /// </remarks>
+    [Fact]
+    public void The_shared_token_is_named_in_the_audit_rather_than_disguised()
+    {
+        var program = SourceOf("src", "Blinky.Api", "Program.cs");
+
+        Assert.Contains("static string ActorFor(HttpContext context)", program,
+            StringComparison.Ordinal);
+        Assert.Contains("\"shared-token\"", program, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A session is one of the two ways to be an operator.
     /// </summary>
     /// <remarks>
