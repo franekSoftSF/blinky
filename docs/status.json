@@ -768,7 +768,8 @@
       "phase": 3,
       "title": "AdcsCertificateAuthority and CMC with an EA signature",
       "state": "open",
-      "owner": "cloud-ai"
+      "owner": "cloud-ai",
+      "gap": "An enrolment agent certificate is a prerequisite for the whole phase rather than a feature inside it: ADCS refuses enrol-on-behalf-of without one by both routes, the DCOM connector and CES/CEP, and no configuration turns the requirement off. Blinky.Pki has no equivalent and never did - 0023a is where it gets one. The same problem from opposite directions: 0023a is chosen because the evidence is worth having, 0030 is compulsory."
     },
     {
       "id": "0031",

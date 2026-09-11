@@ -75,6 +75,23 @@ console, and log into a Samba4 domain with it. No ADCS anywhere.
 
 ## Phase 3 — ADCS
 
+**An enrolment agent certificate is a prerequisite for this whole phase, not a
+feature inside it.** Enrol-on-behalf-of against ADCS is refused without one, by
+both routes — the DCOM connector of 0032 and CES/CEP of 0031 — because that
+signature is how the CA enforces who was allowed to ask on somebody else's
+behalf. There is no configuration that turns the requirement off.
+
+`Blinky.Pki`'s built-in CA has no equivalent and never did; 0023a is where it
+gets one. So the two are the same problem arriving from opposite directions:
+0023a is a thing we choose to build because the evidence is worth having, and
+0030 is a thing ADCS will not proceed without. Neither waits for the other, and
+whoever does the first should write the request format so the second can use it.
+
+The certificate itself has to come from somewhere, be valid, and carry
+`1.3.6.1.4.1.311.20.2.1`. 0033 refuses registration with a named reason when it
+is missing or expired, which is the earliest this can be discovered instead of
+at the first enrolment.
+
 | # | Patch | DoD |
 |---|---|---|
 | 0030 | `AdcsCertificateAuthority` + CMC request construction with an EA signature | A CMC produced by Blinky is accepted by a lab ADCS |
