@@ -151,7 +151,7 @@ public class Pkcs11KeyProviderTests
 
         Assert.False(provider.Custody.ProductionReady);
         Assert.Contains(provider.Keys, key =>
-            key.Label == Pkcs11TestToken.ExtractableLabel && !key.NonExportable);
+            key.Label == Pkcs11TestToken.ExtractableLabel && key.NonExportable == false);
     }
 
     /// <summary>

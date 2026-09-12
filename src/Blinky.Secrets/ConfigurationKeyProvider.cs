@@ -69,8 +69,16 @@ public sealed class ConfigurationKeyProvider : IKeyProvider
         + "dumps and anything that collects either. Correct for a laboratory, and the thing to "
         + "change first before it is not one.");
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Custody is reported as unknown rather than as false. There is no device
+    /// here to answer the question, and the answer that matters - "this secret
+    /// is readable" - is already the whole of <see cref="Custody"/>. Saying it
+    /// again per key would put the strongest warning on this page onto the
+    /// default arrangement, which is how a warning stops being read.
+    /// </remarks>
     public IReadOnlyCollection<KeyDescription> Keys => keys.Keys
-        .Select(k => new KeyDescription(k, k.Label, NonExportable: false))
+        .Select(k => new KeyDescription(k, k.Label, NonExportable: null))
         .ToList();
 
     public bool Has(KeyRef key) => keys.ContainsKey(key);

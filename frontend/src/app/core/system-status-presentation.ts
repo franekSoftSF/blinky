@@ -14,8 +14,24 @@ export function custodyLabel(custody: SystemStatus['keyCustody']): string {
       : 'Odpowiednie dla laboratorium';
 }
 
-export function secretExportTone(nonExportable: boolean): StatusTone {
-  return nonExportable ? 'success' : 'danger';
+// Three states, because a provider holding configuration values has no device
+// to ask. Answering "exportable" there is true and useless: it puts the
+// strongest warning on this page onto the default arrangement, and makes the
+// case that matters - a token holding a key it would hand out - look the same
+// as an ordinary laboratory. Null is neutral; danger is reserved for a device
+// that was asked and said yes.
+export function secretExportTone(nonExportable: boolean | null): StatusTone {
+  return nonExportable === null ? 'neutral' : nonExportable ? 'success' : 'danger';
+}
+
+export function secretExportLabel(
+  nonExportable: boolean | null,
+): 'secretsExportUnknown' | 'secretsProtected' | 'secretsExportable' {
+  return nonExportable === null
+    ? 'secretsExportUnknown'
+    : nonExportable
+      ? 'secretsProtected'
+      : 'secretsExportable';
 }
 export function secretWriteKeyPresent(
   secrets: SecretsStatus,
