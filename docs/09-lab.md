@@ -321,6 +321,42 @@ dotnet run --project tools/AdcsProbe -- --connector https://127.0.0.1:18444 \
   that identity may not be allowed to reset its access list and the service stops
   at start.
 
+## A card from the console through ADCS — the plan, not yet run
+
+Written on 2026-09-13, after the probe had issued and revoked through the connector
+and before anything below was done. It is the phase 3 gate: the same enrolment
+workflow, the same console and the same audit trail, with a Microsoft CA behind them.
+Each step says who does it and what shows it worked, and the plan stops at the first
+step whose check fails.
+
+**One decision first, and it is the lab owner's.** The stack on BY-CACMS is wired to
+the Samba4 domain `blinky.lab` and the built-in CA, and phase 2's gate was reached on
+it. Pointing it at ADCS means a second `.env` for `ad.digitalworkspace.pl`: a
+different directory, a different CA, and cardholders who do not exist in the other
+domain. Either keep a copy of the current `.env` and switch back afterwards, or bring
+up a second stack elsewhere. The steps assume the first.
+
+| # | Who | Step | Checked by |
+|---|---|---|---|
+| 1 | owner | Confirm BY-CACMS (`172.16.5.11`) reaches HZCS01 (`172.16.2.40`) and ADC01 (`172.16.2.10`) across the two subnets, and resolves `ad.digitalworkspace.pl` names | `nc -vz 172.16.2.40 8444` after step 3, `nc -vz 172.16.2.10 636` now |
+| 2 | Claude | Generate the API's client certificate for the connector and print its SHA-256. It buys the agent's signature, so it goes into `certs/` on BY-CACMS with its password in a separate file, never into `.env` | The fingerprint, handed over in the session |
+| 3 | owner | On HZCS01: `Connector:ListenUrl` on the server's address instead of `127.0.0.1`, the fingerprint from step 2 added to `AllowedClientThumbprints`, and an inbound firewall rule for 8444 from `172.16.5.11` only. Restart the service | `AdcsProbe` from BY-CACMS with the new client certificate: describe answers, and a certificate not in the list gets 403 |
+| 4 | owner | A read-only directory account in `ad.digitalworkspace.pl` for the API, and the password typed into BY-CACMS's `.env` by the owner. ADC01's LDAPS chain goes where `LDAPTLS_CACERT` points - today that is the built-in CA's chain, which will not verify ADC01 | `POST /api/directory/test`: bound, encrypted; `/api/directory/test-resolve` for `BlinkyUser` returns a UPN and a SID |
+| 5 | Claude | The ADCS keys in `.env`: `CA_BACKEND=Adcs`, `ADCS_CONNECTOR_URL=https://172.16.2.40:8444`, `ADCS_CONNECTOR_FINGERPRINT` (the listener's, as pinned for the probe), `ADCS_CLIENT_CERTIFICATE*`, `ADCS_TEMPLATE_SMARTCARD_LOGON=BlinkySmartCardLogon`, `ADCS_KEY_ALGORITHM` to match step 7. `docker compose config` first, because the compose keys for ADCS have never been parsed | API and worker start; `/api/system/status` shows the CA reachable and the agent; `GET /api/system/ca/checks` ends `Unverified` with only `template-publication-unknown` |
+| 6 | owner | A Windows workstation joined to `ad.digitalworkspace.pl`, with Yubico's minidriver and no other smart-card middleware, the Blinky agent installed against BY-CACMS as for `win` above, and the YubiKey passed through. For ECC, `EnumerateECCCerts` set by policy; otherwise RSA 2048 | The agent enrols its machine certificate and the console lists the machine and the reader |
+| 7 | owner, from the console | Enrol `BlinkyUser` onto the YubiKey, profile `smartcard-logon`, one key algorithm chosen on purpose - RSA 2048 first, because it needs no workstation policy | The job ends installed; the certificate's subject, UPN and SID extension name `BlinkyUser`, not `svc_blinky`; the connector log has one `Signed as enrolment agent for AD\BlinkyUser` with the card's key hash |
+| 8 | owner | Smart-card logon to that workstation as `BlinkyUser` | A session. If not, `certutil -scinfo` on the workstation and the DC's System log for KDC events before anything else |
+| 9 | owner, from the console | Suspend the credential | The CA lists it *revoked, certificate hold*, by `AD\svc_blinky`; Blinky's `audit_events` has `credential.revoked` naming the operator; after the next CRL the logon from step 8 fails |
+
+What this does not cover, and is not pretending to: lifting the suspension at the CA
+(Blinky does not un-revoke), a second CA, CES, and certificate manager restrictions on
+`svc_blinky`, whose grant is CA-wide in this lab.
+
+What has to be true on the domain side before step 8, which a Microsoft enterprise CA
+usually arranges and nobody here has checked: the issuing CA in `NTAuthCertificates`,
+a *Kerberos Authentication* certificate on ADC01, and a CRL both ADC01 and the
+workstation can fetch. `certutil -dcinfo verify` on ADC01 answers the first two.
+
 ## Running the PKCS#11 tests
 
 They are skipped where no module is installed, which includes CI on
