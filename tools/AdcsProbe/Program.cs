@@ -2,7 +2,7 @@
 //
 // Asks a Blinky.AdcsConnector what it is in front of, over the same transport
 // the API uses, with the same pinning and the same version check. Read-only
-// unless --submit or --revoke is given.
+// unless --submit or --revoke is given; --retrieve only reads.
 //
 //     dotnet run --project tools/AdcsProbe -- \
 //         --connector https://ca01.blinky.lab:8444 \
@@ -41,6 +41,7 @@ var agentPassword = arguments.GetValueOrDefault("agent-password");
 var remoteAgent = arguments.ContainsKey("remote-agent");
 var check = arguments.GetValueOrDefault("check");
 var revoke = arguments.GetValueOrDefault("revoke");
+var retrieve = arguments.GetValueOrDefault("retrieve");
 var subject = arguments.GetValueOrDefault("subject", "CN=probe");
 var requester = arguments.GetValueOrDefault("requester");
 var keyAlgorithm = arguments.GetValueOrDefault("key", "ECCP256");
@@ -53,7 +54,7 @@ if (connector is null || clientPath is null)
         + "       [--ca-config 'HOST\\CA name'] [--submit <template> --requester 'DOMAIN\\user'\n"
         + "        (--remote-agent | --agent <p12> --agent-password ...)]\n"
         + "       [--check <template> [--remote-agent]] [--key ECCP256|RSA2048]\n"
-        + "       [--revoke <serial> [--reason CessationOfOperation]]");
+        + "       [--revoke <serial> [--reason CessationOfOperation]] [--retrieve <request id>]");
 
     return 2;
 }
@@ -157,6 +158,25 @@ try
         return 0;
     }
 
+    if (retrieve is not null)
+    {
+        // Read-only. An ADCS serial number ends in the request id, so a certificate
+        // somebody holds the serial of can be read back without issuing another.
+        var answer = await transport.RetrieveAsync(int.Parse(retrieve, System.Globalization.CultureInfo.InvariantCulture));
+
+        Console.WriteLine();
+        Console.WriteLine($"request     {answer.RequestId}: {answer.Disposition}"
+            + (answer.StatusMessage is { Length: > 0 } status ? $" - {status}" : string.Empty));
+
+        if (answer.Certificate is { Length: > 0 } der)
+        {
+            using var retrieved = X509CertificateLoader.LoadCertificate(Convert.FromBase64String(der));
+            Describe(retrieved);
+        }
+
+        return 0;
+    }
+
     if (template is null)
     {
         return 0;
@@ -189,20 +209,8 @@ try
     var issued = await ca.IssueAsync(Context(subject, requester, template, keyAlgorithm));
 
     Console.WriteLine();
-    Console.WriteLine($"issued      {issued.Certificate.Subject}");
-    Console.WriteLine($"serial      {issued.SerialNumber}");
     Console.WriteLine($"chain       {issued.Chain.Count} certificate(s)");
-
-    // What ADCS put in, which is not what the request asked for: the subject and
-    // the UPN come from the directory object the requester name points at, and the
-    // key usage from the template - an ECDH template may not allow a signature.
-    foreach (var extension in issued.Certificate.Extensions)
-    {
-        if (extension.Oid?.Value is "2.5.29.15" or "2.5.29.17" or "1.3.6.1.4.1.311.25.2")
-        {
-            Console.WriteLine($"{extension.Oid.FriendlyName ?? extension.Oid.Value,-11} {extension.Format(false)}");
-        }
-    }
+    Describe(issued.Certificate);
 
     return 0;
 }
@@ -220,6 +228,26 @@ catch (CertificateAuthorityException ex)
     Console.Error.WriteLine($"refused     {ex.Message}");
 
     return 1;
+}
+
+/// <summary>
+/// What ADCS put in, which is not what the request asked for: the subject and the UPN
+/// come from the directory object the requester name points at, and the key usage from
+/// the template - and a certificate allowed only key agreement logs nobody on.
+/// </summary>
+static void Describe(X509Certificate2 certificate)
+{
+    Console.WriteLine($"issued      {certificate.Subject}");
+    Console.WriteLine($"serial      {certificate.SerialNumber}");
+    Console.WriteLine($"key         {certificate.PublicKey.Oid.FriendlyName ?? certificate.PublicKey.Oid.Value}");
+
+    foreach (var extension in certificate.Extensions)
+    {
+        if (extension.Oid?.Value is "2.5.29.15" or "2.5.29.37" or "2.5.29.17" or "1.3.6.1.4.1.311.25.2")
+        {
+            Console.WriteLine($"{extension.Oid.Value,-11} {extension.Format(false)}");
+        }
+    }
 }
 
 /// <summary>
