@@ -304,9 +304,11 @@ internal sealed class FakeAdcsTransport : IAdcsTransport
     public int? LastReason { get; private set; }
 
     public Task<AdcsDescribeResponse> DescribeAsync(CancellationToken ct = default) =>
-        Task.FromResult(new AdcsDescribeResponse(
-            AdcsTransport.SchemaVersion, "stub", "CA01\\Lab Issuing CA", "Lab Issuing CA",
-            AdminAvailable));
+        DescribeFault is not null
+            ? Task.FromException<AdcsDescribeResponse>(DescribeFault)
+            : Task.FromResult(new AdcsDescribeResponse(
+                AdcsTransport.SchemaVersion, "stub", "CA01\\Lab Issuing CA", "Lab Issuing CA",
+                AdminAvailable, CertificateChain: CaChain, Templates: PublishedTemplates));
 
     public Task<AdcsSubmitResponse> SubmitAsync(
         byte[] request, AdcsRequestFormat format, string? attributes, CancellationToken ct = default)
@@ -321,6 +323,20 @@ internal sealed class FakeAdcsTransport : IAdcsTransport
 
     public Task<AdcsSubmitResponse> RetrieveAsync(int requestId, CancellationToken ct = default) =>
         Task.FromResult(Answer());
+
+    public IReadOnlyList<string>? PublishedTemplates { get; init; } = ["BlinkySmartcardUser"];
+
+    public Dictionary<string, AdcsTemplateInfo> TemplateObjects { get; } = new(StringComparer.Ordinal);
+
+    public Exception? DescribeFault { get; init; }
+
+    /// <summary>What a CA that exists hands over. Null is a CA that did not answer.</summary>
+    public string? CaChain { get; init; } = "MIIBAA==";
+
+    public Task<AdcsTemplateInfo> DescribeTemplateAsync(string name, CancellationToken ct = default) =>
+        Task.FromResult(TemplateObjects.TryGetValue(name, out var info)
+            ? info
+            : new AdcsTemplateInfo(name, Found: false, Account: "LAB\\svc-blinky"));
 
     public Task<AdcsRevokeResponse> RevokeAsync(
         string serialNumber, int reason, DateTimeOffset? effectiveAt, CancellationToken ct = default)

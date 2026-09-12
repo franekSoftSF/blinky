@@ -69,6 +69,7 @@ if (gate.IsEmpty)
 builder.Services.AddSingleton(gate);
 builder.Services.AddSingleton<ICertificateServices, CertificateServices>();
 builder.Services.AddSingleton<CertificateServiceHost>();
+builder.Services.AddSingleton<ITemplateDirectory, ActiveDirectoryTemplates>();
 
 // Loaded now, so an enrolment agent that is configured and unusable - expired,
 // missing the Certificate Request Agent policy, or with a key this account

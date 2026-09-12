@@ -49,4 +49,14 @@ public interface IAdcsTransport
     Task<AdcsRevokeResponse> RevokeAsync(
         string serialNumber, int reason, DateTimeOffset? effectiveAt,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// The template object as the requesting account sees it - 0033.
+    /// </summary>
+    /// <remarks>
+    /// On the transport because both transports can answer it: the connector reads
+    /// the directory as the integration account, and CEP returns the same
+    /// attributes for the templates the caller may enrol for.
+    /// </remarks>
+    Task<AdcsTemplateInfo> DescribeTemplateAsync(string name, CancellationToken ct = default);
 }

@@ -174,6 +174,14 @@ public sealed class AdcsCertificateAuthority : ICertificateAuthority, IDisposabl
     }
 
     /// <summary>
+    /// Everything about this CA that can be found wrong before anybody enrols -
+    /// 0033. Asks the CA, the template objects and the enrolment agent, so it is a
+    /// network call and is run when somebody asks, not at start.
+    /// </summary>
+    public Task<RegistrationReport> CheckRegistrationAsync(CancellationToken ct = default) =>
+        AdcsRegistration.CheckAsync(Name, transport, agents, settings, ct);
+
+    /// <summary>
     /// Null, and not a stub. ADCS publishes its own revocation list at its own
     /// distribution point, and the console links that rather than pretending to
     /// own it - <see cref="CaCapabilities.PublishesCrl"/> says so too.

@@ -411,17 +411,59 @@ unusable without it, since registering one is the entire operator-facing story
 of this phase. Listable, readable, creatable, editable, deletable, in the same
 change that makes the backend selectable.
 
-### 5. Registration checks — patch 0033
+### 5. Registration checks — patch 0033. **Written, run against no forest**
 
-`describe` was shaped to answer these before the first enrolment rather than
-during it: the EA certificate missing or expired, the service account without
-*Enroll*, the template supplying the subject in the request (which breaks the
-SID extension — [04](04-pki-backends.md)), and revocation wanted without
-*Issue and Manage Certificates*. Each refusal names which one it was.
+`AdcsRegistration` in `Blinky.Pki/Adcs`, reachable as `GET /api/system/ca/checks`
+and `tools/AdcsProbe --check <template>`. It asks the CA, reads each mapped
+template out of the directory and opens the enrolment agent, and returns findings
+with a stable code and a sentence.
 
-One caveat for whoever writes it: `Templates` is `null` when the connector
-could not establish the list, and that is **not** the same as an empty list.
-Reading null as "the CA has no templates" would refuse a correct registration.
+**Everything the template can get wrong is on the template object**, so the
+connector reads that object as the integration account — this machine is in the
+domain and this account's rights are the question — and the container decides
+what is wrong with it. `GET /connector/templates/{name}` returns the attributes as
+stored; CEP would return the same ones, so the decision does not depend on the
+transport.
+
+| Code | Severity | Found when |
+|---|---|---|
+| `ca-unreachable` | Refusal | The connector did not answer. Reported alone, because a dozen unknowns under it would bury it |
+| `ca-certificate-unavailable` | Unknown | The connector answered and the CA behind it would not hand over its own certificate — how a config string naming a CA that is not there looks |
+| `agent-unusable` | Refusal | The enrolment agent is missing, expired, or not an enrolment agent |
+| `agent-custody` | Warning | The agent's key is in a file, exportable, or its provider will not say |
+| `revocation-unavailable` | Warning | Revocation is allowed and the account may not manage certificates |
+| `no-template`, `template-unmapped` | Refusal | A profile has no template, so it cannot be issued |
+| `template-not-published` | Refusal | The CA's own list does not include the template |
+| `template-not-found` | Refusal | No template of that name in the forest — usually a display name |
+| `template-supplies-subject` | Refusal | `msPKI-Certificate-Name-Flag` has 0x1: no SID extension, no logon since KB5014754 |
+| `template-no-agent-signature` | Refusal | `msPKI-RA-Signature` is 0: the agent's signature proves nothing |
+| `template-wrong-signature-policy` | Refusal | The required signature is not *Certificate Request Agent* |
+| `account-cannot-enroll` | Refusal | The template's security descriptor does not grant Enroll to the account or any group in its token |
+| `template-publication-unknown`, `template-unreadable`, `template-attribute-unknown` | Unknown | Something could not be read |
+
+**Three outcomes, not a bool.** `Accepted` means nothing refused and nothing left
+unestablished; `Unverified` means nothing refused and something could not be
+checked; `Refused` is any refusal. The first version counted refusals only, and
+its first run — a connector on a machine with no CA and no domain — reported the
+registration **accepted**: the CA did not exist and the template could not be
+read, and neither was a refusal. Unknown is its own severity now, and the same run
+reports `UNVERIFIED` with `ca-certificate-unavailable` and `template-unreadable`.
+
+**Enroll is evaluated the way templates are actually over-granted.** Full Control
+and an extended-rights entry with no object type both grant it, and a check
+looking only for the Enroll GUID would have refused templates the CA issues from.
+A matching deny wins over any allow. Full Control is stored by the directory as
+the mapped rights; the test for it was first written with SDDL `GA` — the generic
+bit the directory never stores — and failed against correct code, so both forms
+are accepted and both are tested.
+
+**What it is not yet:** a registration. There is no flow that creates a CA
+instance and refuses it — CA instances are not rows until 0022's open half — so the
+check runs against the one CA the configuration names, when somebody asks. And it
+has not read a real template: the attribute names, the Enroll GUID and the
+version 4 encoding of `msPKI-RA-Application-Policies` are from MS-CRTD, and the
+policy is matched by substring for that last reason. The lab server is where each
+of those is confirmed or recorded as wrong.
 
 ### 6. Deployment
 

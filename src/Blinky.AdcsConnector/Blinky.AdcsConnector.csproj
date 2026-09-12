@@ -27,6 +27,8 @@
     <!-- CMS, for the enrolment agent's signature. The key lives on this
          server; the PKIData it signs is built on the other side of the wire. -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <!-- Template objects and their security descriptors, for 0033. -->
+    <PackageReference Include="System.DirectoryServices" />
   </ItemGroup>
 
   <ItemGroup>

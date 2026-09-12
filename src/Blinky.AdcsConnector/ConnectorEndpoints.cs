@@ -55,6 +55,38 @@ public static class ConnectorEndpoints
                 agent.Signer?.Describe()));
         });
 
+        app.MapGet("/connector/templates/{name}", async (
+            string name, ITemplateDirectory templates, ConnectorOptions options,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(name) || name.Length > 256)
+            {
+                return Problem("A template name is between 1 and 256 characters.");
+            }
+
+            try
+            {
+                // Off the request thread and bounded, for the reason every CA call
+                // here is: ADSI blocks, and a domain controller that does not
+                // answer would otherwise hold the caller for as long as it likes.
+                var info = await Task.Run(() => templates.Find(name), CancellationToken.None)
+                    .WaitAsync(TimeSpan.FromSeconds(Math.Max(5, options.RequestTimeoutSeconds)), ct);
+
+                return Results.Ok(info);
+            }
+            catch (Exception ex) when (ex is TimeoutException or InvalidOperationException
+                                           or System.Runtime.InteropServices.COMException)
+            {
+                // A 502 naming the directory rather than the CA. "The template
+                // could not be read" and "the template is wrong" are different
+                // findings, and 0033 reports the first as unknown, not as a refusal.
+                return Results.Json(
+                    new AdcsProblem("The directory could not be read for template " + name + ": "
+                                    + ex.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
         app.MapPost("/connector/sign", (
             AdcsSignRequest request, ConnectorEnrolmentAgent agent, HttpContext context,
             ILoggerFactory loggers) =>

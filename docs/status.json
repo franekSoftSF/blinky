@@ -831,8 +831,10 @@
       "id": "0033",
       "phase": 3,
       "title": "Backend registration checks",
-      "state": "open",
-      "owner": "cloud-ai"
+      "state": "partly-done",
+      "owner": "cloud-ai",
+      "proof": "AdcsRegistration returns named findings with stable codes, reachable as GET /api/system/ca/checks and tools/AdcsProbe --check. The three refusals the definition of done names each have a test: a template whose msPKI-Certificate-Name-Flag supplies the subject, an enrolment agent that is missing or expired, and an account the template's security descriptor does not grant Enroll - evaluated against the account's token groups, with Full Control and all-extended-rights counted as grants and a matching deny winning. Also refused: no authorized signature, a signature under the wrong application policy, a template not published on the CA or not in the forest. The connector reads the template object as the integration account through GET /connector/templates/{name}. Three outcomes rather than a bool: the first version counted refusals only and, run against a connector with no CA and no domain behind it, reported the registration accepted with nothing verified; Unknown is its own severity now and the same run reports Unverified with the CA's missing certificate and the unreadable template named.",
+      "gap": "No registration flow exists to refuse anything: CA instances are not database rows until 0022's open half, so the check runs on request against the one CA configuration names. It has not read a real template - the attribute names, the Enroll GUID and the version 4 encoding of msPKI-RA-Application-Policies are from MS-CRTD and unconfirmed, and the bench machine is not in a domain, so ADSI answered that the domain does not exist. Restricted Enrollment Agents and certificate manager restrictions are not detected, so they cannot yet be recommended with evidence. The lab server HZCS01 has no CA installed."
     },
     {
       "id": "0034",

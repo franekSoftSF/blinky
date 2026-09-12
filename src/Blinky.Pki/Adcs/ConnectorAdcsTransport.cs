@@ -158,6 +158,12 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
             "/connector/revoke", body, ct);
     }
 
+    public async Task<AdcsTemplateInfo> DescribeTemplateAsync(
+        string name, CancellationToken ct = default) =>
+        await ReadAsync<AdcsTemplateInfo>(
+            await Send(() => client.GetAsync("/connector/templates/" + Uri.EscapeDataString(name), ct)),
+            ct);
+
     public async Task<AdcsEnrolmentAgentInfo?> DescribeAgentAsync(CancellationToken ct = default) =>
         (await DescribeAsync(ct)).EnrolmentAgent;
 

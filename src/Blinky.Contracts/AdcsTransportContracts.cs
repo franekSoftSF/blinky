@@ -218,3 +218,52 @@ public sealed record AdcsSignResponse(string SignedData);
 /// A refusal, with a reason a person can act on. Never carries the request.
 /// </summary>
 public sealed record AdcsProblem(string Reason, string? Detail = null);
+
+/// <summary>
+/// What the directory says about one certificate template, read by whoever can
+/// read it - the connector, as the integration account.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Everything 0033 has to refuse is on the template object itself, so this is the
+/// template object and nothing interpreted. The container decides what is wrong
+/// with it; the connector only reads, because the decision is the same whichever
+/// transport produced the facts - CEP returns the same attributes.
+/// </para>
+/// <para>
+/// Nullable fields mean "could not be read", never "false". A registration check
+/// that turned an unreadable attribute into a refusal would refuse correct
+/// templates on every estate that restricts read access to the Configuration
+/// partition, and one that turned it into a pass would pass broken ones.
+/// </para>
+/// </remarks>
+/// <param name="Found">False when no template of that name exists in the forest.</param>
+/// <param name="NameFlags">
+/// <c>msPKI-Certificate-Name-Flag</c>. Bit 0x1 is "supply in the request", which
+/// is the setting that removes the SID extension.
+/// </param>
+/// <param name="AuthorizedSignatures">
+/// <c>msPKI-RA-Signature</c>: how many authorised signatures the CA demands.
+/// Zero means the CA issues on the requester's own authority, and an enrolment
+/// agent's signature is then decoration.
+/// </param>
+/// <param name="SignaturePolicies">
+/// <c>msPKI-RA-Application-Policies</c>, as stored. Version 4 templates encode
+/// more than OIDs into this attribute, so it is passed through rather than parsed.
+/// </param>
+/// <param name="AccountMayEnroll">
+/// Whether the account the connector runs as holds Enroll on the template, from
+/// its security descriptor and that account's own groups. Null when the
+/// descriptor could not be read.
+/// </param>
+public sealed record AdcsTemplateInfo(
+    string Name,
+    bool Found,
+    string? DisplayName = null,
+    int? SchemaVersion = null,
+    int? NameFlags = null,
+    int? AuthorizedSignatures = null,
+    IReadOnlyList<string>? SignaturePolicies = null,
+    IReadOnlyList<string>? ExtendedKeyUsages = null,
+    bool? AccountMayEnroll = null,
+    string? Account = null);

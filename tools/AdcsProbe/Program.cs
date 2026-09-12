@@ -39,6 +39,7 @@ var template = arguments.GetValueOrDefault("submit");
 var agentPath = arguments.GetValueOrDefault("agent");
 var agentPassword = arguments.GetValueOrDefault("agent-password");
 var remoteAgent = arguments.ContainsKey("remote-agent");
+var check = arguments.GetValueOrDefault("check");
 var subject = arguments.GetValueOrDefault("subject", "CN=probe");
 
 if (connector is null || clientPath is null)
@@ -47,7 +48,8 @@ if (connector is null || clientPath is null)
         "usage: --connector https://host:8444 --client <p12> [--client-password ...]\n"
         + "       (--fingerprint <sha256> | --server-ca <pem-or-der>)\n"
         + "       [--ca-config 'HOST\\CA name'] [--submit <template> --subject 'CN=...'\n"
-        + "        (--remote-agent | --agent <p12> --agent-password ...)]");
+        + "        (--remote-agent | --agent <p12> --agent-password ...)]\n"
+        + "       [--check <template> [--remote-agent]]");
 
     return 2;
 }
@@ -98,6 +100,36 @@ try
     else
     {
         Console.WriteLine("agent       none held by this connector");
+    }
+
+    if (check is not null)
+    {
+        // The registration check the API runs, against the template named here
+        // for the smart-card profile. Read-only: it asks the CA, reads the
+        // template out of the directory and opens the agent, and submits nothing.
+        using var checkedCa = new AdcsCertificateAuthority(
+            "probe",
+            transport,
+            remoteAgent ? new ConnectorEnrolmentAgentSource(transport, connector) : null,
+            new AdcsCaOptions(TemplateMap: new Dictionary<string, string> { ["smartcard-logon"] = check }));
+
+        var report = await checkedCa.CheckRegistrationAsync();
+
+        Console.WriteLine();
+        Console.WriteLine($"registration {report.Outcome.ToString().ToUpperInvariant()}");
+
+        foreach (var finding in report.Findings)
+        {
+            Console.WriteLine($"  {finding.Severity,-8} {finding.Code}");
+            Console.WriteLine($"           {finding.Message}");
+        }
+
+        return report.Outcome switch
+        {
+            RegistrationOutcome.Accepted => 0,
+            RegistrationOutcome.Unverified => 5,
+            _ => 4,
+        };
     }
 
     if (template is null)

@@ -873,6 +873,57 @@ app.MapPost("/api/credentials/issue",
 // Assembled here rather than left to the console to infer from five calls,
 // because "is this deployment healthy" is one question and answering it from
 // pieces is how a console ends up saying yes while one piece says no.
+// What is wrong with the configured Microsoft CA before anybody enrols - 0033.
+//
+// A separate call from the status page, because it is expensive in a way the
+// status page must not be: it asks the CA, reads every mapped template out of the
+// directory, and opens the enrolment agent on the connector. The console asks it
+// when an operator opens the CA page, not every few seconds.
+//
+// "Registration" is what the roadmap calls this, and there is no registration
+// flow yet - CA instances are not rows until 0022's open half lands. So this is
+// the check that flow will run, available now against the one CA the
+// configuration names.
+app.MapGet("/api/system/ca/checks",
+    async (HttpContext context, Blinky.Pki.ICertificateAuthority ca, CancellationToken ct) =>
+    {
+        if (!IsOperator(context))
+        {
+            return Results.Json(new { error = "an operator token is required" },
+                statusCode: 401);
+        }
+
+        if (ca is not Blinky.Pki.Adcs.AdcsCertificateAuthority adcs)
+        {
+            // Not an empty list: an empty list reads as "checked and fine", and
+            // nothing here was checked.
+            return Results.Ok(new
+            {
+                name = ca.Name,
+                backend = CaBackend.BuiltIn.ToString(),
+                checkedHere = false,
+                outcome = (string?)null,
+                findings = Array.Empty<object>(),
+            });
+        }
+
+        var report = await adcs.CheckRegistrationAsync(ct);
+
+        return Results.Ok(new
+        {
+            name = report.CaName,
+            backend = CaBackend.Adcs.ToString(),
+            checkedHere = true,
+            outcome = report.Outcome.ToString(),
+            findings = report.Findings.Select(finding => new
+            {
+                finding.Code,
+                severity = finding.Severity.ToString(),
+                finding.Message,
+            }),
+        });
+    });
+
 app.MapGet("/api/system/status",
     async (HttpContext context, Blinky.Pki.ICertificateAuthority ca,
         Blinky.Directory.IDirectory directory, IConfiguration configuration,

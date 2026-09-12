@@ -45,6 +45,7 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
     [
         "/api/console/overview",
         "/api/system/status",
+        "/api/system/ca/checks",
 
         "/api/jobs/inventory",
         "/api/jobs/enrol",

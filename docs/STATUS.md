@@ -382,6 +382,16 @@ would re-revoke every revoked certificate at ADCS each cycle. The same change
 stopped the scheduler writing revocation-list jobs on a worker with no CA to run
 them, which had been expiring in the console as failures.
 
+**0033's checks exist and have refused nothing real yet.** A template that takes the
+subject from the request, a missing or expired enrolment agent, and an account
+without Enroll on the template are each refused by name, along with a template
+that requires no agent signature or the wrong one. The connector reads the template
+object as the integration account. The result has three outcomes, because the
+first version counted only refusals and reported a registration against a
+non-existent CA and an unreadable template as accepted. No forest has been read:
+the bench is not in a domain, and there is no registration flow yet for the check
+to stop.
+
 What is left is the database, an account and a CA. CA instances and profiles are
 still not read from the database, so a deployment has one CA and templates are
 mapped per profile in configuration, and `CaInstance` has no CRUD. **The integration account the
