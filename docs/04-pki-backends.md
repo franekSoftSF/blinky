@@ -272,6 +272,14 @@ card-signed PKCS#10
            ── issues
 ```
 
+The enrolment agent's key lives behind `IEnrolmentAgentKeyStore` in
+`Blinky.Pki/Adcs`, a sibling of the built-in CA's `ICaKeyStore` and for the same
+reason: the signature happens behind the interface and the key is never handed
+out. It is not a third `KeyPurpose` behind `Blinky.Secrets`, because that
+interface computes an HMAC and a CMC needs a CMS signature —
+[06](06-security.md) has the detail, and the key now ranks second on that
+document's custody list.
+
 Prerequisites on the ADCS side, all of which Blinky verifies at backend
 registration rather than at first use:
 

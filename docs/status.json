@@ -152,7 +152,7 @@
       "name": "Blinky.Pki.Adcs",
       "type": "feature",
       "phase": 3,
-      "state": "not-started"
+      "state": "partial"
     },
     {
       "name": "Blinky.AdcsConnector",
@@ -791,9 +791,10 @@
       "id": "0030",
       "phase": 3,
       "title": "AdcsCertificateAuthority and CMC with an EA signature",
-      "state": "open",
+      "state": "partly-done",
       "owner": "cloud-ai",
-      "gap": "An enrolment agent certificate is a prerequisite for the whole phase rather than a feature inside it: ADCS refuses enrol-on-behalf-of without one by both routes, the DCOM connector and CES/CEP, and no configuration turns the requirement off. Blinky.Pki has no equivalent and never did - 0023a is where it gets one. The same problem from opposite directions: 0023a is chosen because the evidence is worth having, 0030 is compulsory. And there is nowhere for that key to live yet: IKeyProvider from 0025a has exactly one operation, an HMAC, because both existing secrets are KDF roots - an EA signature is a CMS SignerInfo over a CMC, so a third KeyPurpose would be a key the provider cannot use. ICaKeyStore is the right shape but signs certificates rather than CMS. docs/15-adcs-connector.md recommends a sibling interface, file-backed first and PKCS#11 second; docs/06-security.md does not mention this key at all and has to."
+      "proof": "Blinky.Pki/Adcs exists: IAdcsTransport with the connector's wire contract as its vocabulary rather than a translated one, AdcsCertificateAuthority written once for both transports, CmcRequest, and IEnrolmentAgentKeyStore. Capabilities are not hopeful - PublishesCrl false because ADCS keeps its own list, SupportsSuppliedSubject false because a template that takes the subject from the request emits no SID extension, SupportsRevocation taken from what the CA said about Issue and Manage Certificates. UnderSubmission raises its own IssuancePendingException carrying the request id, because a request waiting for a certificate manager is neither a success nor a refusal and folding it into either loses a certificate. The CMC is hand-encoded against RFC 5272 - .NET has no CMC type and certenroll is COM - and the tests assert the four sequences, the [0] implicit tag and the cardholder's PKCS#10 byte for byte inside the agent's signature. The template is not in the CMC: it travels in the attribute string both ICertRequest3 and CES already accept. Twenty-seven tests, no CA needed. The enrolment agent key question is settled and written down: a sibling of ICaKeyStore rather than a third KeyPurpose, because IKeyProvider computes an HMAC and a CMS SignerInfo is not one; FileEnrolmentAgentKeyStore refuses to load without Blinky:Adcs:AllowFileKeys and refuses a certificate ADCS would refuse - no private key, out of date, or no Certificate Request Agent EKU, absent EKU extension included. docs/06-security.md now ranks this key second in the custody list.",
+      "gap": "The definition of done names a lab ADCS and there is none, so nothing here has met a Microsoft CA: the tests prove the structure is the one intended, not that a CA agrees with it. Nothing calls this class either - Blinky.Api and Blinky.Worker still register the built-in CA as the only ICertificateAuthority there can be, and there is no IAdcsTransport implementation yet, which is the remaining half of 0032. A PKCS#11 enrolment agent key store does not exist; file-backed is the only tier and reports itself as not production-ready every time. Listed in full in docs/15-adcs-connector.md."
     },
     {
       "id": "0031",

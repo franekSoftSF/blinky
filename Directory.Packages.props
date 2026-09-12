@@ -10,6 +10,10 @@
     <PackageVersion Include="System.DirectoryServices.Protocols" Version="10.0.0" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Pkcs11Interop" Version="5.3.0" />
+    <!-- Not in the shared framework's reference assemblies, which is a surprise
+         worth writing down: SignedCms and ContentInfo are present at runtime and
+         a library that uses them still needs the package to compile. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.0" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Extensions.Hosting" Version="9.0.0" />
     <PackageVersion Include="Serilog.Settings.Configuration" Version="9.0.0" />

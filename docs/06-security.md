@@ -77,18 +77,53 @@ all are today. It is visible in the system status rather than silently fine.
 
 ## Key custody
 
-Three secrets, in descending order of how bad it is to lose them:
+Four secrets, in descending order of how bad it is to lose them:
 
 1. **The CA issuing key.** In the HSM in production, SoftHSM in the compose
    default, and a file only when `Blinky:Ca:AllowFileKeys` is explicitly set.
    Compromise means arbitrary certificates the domain trusts.
-2. **The management-key master.** HSM-resident, never exported. Compromise means
+2. **The enrolment agent key**, where ADCS is the backend. Compromise means
+   certificates from somebody else's CA in anybody's name — bounded only by what
+   the target template allows and by Restricted Enrollment Agents where the CA
+   has them configured. It ranks below the issuing key because the CA still
+   enforces the template, and above the master because what it produces is a
+   logon identity rather than a card that can be reprogrammed.
+3. **The management-key master.** HSM-resident, never exported. Compromise means
    every managed token can be reprogrammed. Its derivation is versioned so
    rotation is a version bump and a job per token, not a fleet rebuild.
-3. **The PUK KEK.** Same HSM. Compromise means every escrowed PUK.
+4. **The PUK KEK.** Same HSM. Compromise means every escrowed PUK.
 
 The root CA key is not on this list because it is not in the system: generated
 offline, used to sign the issuing CA, and stored off the host.
+
+### Where the enrolment agent key lives
+
+`IEnrolmentAgentKeyStore` in `src/Blinky.Pki/Adcs`, and it is a sibling of
+`ICaKeyStore` rather than a third `KeyPurpose` behind `IKeyProvider`. That was
+the plan until the interface could be read: `IKeyProvider` has exactly one
+operation, an HMAC, because both secrets it was built for are key-derivation
+roots. An enrolment agent signature is a CMS `SignerInfo` over a CMC, and no
+amount of HMAC produces one.
+
+So the same arrangement the CA key already has. The signature happens behind the
+interface, there is no way to ask for the key, and a file-backed store refuses to
+load unless `Blinky:Adcs:AllowFileKeys` is set — the same explicit opt-in, for
+the same reason: nobody decides to keep this in a file, they inherit it from
+whatever got the lab working and never look again. `FileEnrolmentAgentKeyStore`
+is the only implementation today and reports itself as not production-ready every
+time.
+
+It also refuses a certificate ADCS would refuse, at load rather than at
+somebody's enrolment: no private key, outside its validity dates, or missing
+*Certificate Request Agent* (`1.3.6.1.4.1.311.20.2.1`). A certificate carrying no
+extended key usage extension at all is refused too — that absence means
+"unrestricted" for TLS and means "the CA will not accept this as an enrolment
+agent" here.
+
+**The key never reaches the connector.** `Blinky.AdcsConnector` is a transport:
+it builds no request and signs nothing, so the CMC arrives already signed and the
+CA server holds no copy of this credential. See
+[15](15-adcs-connector.md).
 
 ## Where the second and third of those actually live
 

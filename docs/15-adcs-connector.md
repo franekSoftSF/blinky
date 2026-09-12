@@ -27,11 +27,10 @@ connector is small:
 - The connector references `Blinky.Contracts` and **not** `Blinky.Pki`. It
   cannot see `ICertificateAuthority` and cannot grow half an implementation of
   one.
-- The enrolment agent's private key stays in the container and never reaches
-  the CA server. A key there would be a second copy of the most powerful
-  credential in the system, on a machine Blinky does not own. Where it lives
-  *inside* the container is an open question and not a settled one — see the
-  main-tree list below.
+- The enrolment agent's private key stays in the container, behind
+  `IEnrolmentAgentKeyStore`, and never reaches the CA server. A key there would
+  be a second copy of the most powerful credential in the system, on a machine
+  Blinky does not own. [06](06-security.md) ranks it second in the custody list.
 - The connector never sees a PIN, a PUK or a management key. Nothing it logs
   can leak one, and there is no redaction rule here because there is nothing to
   redact.
@@ -168,55 +167,55 @@ second call into a CA that has not finished the first.
 
 ## What has to exist in the main tree
 
-The connector compiles, starts, refuses unauthorised callers and answers all
-five endpoints. Nothing in Blinky calls it yet. This is what is missing, in the
-order it has to arrive.
+The connector compiles, starts, refuses unauthorised callers and answers all five
+endpoints. The CA class that would call it now exists too. **Nothing wires the
+two together, and no Microsoft CA has seen either.** This is what is missing, in
+the order it has to arrive.
 
-### 1. `Blinky.Pki/Adcs/` — patch 0030, the prerequisite
+### 1. `Blinky.Pki/Adcs/` — patch 0030. **Written, and no CA has seen it**
 
-Nothing else on this list is worth doing first.
-
-- **`IAdcsTransport`** — the interface with two implementations behind it, one
-  per transport. Shape it from the contract in
-  `Blinky.Contracts/AdcsTransportContracts.cs`, which was written for it:
-  describe, submit, retrieve, revoke.
+- **`IAdcsTransport`** — describe, submit, retrieve, revoke, in the wire
+  contract's own vocabulary rather than a translated one. A translating layer is
+  where the two transports would stop behaving identically.
 - **`AdcsCertificateAuthority : ICertificateAuthority`** — the one place that
-  builds a request and reads an answer. `DescribeAsync` maps the connector's
-  `describe` onto `CaCapabilities` with `PublishesCrl: false`,
-  `SupportsSuppliedSubject: false` and `SupportsRevocation` taken from
-  `AdminAvailable`.
-- **CMC construction with an enrolment agent signature.** The hard half, and
-  the half 0023a needs a compatible answer to for the built-in CA. Whoever
-  writes the first should write the request format so the second can use it.
-- **Somewhere for the enrolment agent's key to live, and it is not
-  `IKeyProvider` as it stands.** This document said it was, before 0025a landed
-  and the interface could be read: `IKeyProvider` has exactly one operation,
-  `Mac`, an HMAC-SHA256 — and its own comment explains why, since both of
-  Blinky's existing secrets are KDF roots. An enrolment agent signature is a CMS
-  `SignerInfo` over a CMC, which is an asymmetric signature and a certificate,
-  and no amount of HMAC produces one. A third `KeyPurpose` would be a key the
-  provider cannot use.
+  builds a request and reads an answer, written once for both transports.
+  `PublishesCrl` is false, `SupportsSuppliedSubject` is false because a template
+  that takes the subject from the request emits no SID extension, and
+  `SupportsRevocation` follows what the CA said about *Issue and Manage
+  Certificates*. A disposition of `UnderSubmission` raises its own
+  `IssuancePendingException` carrying the request id: it is neither a success nor
+  a refusal, and folding it into either would lose a certificate that is on its
+  way.
+- **`CmcRequest`** — the CMC full PKI request, hand-encoded, because .NET has no
+  CMC type and the alternative is `certenroll`, which is COM, which is the thing
+  the container cannot do. The template is *not* in the CMC: it travels in the
+  attribute string, which both `ICertRequest3` and CES already accept, and two
+  places to change one name is one place too many.
+- **`IEnrolmentAgentKeyStore`** — a sibling of `ICaKeyStore`, not a third
+  `KeyPurpose` behind `IKeyProvider`, for the reason this document got wrong
+  before 0025a landed and the interface could be read. `IKeyProvider` has exactly
+  one operation, an HMAC, because both secrets it was built for are KDF roots; an
+  enrolment agent signature is a CMS `SignerInfo`. `FileEnrolmentAgentKeyStore`
+  refuses to load without `Blinky:Adcs:AllowFileKeys`, and refuses a certificate
+  ADCS would refuse — no key, out of date, or no *Certificate Request Agent*.
+  [06](06-security.md) now ranks this key second in the custody list.
 
-  `ICaKeyStore` in `Blinky.Pki` is the right *shape* — a certificate, a custody
-  tier, and signing that happens behind the interface so the key is never handed
-  out — but its one operation returns an `X509SignatureGenerator`, which is what
-  `CertificateRequest.Create` needs and not what signing a CMC needs. So the
-  recommendation is a sibling of it: an `IEnrolmentAgentKeyStore` carrying the
-  EA certificate and one signing operation, file-backed first and PKCS#11 second,
-  exactly as `ICaKeyStore` grew. Adding a `Sign` to `IKeyProvider` instead is the
-  alternative, and its own documentation says a new operation is additive — but
-  it would put an asymmetric key behind an interface whose every other promise is
-  about KDF roots.
+What remains of 0030 is the part that needs a CA: the definition of done is a CMC
+a lab ADCS accepts, and there is no lab ADCS. The encoding is asserted against
+RFC 5272 in `AdcsEnrolmentAgentTests` — four sequences, the `[0]` implicit tag,
+and the cardholder's PKCS#10 byte for byte inside the agent's signature — which
+proves it is the structure intended, not that a CA agrees.
 
-  Whichever way it goes, [06](06-security.md) says nothing about this key today
-  and has to. It is the credential that lets Blinky ask for a certificate in
-  somebody else's name.
+### 1a. The other half of the transport — patch 0032's remainder
+
 - **`ConnectorAdcsTransport : IAdcsTransport`** — the HTTP client for this
-  document's wire. Client certificate from configuration, the connector's
-  server certificate pinned or trusted explicitly, and a refusal when
-  `AdcsTransport.IsSupported` says the far end speaks a version this build
-  does not. Targets `net10.0` and lives in the container, so it is unit
-  testable without a CA.
+  document's wire. Client certificate from configuration, the connector's server
+  certificate pinned or trusted explicitly, and a refusal when
+  `AdcsTransport.IsSupported` says the far end speaks a version this build does
+  not. `net10.0`, lives in the container, and once it exists the whole path can be
+  exercised against a connector running on a bench with no CA — which reaches the
+  DCOM call and fails there, which is a great deal more than either half proves
+  alone.
 
 ### 2. Choosing a backend at all — today it is hard-wired
 

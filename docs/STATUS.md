@@ -343,15 +343,23 @@ is listed in [15 — the ADCS connector](15-adcs-connector.md), along with three
 things in the DCOM calls that are reasoned from the shape of the API rather
 than from behaviour anybody here observed.
 
-One thing 0025a settled by accident, and not in the direction this phase
-assumed: the enrolment agent's key has nowhere to live. `IKeyProvider` has
-exactly one operation, an HMAC, because both secrets it was built for are
-key-derivation roots — and an enrolment agent signature is a CMS `SignerInfo`
-over a CMC. A third `KeyPurpose` would be a key the provider cannot use.
-`ICaKeyStore` is the right shape and signs certificates rather than CMS, so
-[15](15-adcs-connector.md) recommends a sibling of it, file-backed first and
-PKCS#11 second. [06](06-security.md) does not mention this key at all, and it is
-the credential that lets Blinky ask for a certificate in somebody else's name.
+0030 is written, and its definition of done is not met. `Blinky.Pki/Adcs` now
+holds `IAdcsTransport`, `AdcsCertificateAuthority`, the CMC builder and
+`IEnrolmentAgentKeyStore`, with twenty-seven tests that need no CA. What the DoD
+asks for is a CMC a lab ADCS accepts, and there is no lab ADCS: the tests prove
+the structure is the one RFC 5272 describes, not that a Microsoft CA agrees with
+it. Nothing calls the class either, because no `IAdcsTransport` implementation
+exists yet — that is 0032's remaining half.
+
+The enrolment agent's key question is settled, and not in the direction this
+phase assumed. `IKeyProvider` from 0025a has exactly one operation, an HMAC,
+because both secrets it was built for are key-derivation roots, and an enrolment
+agent signature is a CMS `SignerInfo`. So a third `KeyPurpose` would have been a
+key the provider cannot use. It is a sibling of `ICaKeyStore` instead, file-backed
+only for now and refusing to load without an explicit opt-in or without
+*Certificate Request Agent* on the certificate. [06](06-security.md) now ranks it
+second in the custody list, above the management-key master: what it produces is
+a logon identity in somebody else's name.
 
 ### Phase 4 — The boring lifecycle — **in progress**
 
@@ -505,7 +513,7 @@ exercised against the thing it is really for.
 | `Blinky.Pki` — built-in CA | **partial** | Issues, revokes, publishes a CRL, both topologies. The CA key is still the file tier, and SoftHSM for *that* key is 0021 and outstanding. The master secrets moved separately, under 0025a |
 | `Blinky.Secrets` | **done** | `IKeyProvider`, the configuration and PKCS#11 providers, the audit decorator and the provisioning. Eleven integration tests pass against SoftHSM2; they still skip on CI, which is `windows-latest` with no module, so the run that counts is the one in [09](09-lab.md) |
 | `tools/SecretsTool` | **done** | Initialises a token, generates or imports a key, lists what is there. Provisioned a token inside the API image on BY-CACMS on 2026-09-12; the tests drive the same provisioning code |
-| `Blinky.Pki` — ADCS | open | 0030–0033 |
+| `Blinky.Pki` — ADCS | **partial** | The CA class, the CMC and the enrolment agent key store are written; no transport implementation and no CA has seen it — 0030, then 0031–0033 |
 | `Blinky.AdcsConnector` | **partial** | Listens, authorises, and calls `ICertRequest3` and `ICertAdmin2`. Nothing calls it and it has never met a CA — [15](15-adcs-connector.md) |
 | Angular console | **partial** | Shell, inventory and recycle are up and served by the edge; enrolment waits on the API gaps in [11](11-console-enrolment.md) |
 | `blinky-samba-setup` | **done** | Publishes the chain into the directory and issues the KDC's PKINIT certificate. Verified on BY-DC01 |

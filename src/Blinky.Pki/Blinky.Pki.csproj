@@ -7,6 +7,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- CMS, for the enrolment agent's signature over a CMC. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- So the tests can read the PKIData a CMC is built around without that
+         encoding becoming public surface. Its shape is the one thing here a
+         real CA will reject outright if it is wrong, and it is four sequences
+         deep, so it is worth asserting on directly. -->
+    <InternalsVisibleTo Include="Blinky.UnitTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Blinky.Contracts\Blinky.Contracts.csproj" />
     <ProjectReference Include="..\Blinky.Domain\Blinky.Domain.csproj" />
   </ItemGroup>

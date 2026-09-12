@@ -95,7 +95,7 @@ at the first enrolment.
 
 | # | Patch | DoD |
 |---|---|---|
-| 0030 | `AdcsCertificateAuthority` + CMC request construction with an EA signature | A CMC produced by Blinky is accepted by a lab ADCS |
+| 0030 | `AdcsCertificateAuthority` + CMC request construction with an EA signature | A CMC produced by Blinky is accepted by a lab ADCS. Written: `IAdcsTransport`, `AdcsCertificateAuthority`, `CmcRequest` and `IEnrolmentAgentKeyStore` — the last of which is a sibling of `ICaKeyStore` rather than a third `KeyPurpose` behind `IKeyProvider`, because that interface computes an HMAC and a CMC needs a CMS signature. The encoding is asserted against RFC 5272; **the DoD is not met**, because it names a lab ADCS and there is none |
 | 0031 | CES/CEP transport (MS-WSTEP / MS-XCEP) | Enrolment on behalf of a user through CES from the Linux container, with Kerberos auth |
 | 0032 | `Blinky.AdcsConnector` (DCOM `ICertRequest3`) | Same enrolment through the connector; switching transports is one config value and no other change. The connector half is written — mutual TLS, a fingerprint allowlist, and the four calls — and nothing calls it yet: there is no `IAdcsTransport` until 0030, and the API and the worker have no seam for a second backend. The rest is listed in [15](15-adcs-connector.md) |
 | 0033 | Backend registration checks | Registration fails with a named reason when the template supplies the subject in the request, when the EA certificate is missing or expired, or when the service account lacks Enroll |
