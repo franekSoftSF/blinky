@@ -436,6 +436,13 @@ serves cards of either kind. Both were revoked straight after, and read back thr
 the connector as revoked. The ECC certificate carries digital signature as well as key
 agreement, so it may sign a logon; ECC smart-card logon itself has not been tried.
 
+**The CA names the service account for every revocation, and Blinky named nobody.**
+The API's revocation path wrote no audit event at all. It now writes
+`credential.revoked` with the operator, and `token.unblocked`, both exempt from
+retention; `puk.disclosed` gained the exemption it was documented to have and stopped
+interpolating a query-string reason into JSON. Compiled and unit-tested around, not
+yet written by an API against a database.
+
 **The test certificate was revoked at the CA** through the connector, by the same
 `RevokeAsync` the API calls, and the connector now logs every revocation with the
 calling client certificate. Nothing has been revoked from the console.

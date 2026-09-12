@@ -1693,7 +1693,7 @@ app.MapPost("/api/credentials/{id:guid}/suspend",
         // be taken back, which is what makes this reversible and everything
         // else on this screen permanent.
         var suspended = await credentials.RevokeAsync(id,
-            Blinky.Pki.X509RevocationReason.CertificateHold, "suspended by an operator", ct);
+            Blinky.Pki.X509RevocationReason.CertificateHold, "suspended by an operator", ActorFor(context), ct);
 
         return suspended
             ? Results.Ok(new { id, state = "Revoked", reason = "CertificateHold", reversible = true })
@@ -1722,7 +1722,7 @@ app.MapPost("/api/tokens/{serial:long}/block",
 
         try
         {
-            var revoked = await credentials.BlockAsync(serial, state, request.Comment, ct);
+            var revoked = await credentials.BlockAsync(serial, state, request.Comment, ActorFor(context), ct);
 
             return revoked is { } count
                 ? Results.Ok(new
@@ -1756,7 +1756,7 @@ app.MapPost("/api/tokens/{serial:long}/unblock",
                 statusCode: 401);
         }
 
-        return credentials.Unblock(serial)
+        return credentials.Unblock(serial, ActorFor(context))
             ? Results.Ok(new { serial, state = "Registered" })
             : Results.Json(new
             {
@@ -1983,7 +1983,7 @@ app.MapPost("/api/credentials/{id:guid}/revoke",
             }, statusCode: 400);
         }
 
-        var revoked = await credentials.RevokeAsync(id, reason, request.Comment, ct);
+        var revoked = await credentials.RevokeAsync(id, reason, request.Comment, ActorFor(context), ct);
 
         return revoked
             ? Results.Ok(new { id, state = "Revoked", reason = reason.ToString() })

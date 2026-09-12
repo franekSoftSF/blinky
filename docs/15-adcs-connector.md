@@ -890,6 +890,16 @@ three requests answer *Revoked by AD\svc_blinky*. **The CA's own record names th
 service account, not whoever asked Blinky to revoke**, so that person has to be in
 Blinky's audit trail, because it is not in the CA's.
 
+**And Blinky's audit trail did not have it.** Reading the API's revocation path for
+this found that `CredentialIssuanceService.RevokeAsync` wrote no audit event at all -
+not for a revocation, a suspension or a token blocked as lost - although
+`AuditEvent` names `credential.revoked` as its example and docs/02 exempts revocation
+from retention. It now writes `credential.revoked` in the same transaction as the
+state change, with the signed-in operator, the serial, the reason, the comment, the CA
+and whether the CA was asked. Lifting a suspension writes `token.unblocked`. Both are
+exempt from retention. While the shared operator token is still accepted the actor
+reads `unknown` for it, which is at least countable (0053).
+
 ### What a Microsoft CA requires of a CMC on somebody's behalf
 
 **This was the blocker for 0030's definition of done, found by reading, not by a
