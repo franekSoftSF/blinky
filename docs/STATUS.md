@@ -343,6 +343,16 @@ is listed in [15 — the ADCS connector](15-adcs-connector.md), along with three
 things in the DCOM calls that are reasoned from the shape of the API rather
 than from behaviour anybody here observed.
 
+One thing 0025a settled by accident, and not in the direction this phase
+assumed: the enrolment agent's key has nowhere to live. `IKeyProvider` has
+exactly one operation, an HMAC, because both secrets it was built for are
+key-derivation roots — and an enrolment agent signature is a CMS `SignerInfo`
+over a CMC. A third `KeyPurpose` would be a key the provider cannot use.
+`ICaKeyStore` is the right shape and signs certificates rather than CMS, so
+[15](15-adcs-connector.md) recommends a sibling of it, file-backed first and
+PKCS#11 second. [06](06-security.md) does not mention this key at all, and it is
+the credential that lets Blinky ask for a certificate in somebody else's name.
+
 ### Phase 4 — The boring lifecycle — **in progress**
 
 The workstation half is finished ahead of the server half, because the agent was

@@ -793,7 +793,7 @@
       "title": "AdcsCertificateAuthority and CMC with an EA signature",
       "state": "open",
       "owner": "cloud-ai",
-      "gap": "An enrolment agent certificate is a prerequisite for the whole phase rather than a feature inside it: ADCS refuses enrol-on-behalf-of without one by both routes, the DCOM connector and CES/CEP, and no configuration turns the requirement off. Blinky.Pki has no equivalent and never did - 0023a is where it gets one. The same problem from opposite directions: 0023a is chosen because the evidence is worth having, 0030 is compulsory."
+      "gap": "An enrolment agent certificate is a prerequisite for the whole phase rather than a feature inside it: ADCS refuses enrol-on-behalf-of without one by both routes, the DCOM connector and CES/CEP, and no configuration turns the requirement off. Blinky.Pki has no equivalent and never did - 0023a is where it gets one. The same problem from opposite directions: 0023a is chosen because the evidence is worth having, 0030 is compulsory. And there is nowhere for that key to live yet: IKeyProvider from 0025a has exactly one operation, an HMAC, because both existing secrets are KDF roots - an EA signature is a CMS SignerInfo over a CMC, so a third KeyPurpose would be a key the provider cannot use. ICaKeyStore is the right shape but signs certificates rather than CMS. docs/15-adcs-connector.md recommends a sibling interface, file-backed first and PKCS#11 second; docs/06-security.md does not mention this key at all and has to."
     },
     {
       "id": "0031",

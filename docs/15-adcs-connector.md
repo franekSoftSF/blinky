@@ -27,10 +27,11 @@ connector is small:
 - The connector references `Blinky.Contracts` and **not** `Blinky.Pki`. It
   cannot see `ICertificateAuthority` and cannot grow half an implementation of
   one.
-- The enrolment agent's private key stays behind `IKeyProvider` in the
-  container, where [06](06-security.md) can reason about it. A key on the CA
-  server would be a second copy of the most powerful credential in the system,
-  on a machine Blinky does not own.
+- The enrolment agent's private key stays in the container and never reaches
+  the CA server. A key there would be a second copy of the most powerful
+  credential in the system, on a machine Blinky does not own. Where it lives
+  *inside* the container is an open question and not a settled one — see the
+  main-tree list below.
 - The connector never sees a PIN, a PUK or a management key. Nothing it logs
   can leak one, and there is no redaction rule here because there is nothing to
   redact.
@@ -187,9 +188,29 @@ Nothing else on this list is worth doing first.
 - **CMC construction with an enrolment agent signature.** The hard half, and
   the half 0023a needs a compatible answer to for the built-in CA. Whoever
   writes the first should write the request format so the second can use it.
-- **The enrolment agent's key behind `IKeyProvider`** — `Blinky.Secrets`, a
-  third purpose alongside the management-key master and the PUK KEK. It is the
-  most powerful credential in the system and it does not belong in a file.
+- **Somewhere for the enrolment agent's key to live, and it is not
+  `IKeyProvider` as it stands.** This document said it was, before 0025a landed
+  and the interface could be read: `IKeyProvider` has exactly one operation,
+  `Mac`, an HMAC-SHA256 — and its own comment explains why, since both of
+  Blinky's existing secrets are KDF roots. An enrolment agent signature is a CMS
+  `SignerInfo` over a CMC, which is an asymmetric signature and a certificate,
+  and no amount of HMAC produces one. A third `KeyPurpose` would be a key the
+  provider cannot use.
+
+  `ICaKeyStore` in `Blinky.Pki` is the right *shape* — a certificate, a custody
+  tier, and signing that happens behind the interface so the key is never handed
+  out — but its one operation returns an `X509SignatureGenerator`, which is what
+  `CertificateRequest.Create` needs and not what signing a CMC needs. So the
+  recommendation is a sibling of it: an `IEnrolmentAgentKeyStore` carrying the
+  EA certificate and one signing operation, file-backed first and PKCS#11 second,
+  exactly as `ICaKeyStore` grew. Adding a `Sign` to `IKeyProvider` instead is the
+  alternative, and its own documentation says a new operation is additive — but
+  it would put an asymmetric key behind an interface whose every other promise is
+  about KDF roots.
+
+  Whichever way it goes, [06](06-security.md) says nothing about this key today
+  and has to. It is the credential that lets Blinky ask for a certificate in
+  somebody else's name.
 - **`ConnectorAdcsTransport : IAdcsTransport`** — the HTTP client for this
   document's wire. Client certificate from configuration, the connector's
   server certificate pinned or trusted explicitly, and a refusal when
