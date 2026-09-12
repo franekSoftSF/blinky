@@ -41,13 +41,14 @@ var agentPassword = arguments.GetValueOrDefault("agent-password");
 var remoteAgent = arguments.ContainsKey("remote-agent");
 var check = arguments.GetValueOrDefault("check");
 var subject = arguments.GetValueOrDefault("subject", "CN=probe");
+var requester = arguments.GetValueOrDefault("requester");
 
 if (connector is null || clientPath is null)
 {
     Console.Error.WriteLine(
         "usage: --connector https://host:8444 --client <p12> [--client-password ...]\n"
         + "       (--fingerprint <sha256> | --server-ca <pem-or-der>)\n"
-        + "       [--ca-config 'HOST\\CA name'] [--submit <template> --subject 'CN=...'\n"
+        + "       [--ca-config 'HOST\\CA name'] [--submit <template> --requester 'DOMAIN\\user'\n"
         + "        (--remote-agent | --agent <p12> --agent-password ...)]\n"
         + "       [--check <template> [--remote-agent]]");
 
@@ -161,7 +162,7 @@ try
 
     using var ca = new AdcsCertificateAuthority("probe", transport, agent);
 
-    var issued = await ca.IssueAsync(Context(subject, template));
+    var issued = await ca.IssueAsync(Context(subject, requester, template));
 
     Console.WriteLine();
     Console.WriteLine($"issued      {issued.Certificate.Subject}");
@@ -195,7 +196,7 @@ catch (CertificateAuthorityException ex)
 /// agent's signature. A probe that pretended to attest would be claiming
 /// something about hardware that is not present.
 /// </remarks>
-static CertificateRequestContext Context(string subject, string template)
+static CertificateRequestContext Context(string subject, string? requester, string template)
 {
     using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
@@ -205,7 +206,7 @@ static CertificateRequestContext Context(string subject, string template)
     return new CertificateRequestContext(
         pkcs10,
         new AttestedKey(0, "9A", key.ExportSubjectPublicKeyInfo(), null, null),
-        new CardholderIdentity(subject, null, null, null),
+        new CardholderIdentity(subject, null, null, null, requester),
         new IssuanceProfile(
             "probe", "9A", "ECCP256", 365,
             ["1.3.6.1.5.5.7.3.2"],

@@ -17,18 +17,23 @@ namespace Blinky.AdcsConnector;
 /// </para>
 /// <para>
 /// Nothing else, strictly, and each refusal is one of the things CMC is able to
-/// do. A control can be <c>id-cmc-revokeRequest</c>, which is a signed revocation;
-/// a nested <c>cmsSequence</c> can wrap a second, separately signed request; a
-/// second <c>TaggedRequest</c> is a second certificate. Blinky's own
-/// <c>CmcRequest</c> emits none of those, so refusing all of them costs nothing
-/// and closes every one.
+/// do. A control other than <c>RegInfo</c> can be <c>id-cmc-revokeRequest</c>,
+/// which is a signed revocation; a nested <c>cmsSequence</c> can wrap a second,
+/// separately signed request; a second <c>TaggedRequest</c> is a second
+/// certificate. Blinky's own <c>CmcRequest</c> emits none of those, so refusing all
+/// of them costs nothing and closes every one. <c>RegInfo</c> is let through
+/// because MS-WCCE requires it to name the requester, and that name is what the
+/// connector records for every signature.
 /// </para>
 /// </remarks>
 public sealed record PkiDataInspection(
     uint BodyPartId,
     string Subject,
-    string PublicKeySha256)
+    string PublicKeySha256,
+    string RequesterName)
 {
+    private const string RegInfo = "1.3.6.1.5.5.7.7.18";
+
     /// <summary>
     /// Parses <paramref name="pkiData"/> and returns what it asks for, or throws
     /// with the reason it will not be signed.
@@ -56,12 +61,7 @@ public sealed record PkiDataInspection(
             throw new PkiDataRefusedException("There are bytes after the PKIData.");
         }
 
-        if (body.ReadSequence().HasData)
-        {
-            throw new PkiDataRefusedException(
-                "The PKIData carries controls. A control can be a revocation request, and "
-                + "this connector signs enrolments and nothing else.");
-        }
+        var (requesterName, regInfoBodyPart) = Requester(body.ReadSequence());
 
         var requests = body.ReadSequence();
 
@@ -95,6 +95,13 @@ public sealed record PkiDataInspection(
             throw new PkiDataRefusedException("The body part identifier is out of range.");
         }
 
+        if (bodyPartId == regInfoBodyPart)
+        {
+            throw new PkiDataRefusedException(
+                "The certification request and the RegInfo control share a body part identifier, "
+                + "which RFC 5272 does not allow and a CA would have to guess about.");
+        }
+
         var pkcs10 = tagged.ReadEncodedValue();
 
         if (tagged.HasData)
@@ -125,7 +132,117 @@ public sealed record PkiDataInspection(
         return new PkiDataInspection(
             bodyPartId,
             request.SubjectName.Name,
-            Convert.ToHexString(SHA256.HashData(request.PublicKey.ExportSubjectPublicKeyInfo())));
+            Convert.ToHexString(SHA256.HashData(request.PublicKey.ExportSubjectPublicKeyInfo())),
+            requesterName);
+    }
+
+    /// <summary>
+    /// The one control an enrolment on somebody's behalf carries, and the name in it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// MS-WCCE requires a <c>RegInfo</c> control whose value includes
+    /// <c>requestername</c>, and that is the only control allowed through. Anything
+    /// else is refused, because a control can be a signed revocation and this
+    /// connector signs enrolments. A <c>PKIData</c> with no requester name is refused
+    /// too: an enrolment on somebody's behalf that names nobody is issued for
+    /// whoever called the CA.
+    /// </para>
+    /// <para>
+    /// The first version refused every control. It was built before the MS-WCCE
+    /// shape was read, and would have refused every correct request.
+    /// </para>
+    /// </remarks>
+    private static (string RequesterName, uint BodyPart) Requester(AsnReader controls)
+    {
+        string? requester = null;
+        uint bodyPart = 0;
+
+        while (controls.HasData)
+        {
+            var control = controls.ReadSequence();
+
+            if (!control.TryReadUInt32(out var id))
+            {
+                throw new PkiDataRefusedException("A control's body part identifier is out of range.");
+            }
+
+            var type = control.ReadObjectIdentifier();
+
+            if (type != RegInfo)
+            {
+                throw new PkiDataRefusedException(
+                    $"The PKIData carries a {type} control. A control can be a revocation request, "
+                    + "and this connector signs enrolments: RegInfo naming the requester is the only "
+                    + "control it lets through.");
+            }
+
+            if (requester is not null)
+            {
+                throw new PkiDataRefusedException(
+                    "The PKIData carries two RegInfo controls, and so possibly two requester names.");
+            }
+
+            var values = control.ReadSetOf();
+            var value = values.ReadOctetString();
+
+            if (values.HasData || control.HasData)
+            {
+                throw new PkiDataRefusedException("The RegInfo control carries more than one value.");
+            }
+
+            requester = RequesterIn(value);
+            bodyPart = id;
+        }
+
+        return requester is null
+            ? throw new PkiDataRefusedException(
+                "The PKIData names no requester. An enrolment on somebody's behalf that names nobody "
+                + "is issued for whoever called the CA; the RegInfo control has to carry "
+                + @"requestername=DOMAIN\user.")
+            : (requester, bodyPart);
+    }
+
+    /// <summary>
+    /// <c>requestername</c> out of a RegInfo value: UTF-8, <c>Name=Value</c> pairs
+    /// joined by <c>&amp;</c>, per MS-WCCE 2.2.2.6.3.
+    /// </summary>
+    internal static string RequesterIn(byte[] value)
+    {
+        string text;
+        try
+        {
+            text = new System.Text.UTF8Encoding(false, throwOnInvalidBytes: true).GetString(value);
+        }
+        catch (ArgumentException)
+        {
+            throw new PkiDataRefusedException("The RegInfo value is not UTF-8.");
+        }
+
+        var names = text.Split('&')
+            .Select(pair => pair.Split('=', 2))
+            .Where(pair => pair.Length == 2
+                           && string.Equals(pair[0].Trim(), "requestername", StringComparison.OrdinalIgnoreCase))
+            .Select(pair => pair[1].Trim())
+            .ToList();
+
+        if (names.Count != 1)
+        {
+            throw new PkiDataRefusedException(names.Count == 0
+                ? "The RegInfo control carries no requestername."
+                : "The RegInfo control carries more than one requestername.");
+        }
+
+        var name = names[0];
+        var separator = name.IndexOf('\\');
+
+        if (separator <= 0 || separator == name.Length - 1 || name.IndexOf('\\', separator + 1) >= 0)
+        {
+            throw new PkiDataRefusedException(
+                $@"The requester name {name} is not DOMAIN\sAMAccountName.");
+        }
+
+        return name;
     }
 
     /// <summary>

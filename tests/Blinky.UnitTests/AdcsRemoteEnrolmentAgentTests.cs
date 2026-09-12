@@ -27,15 +27,18 @@ public sealed class AdcsRemoteEnrolmentAgentTests
 {
     private const string PkiDataOid = "1.3.6.1.5.5.7.12.2";
 
+    private const string Requester = @"BLINKY\jnowak";
+
     [Fact]
     public void The_pki_data_blinky_builds_is_accepted_and_named()
     {
         var pkcs10 = AdcsTestCertificates.CardRequest("CN=jnowak");
 
-        var inspected = PkiDataInspection.Inspect(CmcRequest.PkiData(pkcs10, 1));
+        var inspected = PkiDataInspection.Inspect(CmcRequest.PkiData(pkcs10, Requester));
 
         Assert.Equal(1u, inspected.BodyPartId);
         Assert.Equal("CN=jnowak", inspected.Subject);
+        Assert.Equal(Requester, inspected.RequesterName);
         Assert.Equal(64, inspected.PublicKeySha256.Length);
     }
 
@@ -102,7 +105,7 @@ public sealed class AdcsRemoteEnrolmentAgentTests
         broken[^1] ^= 0xFF;
 
         var refusal = Assert.Throws<PkiDataRefusedException>(
-            () => PkiDataInspection.Inspect(CmcRequest.PkiData(broken, 1)));
+            () => PkiDataInspection.Inspect(CmcRequest.PkiData(broken, Requester)));
 
         Assert.Contains("does not verify", refusal.Message, StringComparison.Ordinal);
     }
@@ -123,19 +126,21 @@ public sealed class AdcsRemoteEnrolmentAgentTests
         using var signer = EnrolmentAgentSigner.FromCertificate(agent, "test", DateTimeOffset.UtcNow);
 
         var pkcs10 = AdcsTestCertificates.CardRequest("CN=jnowak");
-        var pkiData = CmcRequest.PkiData(pkcs10, 1);
+        var pkiData = CmcRequest.PkiData(pkcs10, Requester);
 
         var (signedData, inspected) = signer.Sign(pkiData, DateTimeOffset.UtcNow);
 
         var signed = new SignedCms();
         signed.Decode(signedData);
-        signed.CheckSignature(verifySignatureOnly: true);
+        AdcsEnrolmentAgentTests.Verify(signed);
 
         Assert.Equal(PkiDataOid, signed.ContentInfo.ContentType.Value);
         Assert.Equal(pkiData, signed.ContentInfo.Content);
-        Assert.Equal(agent.Thumbprint, signed.SignerInfos[0].Certificate?.Thumbprint);
-        Assert.Equal("2.16.840.1.101.3.4.2.1", signed.SignerInfos[0].DigestAlgorithm.Value);
+        Assert.Equal(agent.Thumbprint, AgentSigner(signed).Certificate?.Thumbprint);
+        Assert.All(signed.SignerInfos.Cast<SignerInfo>(),
+            s => Assert.Equal("2.16.840.1.101.3.4.2.1", s.DigestAlgorithm.Value));
         Assert.Equal("CN=jnowak", inspected.Subject);
+        Assert.Equal(Requester, inspected.RequesterName);
     }
 
     [Fact]
@@ -148,7 +153,7 @@ public sealed class AdcsRemoteEnrolmentAgentTests
         // for a year outlives the certificate it started with.
         var refusal = Assert.Throws<InvalidOperationException>(
             () => signer.Sign(
-                CmcRequest.PkiData(AdcsTestCertificates.CardRequest("CN=jnowak"), 1),
+                CmcRequest.PkiData(AdcsTestCertificates.CardRequest("CN=jnowak"), Requester),
                 DateTimeOffset.UtcNow.AddYears(5)));
 
         Assert.Contains("expired", refusal.Message, StringComparison.Ordinal);
@@ -314,7 +319,7 @@ public sealed class AdcsRemoteEnrolmentAgentTests
         await ca.IssueAsync(new CertificateRequestContext(
             pkcs10,
             new AttestedKey(12345678, "9A", [1, 2, 3], "Once", "Never"),
-            new CardholderIdentity("Jan Nowak", "jnowak@blinky.lab", "S-1-5-21-1-2-3-1104", null),
+            new CardholderIdentity("Jan Nowak", "jnowak@blinky.lab", "S-1-5-21-1-2-3-1104", null, Requester),
             new IssuanceProfile(
                 "smartcard-logon", "9A", "ECCP256", 365,
                 ["1.3.6.1.5.5.7.3.2"],
@@ -325,10 +330,10 @@ public sealed class AdcsRemoteEnrolmentAgentTests
 
         var submitted = new SignedCms();
         submitted.Decode(transport.LastRequest!);
-        submitted.CheckSignature(verifySignatureOnly: true);
+        AdcsEnrolmentAgentTests.Verify(submitted);
 
-        Assert.Equal(agent.Thumbprint, submitted.SignerInfos[0].Certificate?.Thumbprint);
-        Assert.Equal(CmcRequest.PkiData(pkcs10, 1), submitted.ContentInfo.Content);
+        Assert.Equal(agent.Thumbprint, AgentSigner(submitted).Certificate?.Thumbprint);
+        Assert.Equal(CmcRequest.PkiData(pkcs10, Requester), submitted.ContentInfo.Content);
         Assert.False(store.Certificate.HasPrivateKey);
     }
 
@@ -368,6 +373,83 @@ public sealed class AdcsRemoteEnrolmentAgentTests
         Assert.Contains("holds no enrolment agent", failure.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void A_pki_data_that_names_no_requester_is_refused_because_it_would_be_issued_for_the_caller()
+    {
+        var refusal = Assert.Throws<PkiDataRefusedException>(
+            () => PkiDataInspection.Inspect(Build(requesterValue: null)));
+
+        Assert.Contains("names no requester", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("certificatetemplate=BlinkySmartCardLogon", "no requestername")]
+    [InlineData(@"requestername=BLINKY\a&requestername=BLINKY\b", "more than one requestername")]
+    [InlineData("requestername=jnowak", "is not DOMAIN")]
+    public void A_reginfo_is_read_strictly(string value, string expected)
+    {
+        var refusal = Assert.Throws<PkiDataRefusedException>(
+            () => PkiDataInspection.Inspect(Build(requesterValue: value)));
+
+        Assert.Contains(expected, refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Other_pairs_beside_the_requester_are_allowed_and_ignored()
+    {
+        var inspected = PkiDataInspection.Inspect(
+            Build(requesterValue: @"certificatetemplate=BlinkySmartCardLogon&RequesterName=BLINKY\jnowak"));
+
+        Assert.Equal(@"BLINKY\jnowak", inspected.RequesterName);
+    }
+
+    [Fact]
+    public void Two_reginfo_controls_are_refused_because_they_could_name_two_people()
+    {
+        var refusal = Assert.Throws<PkiDataRefusedException>(
+            () => PkiDataInspection.Inspect(Build(extraRegInfo: 1)));
+
+        Assert.Contains("two RegInfo controls", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_control_and_the_request_sharing_a_body_part_is_refused()
+    {
+        var refusal = Assert.Throws<PkiDataRefusedException>(
+            () => PkiDataInspection.Inspect(Build(regInfoBodyPart: 1)));
+
+        Assert.Contains("share a body part identifier", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_connector_and_the_container_sign_in_the_same_shape()
+    {
+        // Two copies of the MS-WCCE signing shape, because the connector does not
+        // reference Blinky.Pki. This is what stops them drifting.
+        using var agent = AgentWithKey();
+        using var signer = EnrolmentAgentSigner.FromCertificate(agent, "test", DateTimeOffset.UtcNow);
+
+        var pkiData = CmcRequest.PkiData(AdcsTestCertificates.CardRequest("CN=jnowak"), Requester);
+
+        var fromConnector = new SignedCms();
+        fromConnector.Decode(signer.Sign(pkiData, DateTimeOffset.UtcNow).SignedData);
+
+        var fromContainer = new SignedCms();
+        fromContainer.Decode(CmcRequest.SignAsAgent(
+            new ContentInfo(new Oid(PkiDataOid), pkiData), agent));
+
+        static string Shape(SignedCms cms) => string.Join(",", cms.SignerInfos.Cast<SignerInfo>()
+            .Select(s => s.SignerIdentifier.Type + ":" + s.DigestAlgorithm.Value)
+            .Order(StringComparer.Ordinal));
+
+        Assert.Equal(Shape(fromContainer), Shape(fromConnector));
+        Assert.Equal(2, fromConnector.SignerInfos.Count);
+    }
+
+    private static SignerInfo AgentSigner(SignedCms signed) =>
+        Assert.Single(signed.SignerInfos.Cast<SignerInfo>(),
+            s => s.SignerIdentifier.Type != SubjectIdentifierType.NoSignature);
+
     private static bool Accepts(Action open)
     {
         try
@@ -397,7 +479,8 @@ public sealed class AdcsRemoteEnrolmentAgentTests
     /// </summary>
     private static byte[] Build(
         bool controls = false, int requests = 1, int requestTag = 0, bool nestedContent = false,
-        bool trailing = false)
+        bool trailing = false, string? requesterValue = @"requestername=BLINKY\jnowak",
+        int regInfoBodyPart = 2, int extraRegInfo = 0)
     {
         var pkcs10 = AdcsTestCertificates.CardRequest("CN=jnowak");
         var writer = new AsnWriter(AsnEncodingRules.DER);
@@ -406,6 +489,32 @@ public sealed class AdcsRemoteEnrolmentAgentTests
         {
             using (writer.PushSequence())
             {
+                if (requesterValue is not null)
+                {
+                    using (writer.PushSequence())
+                    {
+                        writer.WriteInteger(regInfoBodyPart);
+                        writer.WriteObjectIdentifier("1.3.6.1.5.5.7.7.18");
+                        using (writer.PushSetOf())
+                        {
+                            writer.WriteOctetString(System.Text.Encoding.UTF8.GetBytes(requesterValue));
+                        }
+                    }
+                }
+
+                for (var extra = 0; extra < extraRegInfo; extra++)
+                {
+                    using (writer.PushSequence())
+                    {
+                        writer.WriteInteger(9 + extra);
+                        writer.WriteObjectIdentifier("1.3.6.1.5.5.7.7.18");
+                        using (writer.PushSetOf())
+                        {
+                            writer.WriteOctetString(System.Text.Encoding.UTF8.GetBytes(@"requestername=BLINKY\somebody"));
+                        }
+                    }
+                }
+
                 if (controls)
                 {
                     // TaggedAttribute: bodyPartID, id-cmc-revokeRequest, a value.

@@ -80,4 +80,16 @@ public sealed class AdcsTransportTests
         // the call having got as far as the database, and the connector reported
         // revocation as available.
         Assert.Equal(neverReached, CertificateServices.NeverReachedTheCa(hresult));
+
+    [Theory]
+    [InlineData(@"CA01\Named", @"CA01\Configured", @"CA01\Named")]
+    [InlineData(null, @"CA01\Configured", @"CA01\Configured")]
+    [InlineData("", @" CA01\Configured ", @"CA01\Configured")]
+    [InlineData(null, null, null)]
+    [InlineData(null, "", null)]
+    public void The_ca_a_request_names_wins_then_the_configured_one(
+        string? requested, string? configured, string? expected) =>
+        // Connector:CaConfig was documented and never read, and the connector asked
+        // for it by name in the error it gave when it ignored it.
+        Assert.Equal(expected, CertificateServices.Chosen(requested, configured));
 }

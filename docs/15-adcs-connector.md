@@ -458,13 +458,20 @@ the mapped rights; the test for it was first written with SDDL `GA` — the gene
 bit the directory never stores — and failed against correct code, so both forms
 are accepted and both are tested.
 
+**A service running as `LocalSystem` or `NetworkService` is judged as the
+computer.** Those two reach the CA and the directory as `DOMAIN\MACHINE$`, so the
+connector reads the computer object's `objectSid` and `tokenGroups` — which carry
+*Domain Computers* — and adds *Everyone*, *Authenticated Users* and *This
+Organization*, which a logon adds and the directory does not hold. The first run of
+the check as the service evaluated the local `S-1-5-18` token instead and refused a
+template the computer may enrol on; see *As the service* below.
+
 **What it is not yet:** a registration. There is no flow that creates a CA
 instance and refuses it — CA instances are not rows until 0022's open half — so the
-check runs against the one CA the configuration names, when somebody asks. And it
-has not read a real template: the attribute names, the Enroll GUID and the
-version 4 encoding of `msPKI-RA-Application-Policies` are from MS-CRTD, and the
-policy is matched by substring for that last reason. The lab server is where each
-of those is confirmed or recorded as wrong.
+check runs against the one CA the configuration names, when somebody asks. The
+attribute names and the version 4 encoding of `msPKI-RA-Application-Policies` are
+now confirmed on a real template; the policy is still matched by substring,
+because that encoding packs several name–type–value triples into one string.
 
 ### 6. Deployment
 
@@ -747,10 +754,44 @@ What that settles, and what it does not:
 - **The Enroll answer was for the administrator**, not for the identity the
   service will run as. With a computer-bound agent that identity is `HZCS01$`.
 
-### What a Microsoft CA requires of a CMC on somebody's behalf — and ours does not do
+### As the service, as the computer
 
-**This is the blocker for 0030's definition of done, found by reading, not by a
-CA.** [MS-WCCE, *Enroll on Behalf of Certificate Request Using CMS and CMC
+The lab's owner installed the connector as the service `BlinkyAdcsConnector`
+running as `LocalSystem` and created the smart-card template
+`BlinkySmartCardLogon`. It was reached through the same tunnel.
+
+| Asked | Answered |
+|---|---|
+| `describe` | **The CA in `Connector:CaConfig` was not the one asked.** The setting was documented, in the lab's configuration, and never read: the connector took the CA from the request or the local `ICertConfig`, and on a machine with no CA said so while naming the setting it had ignored. Fixed; the order is the request, then the setting, then the local machine |
+| `describe`, fixed | Chain 3532 bytes. Agent from `LocalMachine\My`, not exportable. Revocation **not available**: the probe answered `0x80070005`, access denied |
+| `--check BlinkySmartCardLogon` | **Refused, `account-cannot-enroll` for `NT AUTHORITY\SYSTEM`** — the check's error, not the template's. Fixed as described in section 5 |
+| `--check BlinkySmartCardLogon`, fixed | `UNVERIFIED`: Enroll found for `AD\HZCS01$`, nothing refused; revocation unavailable (warning) and template publication unknown, because the CA's list is in its registry on `SUBCA` |
+
+What that settles:
+
+- **The revocation probe discriminates.** The same probe against the same CA
+  answered `0x80070057` as `AD\Administrator` and `0x80070005` as `HZCS01$`,
+  which holds no *Issue and Manage Certificates*. So the invalid-parameter answer
+  comes after the permission check, and "available" and "unavailable" were both
+  read correctly. One CA and two identities, not a proof for every CA version.
+- **The version 4 signature policy looks the way MS-CRTD says.**
+  `BlinkySmartCardLogon` is schema 4 and stores the policy as
+  `` msPKI-RA-Application-Policies`PZPWSTR`1.3.6.1.4.1.311.20.2.1` ``. One
+  authorised signature, name flags `0x82000000` — subject from the directory, UPN
+  required, nothing supplied by the request — and the EKUs *Smart Card Logon* and
+  *Client Authentication*. Every attribute check passed.
+- **A computer-bound arrangement holds together short of a submission.** The
+  service reaches the CA and the forest as the computer, which a key-authenticated
+  SSH session never could.
+
+The lab is deliberately generous: its owner runs it as a domain administrator.
+Nothing measured here says what a least-privileged integration account needs,
+which is still section 7's question.
+
+### What a Microsoft CA requires of a CMC on somebody's behalf
+
+**This was the blocker for 0030's definition of done, found by reading, not by a
+CA. The shape is now written; no CA has accepted it yet.** [MS-WCCE, *Enroll on Behalf of Certificate Request Using CMS and CMC
 Request Formats*](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wcce/2d1cf183-2507-4026-bc05-7b6b65dfced9)
 and Microsoft's own [annotated CMC EOBO request](https://learn.microsoft.com/en-us/windows/win32/seccertenroll/cmc-eobo-request)
 agree on two things `CmcRequest` does not produce:
@@ -765,30 +806,40 @@ agree on two things `CmcRequest` does not produce:
   key and identified by subject key identifier, or uses the no-signature
   mechanism; the second is the enrolment agent. `CmcRequest` produces one.
 
-What it takes, all of it on this side of a CA and none of it verified by one yet:
+What it took, all of it on this side of a CA and none of it verified by one yet:
 
-- **The cardholder's `DOMAIN\sAMAccountName`.** `CardholderIdentity` carries a
-  UPN and an `objectSid` and not this, so `Blinky.Directory` has to read
-  `sAMAccountName` and the NetBIOS domain name.
-- **`CmcRequest` writes the `RegInfo` control.** The template can travel there
-  too, or stay in the attribute string.
-- **`PkiDataInspection` allows exactly that control and nothing else**, and the
-  connector logs `requestername` for every signature — the subject a card writes
-  into its PKCS#10 is not what ADCS issues, and the requester name is. Today it
-  refuses every control, so a correct request would be refused at the connector.
-- **The connector adds a no-signature SignerInfo beside the agent's.** .NET has
-  `SubjectIdentifierType.NoSignature` for this. The alternative, a SignerInfo from
-  the card's key, would cost a second card operation and a second PIN, and is only
-  worth it if the CA refuses the first.
+- **The cardholder's `DOMAIN\sAMAccountName`.** `CardholderIdentity` now has an
+  optional `LogonName`, and `AdcsCertificateAuthority` refuses to issue without it
+  before the agent is even opened. **Nothing fills it yet**: `Blinky.Directory` does
+  not read `sAMAccountName` or the NetBIOS domain name, so the API cannot enrol
+  through ADCS until it does. `AdcsProbe --requester DOMAIN\user` supplies it by
+  hand.
+- **`CmcRequest` writes the `RegInfo` control**, body part 2, before the request's
+  body part 1, with `requestername=DOMAIN\user` and nothing else. A name with a
+  second backslash, `&`, `=` or a control character is refused rather than
+  escaped. The template stays in the attribute string.
+- **`PkiDataInspection` allows exactly one `RegInfo` and nothing else**, and
+  refuses one without `requestername`, one that shares a body part ID with the
+  request, and a name that is not `DOMAIN\user`. The connector logs the requester
+  name for every signature — the subject a card writes into its PKCS#10 is not what
+  ADCS issues, and the requester name is.
+- **The connector adds a no-signature SignerInfo beside the agent's**, using
+  `SubjectIdentifierType.NoSignature`. The file-based store does the same, and a
+  test holds the two shapes equal. A no-signature signer is verified by its hash:
+  `SignedCms.CheckSignature` looks for its certificate and fails, which is true and
+  beside the point, and cost a round of red tests to learn. The alternative, a
+  SignerInfo from the card's key, would cost a second card operation and a second
+  PIN, and is only worth it if the CA refuses this one.
 - **An order to check on a CA.** `SignerInfos` is a DER `SET OF`, so "first" and
-  "second" are an encoding order, not an insertion order.
+  "second" are an encoding order, not an insertion order. Still unchecked.
 
 ## Unverified, and named as such
 
-Nothing here has met a Microsoft CA. It builds, it starts, it refuses what it
-should refuse, its access control and parsing are under test, and a signed CMC has
-reached `ICertRequest3::Submit` on a machine with no CA behind it. That is all
-that is claimed. What a real ADCS thinks of the CMC is the open question, and it
+A Microsoft CA has answered describe and the revocation probe, and the forest has
+answered the template checks. No CA has been sent a CMC in the shape above. It
+builds, it starts, it refuses what it should refuse, its access control and parsing
+are under test, and a signed CMC has reached `ICertRequest3::Submit` on a machine
+with no CA behind it. That is all that is claimed. What a real ADCS thinks of the CMC is the open question, and it
 is the whole of 0030's definition of done.
 
 Three specific things to check first against a lab CA, because they are the

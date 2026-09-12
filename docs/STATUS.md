@@ -401,19 +401,28 @@ for its own user, the revocation probe mistook an RPC failure for permission, an
 a local account's directory failure read like a network fault.
 
 **A Microsoft CA has answered.** `SUBCA\\DigitalWorkspace Issuing CA - homelab`
-handed its chain to the connector, and the connector read a template out of the
-lab forest with every attribute the registration check needs. Both ran with the
-connector in a domain administrator's session; the identity the service is meant to
-run as, the computer, has not been tried. The revocation probe's reading of the
-real CA's answer is still a guess, and says so.
+handed its chain to the connector. It did so first in a domain administrator's
+session, then to the service `BlinkyAdcsConnector` running as `LocalSystem`, which
+reaches it as `HZCS01$`. The service run found two defects that no bench run could.
+`Connector:CaConfig` was documented and never read. And the Enroll check judged
+`LocalSystem` by its local token instead of the computer's domain groups, so it
+refused a template the computer may enrol on. Both are fixed.
+`--check BlinkySmartCardLogon` against the real smart-card template now ends
+`UNVERIFIED` with nothing refused: every attribute check passed, Enroll was found
+for `AD\\HZCS01$`, revocation is unavailable and template publication unknown.
+The revocation probe is no longer a guess: the same CA answered `0x80070057` to the
+administrator and `0x80070005` to the computer.
 
-**And the CMC is not yet what the CA needs.** Microsoft's specification for a CMC on
-somebody's behalf wants the requester name in a `RegInfo` control and at least two
-SignerInfos. Ours has neither, and the connector refuses every control, so a real
-enrolment would fail or be issued for the wrong principal. Reading it cost nothing;
-finding it at the CA would have cost the first day of the lab. It needs the
-cardholder's `DOMAIN\\user` from the directory. [15](15-adcs-connector.md) has the
-detail.
+**The CMC now has the shape the CA needs, and the CA has not seen it.** Microsoft's
+specification for a CMC on somebody's behalf wants the requester name in a
+`RegInfo` control and at least two SignerInfos. `CmcRequest` writes the control.
+The connector accepts exactly that one control and adds a no-signature SignerInfo
+beside the agent's. Reading it cost nothing; finding it at the CA would have cost
+the first day of the lab. The requester name is `DOMAIN\\user`. The probe takes it
+by hand, and **nothing in the API supplies it yet**: `Blinky.Directory` does not read
+`sAMAccountName`, so an ADCS enrolment from the console is refused by name. The
+next step is one submission for a test user, with the lab owner's consent.
+[15](15-adcs-connector.md) has the detail.
 
 What is left is the database, an account and a CA. CA instances and profiles are
 still not read from the database, so a deployment has one CA and templates are
@@ -422,7 +431,7 @@ connector runs as has to be designed before it is created**: it issues and
 revokes, and *Issue and Manage Certificates* is CA-wide unless certificate
 manager restrictions confine it. The lab server `HZCS01` was reached over SSH on
 2026-09-12; it is joined to the domain and has no Certificate Authority role
-installed. Listed in order in [15 — the ADCS connector](15-adcs-connector.md).
+installed; the CA is on `SUBCA`. Listed in order in [15 — the ADCS connector](15-adcs-connector.md).
 
 ### Phase 4 — The boring lifecycle — **in progress**
 

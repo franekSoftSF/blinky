@@ -110,6 +110,18 @@ public sealed class EnrolmentAgentSigner : IDisposable
         var signed = new SignedCms(
             new ContentInfo(new Oid(PkiDataContentType), pkiData), detached: false);
 
+        // MS-WCCE requires at least two SignerInfos on somebody's behalf: the
+        // enrollee's, or a no-signature one standing in for it, then the agent's.
+        // No-signature, because the enrollee's key is on a card on somebody's desk.
+        // The same shape as CmcRequest.SignAsAgent in Blinky.Pki, which this project
+        // does not reference; a test compares the two.
+        signed.ComputeSignature(
+            new CmsSigner(SubjectIdentifierType.NoSignature)
+            {
+                DigestAlgorithm = new Oid("2.16.840.1.101.3.4.2.1"),
+            },
+            silent: true);
+
         var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, certificate)
         {
             // ADCS issued this certificate and builds the rest of the chain
