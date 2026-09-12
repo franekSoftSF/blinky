@@ -154,10 +154,10 @@ public sealed class AdcsRegistrationTests
         Assert.False(report.Accepted);
         Assert.All(report.Findings, finding => Assert.Equal(RegistrationSeverity.Unknown, finding.Severity));
 
-        // Publication, name flags, signatures and the Enroll right: four things
-        // not established, four sentences saying so.
+        // Publication, name flags, signatures, the Enroll right and the minimum key
+        // size: five things not established, five sentences saying so.
         Assert.Contains(report.Findings, f => f.Code == "template-publication-unknown");
-        Assert.Equal(3, report.Findings.Count(f => f.Code == "template-attribute-unknown"));
+        Assert.Equal(4, report.Findings.Count(f => f.Code == "template-attribute-unknown"));
     }
 
     [Fact]
@@ -292,6 +292,68 @@ public sealed class AdcsRegistrationTests
         Assert.False(EnrolRight.Evaluate(security, Token(Integration)));
     }
 
+    [Fact]
+    public async Task A_template_on_the_default_2048_warns_that_card_ecc_keys_will_be_denied()
+    {
+        // BlinkySmartCardLogon on the lab CA: a P-256 key was denied with
+        // CERTSRV_E_KEY_LENGTH after the CA had read the CMC, and RSA 2048 issued.
+        var report = await Check(Transport(Correct() with { MinimalKeySize = 2048 }));
+
+        var finding = Assert.Single(report.Findings, f => f.Code == "template-key-too-short");
+        Assert.Equal(RegistrationSeverity.Warning, finding.Severity);
+        Assert.Contains("ECCP256, ECCP384", finding.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("RSA2048", finding.Message, StringComparison.Ordinal);
+        Assert.True(report.Accepted);
+    }
+
+    [Fact]
+    public async Task A_template_no_enrolment_key_is_long_enough_for_is_refused()
+    {
+        var report = await Check(
+            Transport(Correct() with { MinimalKeySize = 2048 }),
+            algorithms: new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ECCP256" });
+
+        Assert.Contains("CERTSRV_E_KEY_LENGTH", Refusal(report, "template-key-too-short").Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_template_named_for_ecc_warns_about_rsa_rather_than_refusing_it()
+    {
+        // Long enough, and of another algorithm. What the CA does with that has not
+        // been seen, so it is said and not refused.
+        var report = await Check(Transport(Correct() with
+        {
+            SchemaVersion = 4,
+            MinimalKeySize = 256,
+            SignaturePolicies = ["msPKI-Asymmetric-Algorithm`PZPWSTR`ECDSA_P256`msPKI-RA-Application-Policies`PZPWSTR`1.3.6.1.4.1.311.20.2.1`"],
+        }));
+
+        var finding = Assert.Single(report.Findings);
+        Assert.Equal("template-key-algorithm", finding.Code);
+        Assert.Equal(RegistrationSeverity.Warning, finding.Severity);
+        Assert.Contains("ECCP384, RSA2048, RSA3072, RSA4096", finding.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("msPKI-RA-Application-Policies`PZPWSTR`1.3.6.1.4.1.311.20.2.1`", null)]
+    [InlineData("msPKI-Asymmetric-Algorithm`PZPWSTR`RSA`msPKI-RA-Application-Policies`PZPWSTR`1.3.6.1.4.1.311.20.2.1`", "RSA")]
+    [InlineData("msPKI-RA-Application-Policies`PZPWSTR`1.3.6.1.4.1.311.20.2.1`msPKI-Asymmetric-Algorithm`PZPWSTR`ECDH_P384`", "ECDH_P384")]
+    [InlineData("1.3.6.1.4.1.311.20.2.1", null)]
+    public void The_key_algorithm_is_read_out_of_a_version_4_encoding(string policy, string? expected) =>
+        Assert.Equal(expected, TemplateKeys.AsymmetricAlgorithm([policy]));
+
+    [Fact]
+    public void A_key_length_denial_says_the_ca_measures_an_ecc_key_in_its_own_bits()
+    {
+        var message = AdcsCertificateAuthority.Explain(
+            "lab-adcs denied the request",
+            new AdcsSubmitResponse(AdcsDisposition.Denied, 11, null, null,
+                "Denied by Policy Module", AdcsCertificateAuthority.KeyLengthDenied));
+
+        Assert.Contains("0x80094811", message, StringComparison.Ordinal);
+        Assert.Contains("256 bits", message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("S-1-5-18", true)]
     [InlineData("S-1-5-20", true)]
@@ -327,12 +389,12 @@ public sealed class AdcsRegistrationTests
 
     private static Task<RegistrationReport> Check(
         FakeAdcsTransport transport, IEnrolmentAgentSource? agents = null,
-        Dictionary<string, string>? templates = null) =>
+        Dictionary<string, string>? templates = null, IReadOnlySet<string>? algorithms = null) =>
         AdcsRegistration.CheckAsync(
             "lab-adcs",
             transport,
             agents,
-            new AdcsCaOptions(TemplateMap: templates ?? new Dictionary<string, string>
+            new AdcsCaOptions(AlgorithmSet: algorithms, TemplateMap:templates ?? new Dictionary<string, string>
             {
                 ["smartcard-logon"] = Template,
             }));
@@ -356,7 +418,8 @@ public sealed class AdcsRegistrationTests
         SignaturePolicies: [AdcsRegistration.CertificateRequestAgent],
         ExtendedKeyUsages: ["1.3.6.1.5.5.7.3.2", "1.3.6.1.4.1.311.20.2.2"],
         AccountMayEnroll: true,
-        Account: "LAB\\svc-blinky");
+        Account: "LAB\\svc-blinky",
+        MinimalKeySize: 256);
 
     private static RegistrationFinding Refusal(RegistrationReport report, string code)
     {

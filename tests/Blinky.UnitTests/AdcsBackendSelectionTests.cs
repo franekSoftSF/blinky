@@ -225,6 +225,22 @@ public sealed class AdcsBackendSelectionTests
     }
 
     [Fact]
+    public void Key_algorithms_are_every_one_when_unset_and_refused_by_name_when_misspelt()
+    {
+        Assert.Null(AdcsInstance.KeyAlgorithms([]));
+        Assert.Null(AdcsInstance.KeyAlgorithms([" "]));
+
+        var set = AdcsInstance.KeyAlgorithms(["rsa2048", " ECCP256 "]);
+        Assert.NotNull(set);
+        Assert.True(set.SetEquals(["RSA2048", "ECCP256"]));
+
+        var refusal = Assert.Throws<CertificateAuthorityException>(
+            () => AdcsInstance.KeyAlgorithms(["RSA2048", "P256"]));
+
+        Assert.Contains("Blinky:Adcs:KeyAlgorithms names P256", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_password_file_wins_over_a_value_and_its_line_ending_is_not_part_of_it()
     {
         var file = Path.Combine(Path.GetTempPath(), "blinky-secret-" + Guid.NewGuid().ToString("n"));

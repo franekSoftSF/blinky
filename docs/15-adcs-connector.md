@@ -440,6 +440,8 @@ transport.
 | `template-no-agent-signature` | Refusal | `msPKI-RA-Signature` is 0: the agent's signature proves nothing |
 | `template-wrong-signature-policy` | Refusal | The required signature is not *Certificate Request Agent* |
 | `account-cannot-enroll` | Refusal | The template's security descriptor does not grant Enroll to the account or any group in its token |
+| `template-key-too-short` | Refusal, or Warning | `msPKI-Minimal-Key-Size` is longer than a key algorithm this deployment enrols with (`Blinky:Adcs:KeyAlgorithms`, all five when unset). The CA compares it with the key's length whatever the algorithm, so P-256 is 256 bits. A refusal when no configured algorithm gets through, a warning when some do |
+| `template-key-algorithm` | Warning | A version 4 template names an algorithm in `msPKI-RA-Application-Policies` and the deployment also enrols with another. Not a refusal, because whether the CA enforces the algorithm rather than only the size has not been observed |
 | `template-publication-unknown`, `template-unreadable`, `template-attribute-unknown` | Unknown | Something could not be read |
 
 **Three outcomes, not a bool.** `Accepted` means nothing refused and nothing left
@@ -549,9 +551,10 @@ What it produces for Blinky to check, which is 0033: `describe` already reports
 Enrollment Agents* or certificate manager restrictions are configured, and a
 registration check that cannot see those cannot recommend them with any evidence.
 
-Revocation through this account is 0034. Until then `SupportsRevocation` follows
+Revocation through this account is 0034. `SupportsRevocation` follows
 `AdminAvailable`, and the grant is the only thing standing between the connector
-and every certificate the CA holds.
+and every certificate the CA holds. Every revocation the connector performs is
+logged with the serial, the reason and the calling client certificate.
 
 ### 8. `docs/STATUS.md`, `docs/status.json`, `docs/07-roadmap.md`
 
@@ -829,16 +832,34 @@ What the issued certificate says, and why each part matters:
 So the EOBO shape is what a Microsoft CA accepts. That includes the order of the
 two SignerInfos as DER encodes the `SET OF`, which was the last unchecked point.
 
-**What the key-length denial means for the product.** A card's default profile is
-`ECCP256`, and a template left on the default cryptography settings (legacy CSP,
-RSA, minimum 2048) refuses every card key Blinky would send. The CA only says so at
-submission. It is a template setting: *Key Storage Provider* with an ECC algorithm
-and a 256-bit minimum, or an RSA profile in Blinky. The registration check does not
-read `msPKI-Minimal-Key-Size` or the template's algorithm, and should compare them
-with each mapped profile's algorithm before a card is involved. ECC smart-card logon
-also needs Windows to allow ECC certificates for logon, which is not tried here.
+**What the key-length denial means for the product.** The profiles name `ECCP256`,
+and the agent generates RSA 2048 unless an enrolment asks for another algorithm,
+because Windows does not offer an ECC smart-card certificate at logon without
+`EnumerateECCCerts`. So which key reaches the CA is chosen per enrolment. A
+template left on the default cryptography settings (legacy CSP, RSA, minimum 2048)
+denies every ECC key, and the CA only says so at submission. It is a template
+setting: a minimum of 256 lets both lengths through, and a version 4 template on a
+*Key Storage Provider* also names one algorithm.
 
-The test certificate has not been revoked; its key no longer exists.
+**Now checked before a card is involved.** The connector reads
+`msPKI-Minimal-Key-Size`, and the registration check sets it against the key
+algorithms the deployment enrols with (`template-key-too-short`, section 5). Against
+`BlinkySmartCardLogon` it answers with a warning that ECCP256 and ECCP384 will be
+denied with `CERTSRV_E_KEY_LENGTH`, which is what the CA did. A denial with that
+code now also says, in Blinky's own words, that an ECC key is measured in its own
+bits.
+
+**Whether one template can take both** is not established. The minimum is one
+number, and 256 passes both lengths; whether the CA then also enforces the
+algorithm a version 4 template names is the unobserved half. Two submissions
+settle it, one of each, after the template's minimum is lowered.
+
+**The test certificate was revoked** through the connector the next day with
+`AdcsProbe --revoke`, which goes through `AdcsCertificateAuthority.RevokeAsync` - the
+API's path - reason *cessation of operation*. The CA accepted it, and the connector
+logged the serial, the reason and the fingerprint of the client certificate that
+asked, as it now does for every revocation. That the CA lists it as revoked has not
+been read back here; the CA console or the next CRL shows it.
 
 ### What a Microsoft CA requires of a CMC on somebody's behalf
 
@@ -861,12 +882,17 @@ agree on two things `CmcRequest` does not produce:
 
 What it took:
 
-- **The cardholder's `DOMAIN\sAMAccountName`.** `CardholderIdentity` now has an
+- **The cardholder's `DOMAIN\sAMAccountName`.** `CardholderIdentity` has an
   optional `LogonName`, and `AdcsCertificateAuthority` refuses to issue without it
-  before the agent is even opened. **Nothing fills it yet**: `Blinky.Directory` does
-  not read `sAMAccountName` or the NetBIOS domain name, so the API cannot enrol
-  through ADCS until it does. `AdcsProbe --requester DOMAIN\user` supplies it by
-  hand.
+  before the agent is even opened. The API fills it at issuance when the backend is
+  ADCS (`LogonNames`): the directory is asked for the enrolment's UPN, the account
+  it returns has to carry the SID the enrolment was created for, and the NetBIOS
+  name comes from the domain's `crossRef` in the Configuration partition, or from
+  `Blinky:Directory:NetBiosDomain`. A UPN that has moved to another account is
+  refused rather than issued for, because the CA builds the certificate for
+  whoever the name points at. **Written and unit-tested; the `crossRef` read has not
+  run against a directory**, and no enrolment has gone from the console to ADCS.
+  `AdcsProbe --requester DOMAIN\user` still supplies the name by hand.
 - **`CmcRequest` writes the `RegInfo` control**, body part 2, before the request's
   body part 1, with `requestername=DOMAIN\user` and nothing else. A name with a
   second backslash, `&`, `=` or a control character is refused rather than

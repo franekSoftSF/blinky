@@ -256,6 +256,11 @@ public sealed record AdcsProblem(string Reason, string? Detail = null);
 /// its security descriptor and that account's own groups. Null when the
 /// descriptor could not be read.
 /// </param>
+/// <param name="MinimalKeySize">
+/// <c>msPKI-Minimal-Key-Size</c>, in bits. The CA compares a request's key length
+/// with it whatever the algorithm, so a P-256 key against the default 2048 is
+/// denied as too short. Added after exactly that denial on the lab CA.
+/// </param>
 public sealed record AdcsTemplateInfo(
     string Name,
     bool Found,
@@ -266,4 +271,5 @@ public sealed record AdcsTemplateInfo(
     IReadOnlyList<string>? SignaturePolicies = null,
     IReadOnlyList<string>? ExtendedKeyUsages = null,
     bool? AccountMayEnroll = null,
-    string? Account = null);
+    string? Account = null,
+    int? MinimalKeySize = null);

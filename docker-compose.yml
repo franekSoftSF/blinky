@@ -59,6 +59,8 @@ services:
       Blinky__Adcs__Connector__ClientCertificatePath: ${ADCS_CLIENT_CERTIFICATE:-/etc/blinky/certs/adcs-client.p12}
       Blinky__Adcs__Connector__ClientCertificatePasswordFile: ${ADCS_CLIENT_CERTIFICATE_PASSWORD_FILE:-}
       Blinky__Adcs__Templates__smartcard-logon: ${ADCS_TEMPLATE_SMARTCARD_LOGON:-}
+      # One algorithm; the registration check sets it against the template's minimum key size.
+      Blinky__Adcs__KeyAlgorithms__0: ${ADCS_KEY_ALGORITHM:-}
 
       # The directory people are read out of. Unset, the endpoints answer
       # "no directory is configured" and cardholders are entered by hand,
@@ -82,6 +84,8 @@ services:
       Blinky__Directory__BindDn: ${DIRECTORY_BIND_DN:-}
       Blinky__Directory__BindPassword: ${DIRECTORY_BIND_PASSWORD:-}
       Blinky__Directory__UseTls: ${DIRECTORY_USE_TLS:-true}
+      # The domain half of DOMAIN\user, which a Microsoft CA needs. Read from the directory when empty.
+      Blinky__Directory__NetBiosDomain: ${DIRECTORY_NETBIOS_DOMAIN:-}
 
       # What the LDAP client verifies the directory's certificate against.
       #

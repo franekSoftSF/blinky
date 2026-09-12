@@ -109,8 +109,18 @@ builder.Services.AddSingleton<Blinky.Directory.IDirectory>(_ =>
             : Blinky.Domain.DirectorySource.ActiveDirectory,
         builder.Configuration["Blinky:Directory:BindDn"],
         builder.Configuration["Blinky:Directory:BindPassword"],
-        builder.Configuration.GetValue("Blinky:Directory:UseTls", true)));
+        builder.Configuration.GetValue("Blinky:Directory:UseTls", true),
+
+        // Read from the domain's crossRef when unset. Set it where the bind account
+        // may not read the Configuration partition.
+        builder.Configuration["Blinky:Directory:NetBiosDomain"]));
 });
+
+// A Microsoft CA issues on somebody's behalf only for DOMAIN\user, read from the
+// directory at issuance; the built-in CA takes the subject it is given and needs none.
+builder.Services.AddSingleton(services => new Blinky.Api.Credentials.LogonNames(
+    services.GetRequiredService<Blinky.Directory.IDirectory>(),
+    required: caBackend == CaBackend.Adcs));
 
 builder.Services.AddSingleton<CredentialIssuanceService>();
 

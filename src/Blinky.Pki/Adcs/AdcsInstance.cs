@@ -43,6 +43,14 @@ public sealed class AdcsInstanceOptions
     public Dictionary<string, string> Templates { get; set; } = new(StringComparer.Ordinal);
 
     public bool AllowRevocation { get; set; } = true;
+
+    /// <summary>
+    /// The key algorithms cards are enrolled with here - <c>RSA2048</c>, <c>ECCP256</c>.
+    /// Empty means every one Blinky knows. The registration check sets each against the
+    /// template's minimum key size, so a deployment that enrols only RSA is not warned
+    /// about ECC keys it never sends.
+    /// </summary>
+    public List<string> KeyAlgorithms { get; set; } = [];
 }
 
 public sealed class AdcsConnectorOptions
@@ -157,6 +165,8 @@ public static class AdcsInstance
                 + "carries requests in other people's names and there is no HTTP to fall back to.");
         }
 
+        var algorithms = KeyAlgorithms(options.KeyAlgorithms);
+
         var transport = new ConnectorAdcsTransport(new ConnectorTransportOptions(
             url,
             options.Connector.ClientCertificatePath,
@@ -179,6 +189,7 @@ public static class AdcsInstance
                 agents,
                 new AdcsCaOptions(
                     AllowRevocation: options.AllowRevocation,
+                    AlgorithmSet: algorithms,
                     TemplateMap: new Dictionary<string, string>(options.Templates, StringComparer.Ordinal)));
         }
         catch
@@ -219,6 +230,30 @@ public static class AdcsInstance
         throw new CertificateAuthorityException(
             $"Blinky:Adcs:EnrolmentAgent:Location is {agent.Location}, which is neither Connector "
             + "nor File.");
+    }
+
+    /// <summary>
+    /// The configured key algorithms, or null for all of them. A name Blinky does not
+    /// know stops the start: silently dropping a typo would leave the check comparing
+    /// the template against a list nobody meant.
+    /// </summary>
+    internal static IReadOnlySet<string>? KeyAlgorithms(IReadOnlyCollection<string> configured)
+    {
+        var named = configured.Where(a => !string.IsNullOrWhiteSpace(a)).Select(a => a.Trim()).ToList();
+
+        if (named.Count == 0)
+        {
+            return null;
+        }
+
+        if (named.FirstOrDefault(a => TemplateKeys.BitsOf(a) is null) is { } unknown)
+        {
+            throw new CertificateAuthorityException(
+                $"Blinky:Adcs:KeyAlgorithms names {unknown}, which is none of RSA2048, RSA3072, "
+                + "RSA4096, ECCP256 and ECCP384.");
+        }
+
+        return new HashSet<string>(named, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

@@ -425,14 +425,22 @@ user's directory object. Neither the service account nor the computer appears in
 the certificate.
 
 The first attempt was denied, and that matters more for the product than the
-success. A P-256 key, which is what a card is issued with, was refused with
-`CERTSRV_E_KEY_LENGTH`: the template is on the default cryptography settings,
-where the minimum is 2048-bit RSA. RSA 2048 issued. The registration check does not
-read the template's minimum key size or algorithm yet, and should.
+success. A P-256 key was refused with `CERTSRV_E_KEY_LENGTH`: the template is on the
+default cryptography settings, where the minimum is 2048 bits, and the CA measures
+an ECC key in its own bits. RSA 2048 issued. The registration check now reads the
+template's minimum key size and, against the same template, warns that ECC keys will
+be denied - what the CA did, said before a card is involved.
 
-**The API cannot enrol through ADCS yet**: `Blinky.Directory` does not read
-`sAMAccountName`, so the cardholder's `DOMAIN\\user` exists only when the probe is
-given it by hand. [15](15-adcs-connector.md) has the detail.
+**The test certificate was revoked at the CA** through the connector, by the same
+`RevokeAsync` the API calls, and the connector now logs every revocation with the
+calling client certificate. Nothing has been revoked from the console.
+
+**The API now names the cardholder for the CA.** At issuance through ADCS it reads
+`sAMAccountName` for the enrolment's UPN, refuses if that account's SID is not the
+one the enrolment was created for, and takes the NetBIOS domain name from the
+directory's `crossRef` or from `Blinky:Directory:NetBiosDomain`. Unit-tested; the
+`crossRef` read has not met a directory, and no card has been enrolled through ADCS
+from the console. [15](15-adcs-connector.md) has the detail.
 
 What is left is the database, an account and a CA. CA instances and profiles are
 still not read from the database, so a deployment has one CA and templates are
@@ -576,7 +584,7 @@ exercised against the thing it is really for.
 | That a written certificate reaches the Windows certificate store | It does on BY-WIN-CLIENT01 — but only with Yubico's minidriver installed. The inbox PIV minidriver produced no key container, and on the bench machine HID ActivClient owns the binding | Done for the supported arrangement; the inbox-minidriver case stays unproved |
 | Multi-machine deployment | Proved on 2026-08-24 across all four lab machines. Kept here until a second deployment repeats it | Done |
 | Enrolment on a token whose slot already holds a key | The guard refuses rather than destroying it, which is right — but it also means a job that failed after generating cannot simply be retried into the same slot | 0029, with the reconciliation |
-| ADCS revocation, CES and card keys through ADCS | The lab CA issues through the connector; nothing has been revoked there, CES does not exist, and the template refuses ECC keys | 0031, 0033, 0034 |
+| ADCS revocation, CES and card keys through ADCS | The lab CA issues and revokes through the connector, from the probe; nothing from the console, CES does not exist, and the template refuses ECC keys | 0031, 0033, 0034 |
 
 ## Component progress
 
