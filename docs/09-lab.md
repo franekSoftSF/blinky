@@ -304,10 +304,12 @@ dotnet run --project tools/AdcsProbe -- --connector https://127.0.0.1:18444 \
   Until the certificate-management permission was granted, that was the expected
   answer for this lab, not a fault; with it, only `template-publication-unknown`
   remains.
-- **The smart-card template refuses ECC keys.** `BlinkySmartCardLogon` is on the
-  default cryptography settings, so a P-256 key is denied with
-  `CERTSRV_E_KEY_LENGTH`. `--submit` with `--key RSA2048` issues, and `--check`
-  warns about it (`template-key-too-short`). The test user is `AD\BlinkyUser`.
+- **The smart-card template takes ECC and RSA.** `BlinkySmartCardLogon` first sat on
+  the default cryptography settings, and a P-256 key was denied with
+  `CERTSRV_E_KEY_LENGTH`. It is now a *Key Storage Provider* template with
+  `ECDH_P256` and a 256-bit minimum, and both `--key ECCP256` and `--key RSA2048`
+  issue. `--check` says so as `template-key-algorithm`, a warning. The test user is
+  `AD\BlinkyUser`.
 - **`--revoke <serial>` revokes at the CA** through the connector, reason
   `CessationOfOperation` unless `--reason` says otherwise. The first test
   certificate, `47000000097012D4FEBA5C0A0E000000000009`, was revoked this way.

@@ -428,8 +428,11 @@ The first attempt was denied, and that matters more for the product than the
 success. A P-256 key was refused with `CERTSRV_E_KEY_LENGTH`: the template is on the
 default cryptography settings, where the minimum is 2048 bits, and the CA measures
 an ECC key in its own bits. RSA 2048 issued. The registration check now reads the
-template's minimum key size and, against the same template, warns that ECC keys will
-be denied - what the CA did, said before a card is involved.
+template's minimum key size and, against the same template, warned that ECC keys
+would be denied - what the CA did, said before a card is involved. With the template
+moved to `ECDH_P256` and a 256-bit minimum, a P-256 key and an RSA 2048 key both
+issued from it: the CA enforces the size and not the algorithm, so one template
+serves cards of either kind. Both were revoked straight after.
 
 **The test certificate was revoked at the CA** through the connector, by the same
 `RevokeAsync` the API calls, and the connector now logs every revocation with the

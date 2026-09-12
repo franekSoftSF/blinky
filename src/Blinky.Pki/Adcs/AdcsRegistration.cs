@@ -361,9 +361,10 @@ public static class AdcsRegistration
                     "template-key-algorithm",
                     RegistrationSeverity.Warning,
                     $"{template} names {named} as its key algorithm, and this deployment also enrols "
-                    + $"with {string.Join(", ", other)}. Whether the CA refuses a key of another "
-                    + "algorithm that is long enough has not been observed; a certificate issued "
-                    + "for one may still not be what the template's owner intended."));
+                    + $"with {string.Join(", ", other)}. The CA does not refuse those: it enforces the "
+                    + "minimum size and not the algorithm, and the lab CA issued an RSA 2048 key "
+                    + "against a template naming ECDH_P256. So they will issue, with a key that is "
+                    + "not the kind the template's owner chose."));
             }
         }
     }
