@@ -22,6 +22,18 @@ namespace Blinky.UnitTests;
 /// whatever store the developer actually uses. That is a laboratory concern and
 /// it lives here rather than in the product.
 /// </para>
+/// <para>
+/// <b>Nothing is held open past the constructor</b>, and that is not tidiness.
+/// Cryptoki state belongs to the process, not to the handle: whichever code
+/// disposes its library first calls <c>C_Finalize</c> and every other session
+/// in the process dies with it. A fixture keeping a session alive therefore
+/// fails in teardown - after the assertions have passed - with
+/// <c>CKR_CRYPTOKI_NOT_INITIALIZED</c> from <c>C_CloseSession</c>, which reads
+/// like a broken test and is really the code under test doing exactly the right
+/// thing. So this provisions the token, closes everything, and leaves a
+/// directory behind. Found by running these for the first time; seven of the
+/// nine failed this way and not one assertion was wrong.
+/// </para>
 /// </remarks>
 public sealed class Pkcs11TestToken : IDisposable
 {
@@ -49,8 +61,6 @@ public sealed class Pkcs11TestToken : IDisposable
     public const string ExtractableLabel = "blinky/management-key/v9";
 
     private readonly string scratch;
-    private readonly IPkcs11Library library;
-    private readonly ISession session;
 
     public Pkcs11TestToken()
     {
@@ -85,21 +95,9 @@ public sealed class Pkcs11TestToken : IDisposable
             provisioning.Import(new KeyRef(KeyPurpose.PukKek, 2), ImportedMaster);
         }
 
-        var factories = new Pkcs11InteropFactories();
-
-        library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(
-            factories, Module, AppType.MultiThreaded);
-
-        var slot = library.GetSlotList(SlotsType.WithTokenPresent)
-            .First(s => string.Equals(s.GetTokenInfo().Label.Trim(), TokenLabel,
-                StringComparison.Ordinal));
-
-        session = slot.OpenSession(SessionType.ReadWrite);
-        session.Login(CKU.CKU_USER, UserPin);
-
         // The one key provisioning will not make, because it is the mistake the
         // provider has to refuse: sensitive off and extractable on.
-        Extractable(factories, ExtractableLabel);
+        Extractable();
     }
 
     /// <summary>The module under test.</summary>
@@ -125,21 +123,11 @@ public sealed class Pkcs11TestToken : IDisposable
     public static byte[] ImportedPrk => System.Security.Cryptography.HKDF.Extract(
         System.Security.Cryptography.HashAlgorithmName.SHA256, ImportedMaster, salt: null);
 
+    /// <summary>
+    /// Removes the scratch store, and holds nothing else to release.
+    /// </summary>
     public void Dispose()
     {
-        try
-        {
-            session.Logout();
-        }
-        catch (Pkcs11Exception)
-        {
-            // A token that has already forgotten this session is not a test
-            // failure.
-        }
-
-        session.Dispose();
-        library.Dispose();
-
         try
         {
             System.IO.Directory.Delete(scratch, recursive: true);
@@ -156,13 +144,32 @@ public sealed class Pkcs11TestToken : IDisposable
     /// A key the token will hand out, which provisioning refuses to create and
     /// the provider has to refuse to use.
     /// </summary>
-    private void Extractable(Pkcs11InteropFactories factories, string label)
+    /// <remarks>
+    /// Opens the module, writes the key and closes everything again, rather
+    /// than keeping the session for the lifetime of the fixture. See the class
+    /// remarks: a handle held here does not survive the code under test
+    /// finalising the library.
+    /// </remarks>
+    private void Extractable()
     {
+        var factories = new Pkcs11InteropFactories();
+
+        using var library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(
+            factories, Module, AppType.MultiThreaded);
+
+        var slot = library.GetSlotList(SlotsType.WithTokenPresent)
+            .First(s => string.Equals(s.GetTokenInfo().Label.Trim(), TokenLabel,
+                StringComparison.Ordinal));
+
+        using var session = slot.OpenSession(SessionType.ReadWrite);
+
+        session.Login(CKU.CKU_USER, UserPin);
+
         List<IObjectAttribute> template =
         [
             factories.ObjectAttributeFactory.Create(CKA.CKA_CLASS, CKO.CKO_SECRET_KEY),
             factories.ObjectAttributeFactory.Create(CKA.CKA_KEY_TYPE, CKK.CKK_GENERIC_SECRET),
-            factories.ObjectAttributeFactory.Create(CKA.CKA_LABEL, label),
+            factories.ObjectAttributeFactory.Create(CKA.CKA_LABEL, ExtractableLabel),
             factories.ObjectAttributeFactory.Create(CKA.CKA_TOKEN, true),
             factories.ObjectAttributeFactory.Create(CKA.CKA_PRIVATE, true),
             factories.ObjectAttributeFactory.Create(CKA.CKA_SENSITIVE, false),
@@ -175,6 +182,8 @@ public sealed class Pkcs11TestToken : IDisposable
         using var mechanism = factories.MechanismFactory.Create(CKM.CKM_GENERIC_SECRET_KEY_GEN);
 
         session.GenerateKey(mechanism, template);
+
+        session.Logout();
     }
 }
 

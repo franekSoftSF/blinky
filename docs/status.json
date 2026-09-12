@@ -200,13 +200,13 @@
       "name": "Blinky.Secrets",
       "type": "library",
       "phase": 2,
-      "state": "done-unverified"
+      "state": "done"
     },
     {
       "name": "tools/SecretsTool",
       "type": "cli",
       "phase": 2,
-      "state": "done-unverified"
+      "state": "done"
     },
     {
       "name": "Blinky.Fido",
@@ -749,10 +749,10 @@
       "id": "0025a",
       "phase": 2,
       "title": "The master secrets behind PKCS#11, with SoftHSM2 as the reference module",
-      "state": "done-unverified",
+      "state": "done",
       "owner": "cloud-ai",
-      "proof": "src/Blinky.Secrets holds one interface with one operation - a keyed MAC computed where the key lives - and no way to ask for a key. Two providers behind it: Configuration, which is the arrangement that existed before and is still the default, and Pkcs11, which is a module path and a token label. Keys are separated by purpose and by generation with derived labels, the provider discovers every generation up to the configured one so a rotation can overlap, and it reads CKA_SENSITIVE and CKA_EXTRACTABLE back from the token and refuses a key the device would hand out. Use is counted and logged with neither input nor output, and reported per key on /api/system/status alongside which provider answered. The HKDF extract half moved out of the process because a token holding the master as a key cannot perform it; the token holds the extract instead, which for a 32-byte output makes the derivation bit-for-bit what it was, so an existing deployment imports the extract of its current master and every card keeps the key it holds. That equality is pinned by a test. Token.ManagementKeyVersion is written for the first time, which also fixes diversified cards reading back as Lost. 419 unit tests pass.",
-      "gap": "The nine PKCS#11 integration tests have never run: no module on the machine this was written on, and CI is windows-latest. They skip with a reason rather than passing, and docs/09-lab.md has the two commands that run them. Everything about the token path is therefore written and unproved - the derivation arithmetic either side of a migration is proved, the module interaction is not. The compose wiring and the Dockerfile change are unverified for the same reason. The PUK escrow needed a real transition rather than a compatible one, because the KEK was used directly as a cipher key: generation two derives a key per envelope, generation one stays readable through the configured KEK, and Blinky:Puk:Kek has to stay set for as long as any generation-one envelope exists. Nothing re-wraps them. The CA issuing key is not part of this - it is still the file tier, and 0021 owns it."
+      "proof": "src/Blinky.Secrets holds one interface with one operation - a keyed MAC computed where the key lives - and no way to ask for a key. Two providers behind it: Configuration, which is the arrangement that existed before and is still the default, and Pkcs11, which is a module path and a token label. Keys are separated by purpose and by generation with derived labels, the provider discovers every generation up to the configured one so a rotation can overlap, and it reads CKA_SENSITIVE and CKA_EXTRACTABLE back from the token and refuses a key the device would hand out. Use is counted and logged with neither input nor output, and reported per key on /api/system/status alongside which provider answered. The HKDF extract half moved out of the process because a token holding the master as a key cannot perform it; the token holds the extract instead, which for a 32-byte output makes the derivation bit-for-bit what it was, so an existing deployment imports the extract of its current master and every card keeps the key it holds. That equality is pinned by a test. Token.ManagementKeyVersion is written for the first time, which also fixes diversified cards reading back as Lost. Run for the first time against a real module on 2026-09-12, in a container on BY-CACMS: eleven PKCS#11 tests pass and none skips, including the refusal of an extractable key and the equality between an imported master and the configured one. 423 unit tests pass on Windows.",
+      "gap": "Two things stay unproved and neither is the token path. The compose wiring and the Dockerfile change were exercised by hand on BY-CACMS - the tool provisioned a token in the api image and the API started against the configuration provider - but no automated check covers them. And the PUK escrow needed a real transition rather than a compatible one, because the KEK was used directly as a cipher key: generation two derives a key per envelope, generation one stays readable through the configured KEK, and Blinky:Puk:Kek has to stay set for as long as any generation-one envelope exists. Nothing re-wraps them. The CA issuing key is not part of this - it is still the file tier, and 0021 owns it. Running the whole suite on Linux also fails UserPromptTests twice, which is the agent named-pipe pair and fails identically on b9b2285."
     },
     {
       "id": "0026",
