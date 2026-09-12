@@ -1,6 +1,6 @@
 # Project status — Blinky
 
-**Last updated:** 2026-09-12
+**Last updated:** 2026-09-13
 **Phase:** 2 — Issue something. **The gate is met**
 **Overall:** on 24 August 2026 a person logged into the lab domain with a card
 this system personalised and issued, against a Samba4 KDC, with no ADCS anywhere
@@ -413,16 +413,26 @@ for `AD\\HZCS01$`, revocation is unavailable and template publication unknown.
 The revocation probe is no longer a guess: the same CA answered `0x80070057` to the
 administrator and `0x80070005` to the computer.
 
-**The CMC now has the shape the CA needs, and the CA has not seen it.** Microsoft's
+**0030 is done: the lab CA issued a certificate from Blinky's CMC.** Microsoft's
 specification for a CMC on somebody's behalf wants the requester name in a
-`RegInfo` control and at least two SignerInfos. `CmcRequest` writes the control.
-The connector accepts exactly that one control and adds a no-signature SignerInfo
-beside the agent's. Reading it cost nothing; finding it at the CA would have cost
-the first day of the lab. The requester name is `DOMAIN\\user`. The probe takes it
-by hand, and **nothing in the API supplies it yet**: `Blinky.Directory` does not read
-`sAMAccountName`, so an ADCS enrolment from the console is refused by name. The
-next step is one submission for a test user, with the lab owner's consent.
-[15](15-adcs-connector.md) has the detail.
+`RegInfo` control and at least two SignerInfos. `CmcRequest` writes the control,
+and the connector accepts exactly that one control and adds a no-signature
+SignerInfo beside the agent's. Reading it cost nothing; finding it at the CA would
+have cost the first day of the lab. On 2026-09-13, with the service running as
+`AD\\svc_blinky`, the CA issued for the test account `AD\\BlinkyUser`. It ignored
+the requested subject and took the subject, the UPN and the SID extension from that
+user's directory object. Neither the service account nor the computer appears in
+the certificate.
+
+The first attempt was denied, and that matters more for the product than the
+success. A P-256 key, which is what a card is issued with, was refused with
+`CERTSRV_E_KEY_LENGTH`: the template is on the default cryptography settings,
+where the minimum is 2048-bit RSA. RSA 2048 issued. The registration check does not
+read the template's minimum key size or algorithm yet, and should.
+
+**The API cannot enrol through ADCS yet**: `Blinky.Directory` does not read
+`sAMAccountName`, so the cardholder's `DOMAIN\\user` exists only when the probe is
+given it by hand. [15](15-adcs-connector.md) has the detail.
 
 What is left is the database, an account and a CA. CA instances and profiles are
 still not read from the database, so a deployment has one CA and templates are
@@ -566,7 +576,7 @@ exercised against the thing it is really for.
 | That a written certificate reaches the Windows certificate store | It does on BY-WIN-CLIENT01 — but only with Yubico's minidriver installed. The inbox PIV minidriver produced no key container, and on the bench machine HID ActivClient owns the binding | Done for the supported arrangement; the inbox-minidriver case stays unproved |
 | Multi-machine deployment | Proved on 2026-08-24 across all four lab machines. Kept here until a second deployment repeats it | Done |
 | Enrolment on a token whose slot already holds a key | The guard refuses rather than destroying it, which is right — but it also means a job that failed after generating cannot simply be retried into the same slot | 0029, with the reconciliation |
-| ADCS, CES and the connector | No Windows AD lab yet | 0030–0034 |
+| ADCS revocation, CES and card keys through ADCS | The lab CA issues through the connector; nothing has been revoked there, CES does not exist, and the template refuses ECC keys | 0031, 0033, 0034 |
 
 ## Component progress
 
@@ -584,8 +594,8 @@ exercised against the thing it is really for.
 | `Blinky.Pki` — built-in CA | **partial** | Issues, revokes, publishes a CRL, both topologies. The CA key is still the file tier, and SoftHSM for *that* key is 0021 and outstanding. The master secrets moved separately, under 0025a |
 | `Blinky.Secrets` | **done** | `IKeyProvider`, the configuration and PKCS#11 providers, the audit decorator and the provisioning. Eleven integration tests pass against SoftHSM2; they still skip on CI, which is `windows-latest` with no module, so the run that counts is the one in [09](09-lab.md) |
 | `tools/SecretsTool` | **done** | Initialises a token, generates or imports a key, lists what is there. Provisioned a token inside the API image on BY-CACMS on 2026-09-12; the tests drive the same provisioning code |
-| `Blinky.Pki` — ADCS | **partial** | The CA class, the CMC, the enrolment agent key store and the connector transport. Nothing registers it and no CA has answered — 0030 and 0032, then 0031, 0033 |
-| `Blinky.AdcsConnector` | **partial** | Listens, authorises, and calls `ICertRequest3` and `ICertAdmin2`. A signed CMC reaches `Submit` from the container side; no CA has answered — [15](15-adcs-connector.md) |
+| `Blinky.Pki` — ADCS | **partial** | The CA class, the CMC, the enrolment agent key store and the connector transport. The lab CA issued from its CMC (0030); the API cannot supply the requester name yet, and CA instances are configuration — 0032, 0031, 0033 |
+| `Blinky.AdcsConnector` | **partial** | Listens, authorises, and calls `ICertRequest3` and `ICertAdmin2`. Runs as a service on HZCS01 and got a certificate issued by the lab CA; no installer, nothing revoked yet — [15](15-adcs-connector.md) |
 | Angular console | **partial** | Shell, inventory and recycle are up and served by the edge; enrolment waits on the API gaps in [11](11-console-enrolment.md) |
 | `blinky-samba-setup` | **done** | Publishes the chain into the directory and issues the KDC's PKINIT certificate. Verified on BY-DC01 |
 | `Blinky.Fido` | open | 0070. CTAP2 over HID — a second transport beside PC/SC, sharing nothing with it below the token |

@@ -292,14 +292,22 @@ dotnet run --project tools/AdcsProbe -- --connector https://127.0.0.1:18444 \
   `52D58935B60E92CFE4B6F26FA7B4DAEE3A757A3D`, template
   `BlinkyEnrollmentAgent(Computer)`, key not exportable. So the service runs as
   `LocalSystem`, and Enroll on the smart-card template goes to `HZCS01$`.
-- **The service is `BlinkyAdcsConnector`, as `LocalSystem`**, installed by the lab's
-  owner. It runs from `C:\Blinky\AdcsConnector`, with `Connector:CaConfig` naming
+- **The service is `BlinkyAdcsConnector`**, installed by the lab's owner, first as
+  `LocalSystem` and now as `AD\svc_blinky`. That account holds Enroll on
+  `BlinkySmartCardLogon` through a group, read access to the agent's private key,
+  and the CA's certificate-management permission. It runs from `C:\Blinky\AdcsConnector`, with `Connector:CaConfig` naming
   `SUBCA` and the agent chosen by fingerprint. To try a new build: stop the
   service, copy `Blinky.AdcsConnector.dll`, start it. The tunnel is then
   `ssh -N -L 18444:127.0.0.1:8444 administrator@172.16.2.40`, with nothing run on
   the far side. `--check BlinkySmartCardLogon --remote-agent` through it ends
   `UNVERIFIED` with `revocation-unavailable` and `template-publication-unknown`.
-  That is the expected answer for this lab, not a fault.
+  Until the certificate-management permission was granted, that was the expected
+  answer for this lab, not a fault; with it, only `template-publication-unknown`
+  remains.
+- **The smart-card template refuses ECC keys.** `BlinkySmartCardLogon` is on the
+  default cryptography settings, so a P-256 key is denied with
+  `CERTSRV_E_KEY_LENGTH`. `--submit` with `--key RSA2048` issues. The test user
+  is `AD\BlinkyUser`.
 - **Starting it as the local administrator leaves `C:\ProgramData\Blinky`** owned
   by that account. Remove it before starting the service under another identity, or
   that identity may not be allowed to reset its access list and the service stops
