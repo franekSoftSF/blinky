@@ -122,6 +122,43 @@ services:
       # Losing it is losing every card: nothing records what a card's key is,
       # by design, so there is no other way back to one.
       Blinky__ManagementKey__Master: ${MANAGEMENT_KEY_MASTER:-}
+
+      # Where the two secrets above actually live.
+      #
+      # Configuration is the default and is what everything above describes:
+      # the values are in this file's environment, which is readable by
+      # container inspection, by a crash dump and by whatever collects either.
+      # Pkcs11 moves them into a token that computes with them and will not
+      # hand them out. The code is the same either way - the token is a module
+      # path, so a YubiHSM is this block with a different one.
+      #
+      # Turning it on is two steps and the second is not optional:
+      #
+      #   docker compose run --rm --entrypoint dotnet api \
+      #       /app/tools/SecretsTool.dll init-token --so-pin SO --pin PIN
+      #   docker compose run --rm --entrypoint dotnet api \
+      #       /app/tools/SecretsTool.dll import --pin PIN \
+      #       --purpose ManagementKeyMaster --master BASE64
+      #
+      # import rather than generate for a deployment that has already
+      # personalised cards: it brings the master this deployment is using into
+      # the token so that every card keeps the key it has. A deployment with no
+      # cards in the field uses generate, and then nothing outside the token
+      # ever holds the value. See docs/06-security.md.
+      Blinky__Secrets__Provider: ${SECRETS_PROVIDER:-Configuration}
+      Blinky__Secrets__Pkcs11__Module: ${PKCS11_MODULE:-/usr/lib/softhsm/libsofthsm2.so}
+      Blinky__Secrets__Pkcs11__TokenLabel: ${PKCS11_TOKEN_LABEL:-blinky}
+
+      # A file only this container's user can read, rather than a value here.
+      # A PIN in the environment is exposed by exactly the means that make an
+      # environment secret worse than a file, so leaving it here would move the
+      # problem rather than solve it.
+      Blinky__Secrets__Pkcs11__PinFile: ${PKCS11_PIN_FILE:-}
+      Blinky__Secrets__Pkcs11__Pin: ${PKCS11_PIN:-}
+
+      # Where the reference module keeps its token. Read by the module, not by
+      # Blinky, and meaningless once a real device is configured above.
+      SOFTHSM2_CONF: /etc/blinky/softhsm2.conf
     volumes:
       # The agent CA signs the certificates agents authenticate with. Dev
       # material from scripts/dev-certs.sh; in production this is the one thing
@@ -133,6 +170,15 @@ services:
       # publishes this file into the directory, and it has to be readable by
       # something that is not this container.
       - ./pki:/var/lib/blinky/pki
+
+      # The token store, and the thing to back up separately from the database.
+      # A named volume rather than a bind mount, so that its ownership comes
+      # from the image and the service can read its own token.
+      #
+      # Restoring this without the database, or the database without this, is
+      # broken in two different ways - see docs/06-security.md.
+      - softhsm-tokens:/var/lib/blinky/tokens
+      - ./docker/pkcs11/softhsm2.conf:/etc/blinky/softhsm2.conf:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -209,3 +255,8 @@ services:
 
 volumes:
   postgres-data:
+
+  # The reference module's token store. Named rather than bound so that its
+  # ownership comes from the image; backed up with the database and never
+  # separately from it.
+  softhsm-tokens:

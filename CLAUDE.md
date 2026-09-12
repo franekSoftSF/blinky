@@ -32,6 +32,7 @@ good outcome; silence is not.
 | `src/Blinky.Infrastructure` | NHibernate mappings, PostgreSQL, `SchemaValidator` |
 | `src/Blinky.Piv` | PC/SC transport, PIV APDUs, Yubico extensions |
 | `src/Blinky.Pki` | `ICertificateAuthority`, built-in CA and ADCS behind it |
+| `src/Blinky.Secrets` | `IKeyProvider` — where the management-key master and PUK KEK live. Configuration or PKCS#11, one operation, no export |
 | `src/Blinky.Directory` | LDAP reads — UPN and `objectSid`. Read-only by design |
 | `src/Blinky.Api` | REST, SignalR hub, the console's backend |
 | `src/Blinky.Worker` | Job engine, CRL/OCSP, expiry scanner |

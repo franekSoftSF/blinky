@@ -90,6 +90,94 @@ Three secrets, in descending order of how bad it is to lose them:
 The root CA key is not on this list because it is not in the system: generated
 offline, used to sign the issuing CA, and stored off the host.
 
+## Where the second and third of those actually live
+
+`src/Blinky.Secrets`. One interface, `IKeyProvider`, with one operation on it: a
+keyed MAC computed wherever the key is. There is no export, no accessor and no
+property returning bytes, and that absence is the design rather than an
+oversight — an interface that can return a key is one a device cannot implement,
+and then the device tier is a rewrite instead of a line of configuration.
+
+Two providers today and they are the same code path:
+
+| `Blinky:Secrets:Provider` | Where the secret is | For |
+|---|---|---|
+| `Configuration` | This process's environment | Laptop, demo, CI. The default |
+| `Pkcs11` | A token, via a module path | SoftHSM2 today, a device later |
+
+SoftHSM2 is the reference module and nothing in the code knows its name. A
+YubiHSM is `Blinky:Secrets:Pkcs11:Module` pointing somewhere else, and the
+provisioning is the same four commands.
+
+**Keys are separated by purpose and by generation.** The label is derived, not
+configured: `blinky/management-key/v1`, `blinky/puk-kek/v2`. The provider looks
+for every generation up to the configured one, so a rotation is a new key beside
+the old one rather than a flag day — a card diversified under generation one
+stays manageable while generation two is what new cards get, and
+`Token.ManagementKeyVersion` records which is which.
+
+**Every key is created sensitive and non-extractable, and this is checked rather
+than assumed.** The provider reads both attributes back from the token at start
+and refuses a key the device would hand out, because that arrangement has the
+interface of a device and the custody of a file and would otherwise report as
+the former. `Blinky:Secrets:Pkcs11:RequireNonExportable` turns the check off and
+has to be set deliberately, which is the same shape as `AllowFileKeys`.
+
+**Every use is counted and logged, and neither the input nor the output is.**
+One line per operation with the label, the input length and the duration; the
+running totals are on `/api/system/status`, which is where a device that has
+started refusing becomes visible before an enrolment fails.
+
+### The one thing the derivation had to change
+
+HKDF has two halves. Extract computes `HMAC(salt, master)` — the master is the
+*message*, not the key — so it cannot be performed by a token holding the master
+as a key object. The way out is not to export the master. It is to keep the
+pseudorandom key that extract produces as the thing the token holds, which
+RFC 5869 §3.3 permits for input that is already uniformly random, and Blinky's
+masters are read from a cryptographic source.
+
+The consequence is the good one. For a 32-byte output, HKDF is one HMAC block,
+so `HMAC(extract(master), info ‖ 0x01)` is bit-for-bit what
+`HKDF.DeriveKey(master, info)` returned before any of this existed. A deployment
+moving onto a token imports the extract of the master it already has and **every
+card keeps the management key it is holding**. There is a test that pins the
+equality, and if it ever fails, every card in every deployment becomes
+unmanageable at the next enrolment.
+
+So the migration is:
+
+```
+SecretsTool init-token --so-pin S --pin P
+SecretsTool import --pin P --purpose ManagementKeyMaster --master $MASTER
+SecretsTool import --pin P --purpose PukKek --version 2 --master $PUK_KEK
+```
+
+`import` for a deployment with cards in the field; `generate` for one without,
+after which nothing outside the token has ever seen the value. Import is the one
+moment a secret crosses into the token and it is a step a person runs, not
+something the service can do — the API opens a read-only session and cannot
+create objects at all.
+
+### The PUK escrow needed a real transition, and did not get away with it
+
+The management-key master was already a derivation root, so it maps onto a MAC.
+The PUK KEK was not: it was used directly as an AES-GCM key, which is exactly
+the shape a token cannot serve, because using a key as a cipher key means
+holding its bytes.
+
+From generation two each envelope gets its own key, derived from the root, the
+token the envelope belongs to and the nonce it will be used with. That needs one
+operation from the device instead of a cipher mode whose support varies between
+providers, and it makes the one mistake AES-GCM does not forgive — the same key
+and nonce twice — structurally impossible, because no two envelopes share a key.
+
+`SecretEnvelope.KeyVersion` says which scheme opens a row. **Generation one is
+the raw configured KEK and stays readable**, because the alternative is a
+migration that strands every PUK escrowed before the upgrade. That means
+`Blinky:Puk:Kek` has to stay configured for as long as any generation-one
+envelope exists, and the status endpoint says whether it is.
+
 ## What is deliberately not protected
 
 Stated plainly, because a security section that claims completeness is lying:

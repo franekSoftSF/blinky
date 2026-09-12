@@ -259,3 +259,46 @@ in advance.
 | Kerberos fails with nothing useful in the message | Clock skew over five minutes |
 | The token vanishes from Windows | It is attached to WSL2 |
 | Smart-card logon fails but the certificate looks perfect | The issuing CA is not in `NTAuthCertificates`, or the KDC has no PKINIT certificate — see [04](04-pki-backends.md#strong-certificate-mapping) |
+
+## Running the PKCS#11 tests
+
+They are skipped where no module is installed, which includes CI on
+`windows-latest`, and the skip says so rather than the tests passing quietly.
+
+The module is found from `BLINKY_PKCS11_MODULE`, or from the usual places
+SoftHSM2 installs itself. On Debian or Ubuntu:
+
+```bash
+sudo apt-get install -y softhsm2 && dotnet test tests/Blinky.UnitTests/Blinky.UnitTests.csproj --filter Pkcs11
+```
+
+**Name the project, not the solution.** `dotnet test` with no argument resolves
+`Blinky.slnx`, which holds the WPF tray and the DCOM connector, and on Linux
+that stops at `NETSDK1100` before a single test runs.
+
+**And do not add `--no-build`.** On the 10.0.401 SDK it makes `dotnet test`
+print nothing at all and exit zero, having run no tests — which reads exactly
+like a green suite. Measured here, both on Linux; `dotnet vstest` against the
+built assembly reports normally, if a run without a build is what you want.
+
+The fixture makes its own token in a temporary directory and points the module
+at it, so nothing is written to a store anybody is using. It provisions through
+the same code `tools/SecretsTool` runs, which is the point: provisioning that
+only the tests can do would prove nothing about the procedure an operator
+follows.
+
+Where there is no Linux to hand, a container works and needs nothing installed:
+
+```bash
+docker run --rm -v "$PWD":/src -w /src mcr.microsoft.com/dotnet/sdk:10.0 bash -c "apt-get update -qq && apt-get install -y -qq softhsm2 && dotnet test tests/Blinky.UnitTests/Blinky.UnitTests.csproj --filter Pkcs11"
+```
+
+Run on BY-CACMS on 2026-09-12: eleven passed, nothing skipped.
+
+Two things to expect if you run the **whole** suite in that container rather
+than the filter. `UserPromptTests` fails twice, because the agent's tray talks
+to its service over a named pipe and that pair is a Windows arrangement; both
+failed identically on `b9b2285`, before any of this existed, so they are the
+platform and not a regression. And the nine PKCS#11 tests only run if the
+module installed — a suite reporting them as skipped is telling you `apt-get`
+did nothing, not that the code is fine.
