@@ -283,4 +283,9 @@ decryption writes an `AuditEvent`. Reading a PUK is an event worth alerting on.
 - `jsonb` columns are mapped with `.CustomSqlType("jsonb")`; NHibernate will
   otherwise infer `text` and comparisons will quietly stop working.
 - `AuditEvent` is append-only and partitioned by month. Retention is a policy
-  setting, but revocation and PUK-disclosure events are exempt from it.
+  setting, but revocation and PUK-disclosure events are exempt from it. That was a
+  sentence here before it was code: until 2026-09-13 no revocation wrote an event,
+  and `puk.disclosed` was written without `is_exempt_from_retention` and with its
+  detail interpolated into JSON, so a reason containing a quote broke the insert.
+  `credential.revoked`, `token.unblocked` and `puk.disclosed` now set the flag and
+  serialise their detail.

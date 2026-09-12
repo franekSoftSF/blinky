@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using Blinky.Api.Persistence;
 using Blinky.Contracts;
 using Blinky.Domain.Entities;
@@ -105,7 +106,7 @@ public sealed class CredentialIssuanceService(
     /// </remarks>
     /// <returns>How many credentials were taken with it, or null if no such token.</returns>
     public async Task<int?> BlockAsync(long serial, Blinky.Domain.TokenState state,
-        string? comment, CancellationToken ct = default)
+        string? comment, string actor, CancellationToken ct = default)
     {
         var reason = state switch
         {
@@ -151,7 +152,7 @@ public sealed class CredentialIssuanceService(
 
         foreach (var credential in live)
         {
-            await RevokeAsync(credential.Id, reason, comment, ct);
+            await RevokeAsync(credential.Id, reason, comment, actor, ct);
         }
 
         logger.LogWarning(
@@ -179,7 +180,7 @@ public sealed class CredentialIssuanceService(
     /// </para>
     /// </remarks>
     /// <returns>False when the token is not suspended, or does not exist.</returns>
-    public bool Unblock(long serial)
+    public bool Unblock(long serial, string actor)
     {
         using var session = database.OpenSession();
         using var transaction = session.BeginTransaction();
@@ -194,6 +195,18 @@ public sealed class CredentialIssuanceService(
         token.State = Blinky.Domain.TokenState.Registered;
         token.UpdatedAt = DateTime.UtcNow;
         session.Update(token);
+
+        // The reversal of a suspension somebody recorded, so recorded the same way.
+        session.Save(new AuditEvent
+        {
+            OccurredAt = token.UpdatedAt,
+            EventType = "token.unblocked",
+            Actor = actor,
+            SubjectType = nameof(Token),
+            SubjectId = token.Id,
+            TokenSerial = serial,
+            IsExemptFromRetention = true,
+        });
 
         transaction.Commit();
 
@@ -232,7 +245,7 @@ public sealed class CredentialIssuanceService(
     /// </remarks>
     /// <returns>False when there is no such credential, or it was already revoked.</returns>
     public async Task<bool> RevokeAsync(Guid credentialId, Blinky.Pki.X509RevocationReason reason,
-        string? comment, CancellationToken ct = default)
+        string? comment, string actor, CancellationToken ct = default)
     {
         using var session = database.OpenSession();
         using var transaction = session.BeginTransaction();
@@ -278,6 +291,31 @@ public sealed class CredentialIssuanceService(
             slot.UpdatedAt = now;
             session.Update(slot);
         }
+
+        // Who asked, in the same transaction as the state it explains. Nothing wrote
+        // this before, and through ADCS it is the only record there is: the lab CA
+        // lists every revocation as made by the connector's service account.
+        session.Save(new AuditEvent
+        {
+            OccurredAt = now,
+            EventType = "credential.revoked",
+            Actor = actor,
+            SubjectType = nameof(Credential),
+            SubjectId = credential.Id,
+            TokenSerial = credential.Token.Serial,
+            IsExemptFromRetention = true,
+
+            // Serialised rather than interpolated: the comment is whatever an
+            // operator typed.
+            Detail = JsonSerializer.Serialize(new
+            {
+                serialNumber = credential.SerialNumber,
+                reason = reason.ToString(),
+                comment,
+                ca = authority.Name,
+                atCa = !string.IsNullOrEmpty(credential.SerialNumber),
+            }),
+        });
 
         transaction.Commit();
 

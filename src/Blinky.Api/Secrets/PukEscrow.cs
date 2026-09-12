@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Blinky.Api.Persistence;
 using Blinky.Contracts;
 using Blinky.Domain;
@@ -124,7 +125,10 @@ public sealed class PukEscrow(
             // The disclosure is the event, never the value. This row is exempt
             // from retention precisely because it is the record that somebody
             // took a PUK out of escrow.
-            Detail = $$"""{"reason":"{{reason}}","pending":"{{pending.Id}}"}""",
+            // Serialised rather than interpolated: the reason arrives in a query string,
+            // and a quote in it either broke the jsonb insert or wrote keys of its own.
+            Detail = JsonSerializer.Serialize(new { reason, pending = pending.Id }),
+            IsExemptFromRetention = true,
         });
 
         transaction.Commit();
@@ -253,7 +257,8 @@ public sealed class PukEscrow(
             SubjectType = nameof(Token),
             SubjectId = token.Id,
             TokenSerial = serial,
-            Detail = $$"""{"reason":"offline-unblock","challenge":"{{challenge}}"}""",
+            Detail = JsonSerializer.Serialize(new { reason = "offline-unblock", challenge }),
+            IsExemptFromRetention = true,
         });
 
         token.PukState = CredentialSecretState.Set;
