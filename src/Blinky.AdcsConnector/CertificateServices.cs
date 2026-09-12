@@ -25,7 +25,8 @@ namespace Blinky.AdcsConnector;
 /// admitting one. See <see cref="CertificateServiceHost"/>.
 /// </para>
 /// </remarks>
-public sealed class CertificateServices(ILogger<CertificateServices> logger) : ICertificateServices
+public sealed class CertificateServices(
+    ConnectorOptions options, ILogger<CertificateServices> logger) : ICertificateServices
 {
     // ICertRequest submission flags. Microsoft's names kept, because the only
     // documentation for what these mean is Microsoft's.
@@ -207,11 +208,27 @@ public sealed class CertificateServices(ILogger<CertificateServices> logger) : I
             status);
     }
 
+    /// <summary>
+    /// Which CA a request is for: the one it names, else the configured one, else
+    /// whatever CA is active on this machine.
+    /// </summary>
+    /// <remarks>
+    /// The configured one was documented and never read. Every run on the bench
+    /// named a CA in the request, so nothing noticed until the connector ran as a
+    /// service on HZCS01 with <c>Connector:CaConfig</c> set and answered that no CA
+    /// was named - in a message telling the operator to set the setting it was
+    /// ignoring.
+    /// </remarks>
+    internal static string? Chosen(string? requested, string? configured) =>
+        requested is { Length: > 0 } ? requested
+        : configured is { Length: > 0 } ? configured.Trim()
+        : null;
+
     private string Resolve(string? caConfig)
     {
-        if (caConfig is { Length: > 0 })
+        if (Chosen(caConfig, options.CaConfig) is { } chosen)
         {
-            return caConfig;
+            return chosen;
         }
 
         var config = Create("CertificateAuthority.Config");

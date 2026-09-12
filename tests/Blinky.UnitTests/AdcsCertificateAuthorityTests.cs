@@ -33,7 +33,7 @@ public sealed class AdcsCertificateAuthorityTests
         new(
             AdcsTestCertificates.CardRequest("CN=jnowak"),
             new AttestedKey(12345678, "9A", [1, 2, 3], "Once", "Never"),
-            new CardholderIdentity("Jan Nowak", "jnowak@blinky.lab", "S-1-5-21-1-2-3-1104", null),
+            new CardholderIdentity("Jan Nowak", "jnowak@blinky.lab", "S-1-5-21-1-2-3-1104", null, @"BLINKY\jnowak"),
             new IssuanceProfile(
                 "smartcard-logon", "9A", "ECCP256", 365,
                 ["1.3.6.1.5.5.7.3.2", "1.3.6.1.4.1.311.20.2.2"],
@@ -101,6 +101,25 @@ public sealed class AdcsCertificateAuthorityTests
             () => ca.IssueAsync(Request(template: null)));
 
         Assert.Contains("names no ADCS template", refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(0, transport.Submissions);
+    }
+
+    [Fact]
+    public async Task A_cardholder_with_no_logon_name_is_refused_before_anything_is_signed()
+    {
+        // A CMC that names nobody is issued for whoever called the CA. Better a
+        // sentence naming the missing directory attribute than that.
+        var transport = new FakeAdcsTransport();
+        using var ca = Ca(transport);
+
+        var nameless = Request() with
+        {
+            Subject = new CardholderIdentity("Jan Nowak", "jnowak@blinky.lab", "S-1-5-21-1-2-3-1104", null),
+        };
+
+        var refusal = await Assert.ThrowsAsync<IssuancePolicyException>(() => ca.IssueAsync(nameless));
+
+        Assert.Contains("sAMAccountName", refusal.Message, StringComparison.Ordinal);
         Assert.Equal(0, transport.Submissions);
     }
 

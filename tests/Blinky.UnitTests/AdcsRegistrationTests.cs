@@ -293,6 +293,32 @@ public sealed class AdcsRegistrationTests
     }
 
     [Theory]
+    [InlineData("S-1-5-18", true)]
+    [InlineData("S-1-5-20", true)]
+    // LocalService reaches the network anonymously, and a named account as itself.
+    [InlineData("S-1-5-19", false)]
+    [InlineData("S-1-5-21-1-2-3-1105", false)]
+    public void Only_localsystem_and_networkservice_are_judged_as_the_computer(string sid, bool computer) =>
+        Assert.Equal(computer, EnrolRight.AuthenticatesAsComputer(new SecurityIdentifier(sid)));
+
+    [Fact]
+    public void A_grant_to_domain_computers_reaches_a_service_running_as_localsystem()
+    {
+        // HZCS01: the service ran as LocalSystem, the check evaluated S-1-5-18 and
+        // refused a template the CA would have let the computer enrol on.
+        var computer = new SecurityIdentifier("S-1-5-21-1-2-3-1106");
+        var domainComputers = new SecurityIdentifier("S-1-5-21-1-2-3-515");
+        var token = EnrolRight.ComputerToken(computer, [domainComputers]);
+
+        Assert.True(EnrolRight.Evaluate(
+            Descriptor($"(OA;;CR;{EnrolRight.Enroll};;{domainComputers})"), token));
+        Assert.True(EnrolRight.Evaluate(
+            Descriptor($"(OA;;CR;{EnrolRight.Enroll};;{computer})"), token));
+        Assert.True(EnrolRight.Evaluate(Descriptor($"(OA;;CR;{EnrolRight.Enroll};;AU)"), token));
+        Assert.False(EnrolRight.Evaluate(Descriptor($"(OA;;CR;{EnrolRight.Enroll};;{Stranger})"), token));
+    }
+
+    [Theory]
     [InlineData("BlinkySmartcardUser", "BlinkySmartcardUser")]
     [InlineData("a*b", @"a\2ab")]
     [InlineData("x)(cn=*", @"x\29\28cn=\2a")]

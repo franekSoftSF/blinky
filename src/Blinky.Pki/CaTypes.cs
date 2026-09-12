@@ -33,11 +33,18 @@ public sealed record AttestedKey(
 /// change a domain controller will not accept a logon certificate on the UPN
 /// alone - see docs/04-pki-backends.md.
 /// </remarks>
+/// <param name="LogonName">
+/// <c>DOMAIN\sAMAccountName</c>. The name a Microsoft CA is told to issue for when
+/// an enrolment agent asks on somebody's behalf - MS-WCCE names the cardholder
+/// this way and no other, so neither the UPN nor the SID will do. The built-in CA
+/// does not use it.
+/// </param>
 public sealed record CardholderIdentity(
     string DisplayName,
     string? Upn,
     string? ObjectSid,
-    string? DistinguishedName);
+    string? DistinguishedName,
+    string? LogonName = null);
 
 /// <summary>What to issue. The database's profile, flattened for the CA.</summary>
 public sealed record IssuanceProfile(

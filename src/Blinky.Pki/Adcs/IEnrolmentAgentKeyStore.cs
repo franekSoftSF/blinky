@@ -198,23 +198,13 @@ public sealed class FileEnrolmentAgentKeyStore : IEnrolmentAgentKeyStore
                 .Cast<System.Security.Cryptography.Oid>()
                 .Any(oid => oid.Value == CertificateRequestAgentEku));
 
-    public Task<byte[]> SignCmsAsync(ContentInfo content, CancellationToken ct = default)
-    {
-        var signed = new SignedCms(content, detached: false);
-
-        var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, certificate)
-        {
-            // The signer certificate and nothing above it. ADCS issued this
-            // enrolment agent certificate, so it can build the rest of the
-            // chain from its own store; sending it back is bytes for nothing.
-            IncludeOption = X509IncludeOption.EndCertOnly,
-            DigestAlgorithm = new System.Security.Cryptography.Oid("2.16.840.1.101.3.4.2.1"),
-        };
-
-        signed.ComputeSignature(signer, silent: true);
-
-        return Task.FromResult(signed.Encode());
-    }
+    /// <remarks>
+    /// The MS-WCCE shape for a CMC on somebody's behalf - a no-signature SignerInfo
+    /// and the agent's - built in <see cref="CmcRequest.SignAsAgent"/> so there is
+    /// one place in this assembly that knows it.
+    /// </remarks>
+    public Task<byte[]> SignCmsAsync(ContentInfo content, CancellationToken ct = default) =>
+        Task.FromResult(CmcRequest.SignAsAgent(content, certificate));
 
     public void Dispose() => certificate.Dispose();
 }

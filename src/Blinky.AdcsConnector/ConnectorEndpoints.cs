@@ -135,8 +135,9 @@ public static class ConnectorEndpoints
                 // directory - so the key hash is the field to match against the
                 // certificate afterwards.
                 logger.LogInformation(
-                    "Signed as enrolment agent for {Subject}, key {KeySha256}, asked by {Caller}",
-                    inspected.Subject, inspected.PublicKeySha256, caller);
+                    "Signed as enrolment agent for {RequesterName} (request subject {Subject}, key "
+                    + "{KeySha256}), asked by {Caller}",
+                    inspected.RequesterName, inspected.Subject, inspected.PublicKeySha256, caller);
 
                 return Results.Ok(new AdcsSignResponse(Convert.ToBase64String(signed)));
             }

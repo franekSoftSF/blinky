@@ -61,7 +61,7 @@ public sealed class ActiveDirectoryTemplates(ILogger<ActiveDirectoryTemplates> l
         ]);
 
         var found = search.FindOne();
-        var account = WindowsIdentity.GetCurrent();
+        var account = Principal();
 
         if (found is null)
         {
@@ -81,7 +81,71 @@ public sealed class ActiveDirectoryTemplates(ILogger<ActiveDirectoryTemplates> l
             Account: account.Name);
     }
 
-    private bool? MayEnroll(SearchResult found, WindowsIdentity account)
+    /// <summary>
+    /// The account the CA and the directory will see, which for a service running as
+    /// LocalSystem or NetworkService is the computer and not the local token.
+    /// </summary>
+    /// <remarks>
+    /// On HZCS01 the service ran as LocalSystem and the check evaluated
+    /// S-1-5-18 and its local groups against the template, found no Enroll and
+    /// refused - while over the network the same process authenticates as HZCS01$
+    /// with Domain Computers and whatever else the computer is in. A grant made
+    /// the way an administrator would make it, to the computer or its group, was
+    /// being reported as missing.
+    /// </remarks>
+    private (string Name, IReadOnlySet<SecurityIdentifier> Token) Principal()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+
+        if (!EnrolRight.AuthenticatesAsComputer(identity.User))
+        {
+            return (identity.Name, EnrolRight.TokenOf(identity));
+        }
+
+        using var computer = ComputerObject();
+
+        if (computer?.Properties["objectSid"].Value is not byte[] objectSid)
+        {
+            logger.LogWarning(
+                "{Account} authenticates to the domain as this computer, and the computer object "
+                + "for {Machine}$ could not be read; its own token is evaluated instead, which "
+                + "misses any grant to the computer or its groups", identity.Name, Environment.MachineName);
+
+            return (identity.Name, EnrolRight.TokenOf(identity));
+        }
+
+        computer.RefreshCache(["tokenGroups"]);
+
+        var groups = computer.Properties["tokenGroups"].Cast<object>()
+            .OfType<byte[]>()
+            .Select(sid => new SecurityIdentifier(sid, 0));
+
+        var sid = new SecurityIdentifier(objectSid, 0);
+        var name = sid.Translate(typeof(NTAccount)).Value;
+
+        return (name, EnrolRight.ComputerToken(sid, groups));
+    }
+
+    private static DirectoryEntry? ComputerObject()
+    {
+        using var rootDse = new DirectoryEntry("LDAP://RootDSE");
+
+        if (rootDse.Properties["defaultNamingContext"].Value is not string domain)
+        {
+            return null;
+        }
+
+        using var root = new DirectoryEntry($"LDAP://{domain}");
+        using var search = new DirectorySearcher(root)
+        {
+            Filter = $"(&(objectCategory=computer)(sAMAccountName={Escape(Environment.MachineName)}$))",
+            SearchScope = SearchScope.Subtree,
+        };
+
+        return search.FindOne()?.GetDirectoryEntry();
+    }
+
+    private bool? MayEnroll(SearchResult found, (string Name, IReadOnlySet<SecurityIdentifier> Token) account)
     {
         if (found.Properties["nTSecurityDescriptor"] is not { Count: > 0 } values
             || values[0] is not byte[] descriptor)
@@ -96,7 +160,7 @@ public sealed class ActiveDirectoryTemplates(ILogger<ActiveDirectoryTemplates> l
         var security = new ActiveDirectorySecurity();
         security.SetSecurityDescriptorBinaryForm(descriptor, AccessControlSections.Access);
 
-        return EnrolRight.Evaluate(security, EnrolRight.TokenOf(account));
+        return EnrolRight.Evaluate(security, account.Token);
     }
 
     private static int? Number(SearchResult found, string attribute) =>
@@ -146,6 +210,40 @@ public static class EnrolRight
 
     /// <summary>GENERIC_ALL, before the directory maps it to specific rights.</summary>
     private const int GenericAllBit = 0x10000000;
+
+    /// <summary>
+    /// LocalSystem and NetworkService reach other machines as the computer account.
+    /// LocalService and virtual accounts do not, and neither does a named account.
+    /// </summary>
+    public static bool AuthenticatesAsComputer(SecurityIdentifier? user) =>
+        user is not null
+        && (user.IsWellKnown(WellKnownSidType.LocalSystemSid)
+            || user.IsWellKnown(WellKnownSidType.NetworkServiceSid));
+
+    /// <summary>
+    /// The computer's network token as far as a template's ACL can tell: the
+    /// computer, its transitive groups from <c>tokenGroups</c>, and the well-known
+    /// groups every domain logon carries.
+    /// </summary>
+    /// <remarks>
+    /// <c>tokenGroups</c> includes the primary group, Domain Computers, which is
+    /// the one templates are most often granted to. The well-known SIDs are not in
+    /// the directory at all and are added by the logon; Authenticated Users is how
+    /// the default Computer template grants Enroll.
+    /// </remarks>
+    public static IReadOnlySet<SecurityIdentifier> ComputerToken(
+        SecurityIdentifier computer, IEnumerable<SecurityIdentifier> groups)
+    {
+        var token = new HashSet<SecurityIdentifier>(groups)
+        {
+            computer,
+            new(WellKnownSidType.WorldSid, null),
+            new(WellKnownSidType.AuthenticatedUserSid, null),
+            new(WellKnownSidType.ThisOrganizationSid, null),
+        };
+
+        return token;
+    }
 
     public static IReadOnlySet<SecurityIdentifier> TokenOf(WindowsIdentity identity)
     {

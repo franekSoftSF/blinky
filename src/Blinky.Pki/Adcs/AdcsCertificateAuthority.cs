@@ -112,6 +112,20 @@ public sealed class AdcsCertificateAuthority : ICertificateAuthority, IDisposabl
                 + "display name.");
         }
 
+        // Who the certificate is for, in the only form a Microsoft CA takes it on
+        // somebody's behalf. Refused before anything is opened or signed: a CMC
+        // that names nobody is issued for whoever called the CA, which with a
+        // computer-bound agent is the computer.
+        if (context.Subject.LogonName is not { Length: > 0 } logonName)
+        {
+            throw new IssuancePolicyException(
+                $@"{context.Subject.DisplayName} has no DOMAIN\sAMAccountName, and {Name} issues on "
+                + "somebody's behalf only for an account it can name. The directory lookup has to "
+                + "supply it.");
+        }
+
+        var requesterName = CmcRequest.RequesterName(logonName);
+
         if (agents is null)
         {
             throw new CertificateAuthorityException(
@@ -121,7 +135,7 @@ public sealed class AdcsCertificateAuthority : ICertificateAuthority, IDisposabl
 
         var agent = await agents.OpenAsync(ct);
 
-        var cmc = await CmcRequest.CreateAsync(context.Pkcs10, agent, ct: ct);
+        var cmc = await CmcRequest.CreateAsync(context.Pkcs10, requesterName, agent, ct);
 
         var answer = await transport.SubmitAsync(
             cmc, AdcsRequestFormat.Cmc, CmcRequest.TemplateAttribute(template), ct);

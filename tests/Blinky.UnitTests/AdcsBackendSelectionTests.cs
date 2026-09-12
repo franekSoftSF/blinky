@@ -279,7 +279,7 @@ public sealed class AdcsBackendSelectionTests
         new(
             AdcsTestCertificates.CardRequest("CN=jnowak"),
             new AttestedKey(12345678, "9A", [1, 2, 3], "Once", "Never"),
-            new CardholderIdentity("Jan Nowak", "jnowak@blinky.lab", "S-1-5-21-1-2-3-1104", null),
+            new CardholderIdentity("Jan Nowak", "jnowak@blinky.lab", "S-1-5-21-1-2-3-1104", null, @"BLINKY\jnowak"),
             new IssuanceProfile(
                 "smartcard-logon", "9A", "ECCP256", 365,
                 ["1.3.6.1.5.5.7.3.2"],

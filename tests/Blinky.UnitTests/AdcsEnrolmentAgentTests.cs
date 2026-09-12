@@ -22,6 +22,8 @@ public sealed class AdcsEnrolmentAgentTests
 
     private const string PkiData = "1.3.6.1.5.5.7.12.2";
 
+    private const string Requester = @"BLINKY\jnowak";
+
     [Fact]
     public void An_agent_certificate_with_the_request_agent_policy_loads()
     {
@@ -106,7 +108,7 @@ public sealed class AdcsEnrolmentAgentTests
 
         var pkcs10 = AdcsTestCertificates.CardRequest("CN=jnowak");
 
-        var cmc = await CmcRequest.CreateAsync(pkcs10, store);
+        var cmc = await CmcRequest.CreateAsync(pkcs10, Requester, store);
 
         var signed = new SignedCms();
         signed.Decode(cmc);
@@ -115,9 +117,16 @@ public sealed class AdcsEnrolmentAgentTests
         // with a complaint about the format rather than about the request.
         Assert.Equal(PkiData, signed.ContentInfo.ContentType.Value);
 
-        var signer = Assert.IsType<SignerInfo>(Assert.Single(signed.SignerInfos));
+        // Two SignerInfos, as MS-WCCE requires on somebody's behalf: one standing in
+        // for the enrollee without a signature, and the agent's. The first version
+        // had only the agent's.
+        var signers = signed.SignerInfos.Cast<SignerInfo>().ToList();
+        Assert.Equal(2, signers.Count);
+        Assert.Single(signers, s => s.SignerIdentifier.Type == SubjectIdentifierType.NoSignature);
+
+        var signer = Assert.Single(signers, s => s.SignerIdentifier.Type != SubjectIdentifierType.NoSignature);
         Assert.Equal(store.Certificate.Thumbprint, signer.Certificate?.Thumbprint);
-        signer.CheckSignature(verifySignatureOnly: true);
+        Verify(signed);
 
         // And the cardholder's request comes back byte for byte. The whole
         // arrangement rests on the CA seeing a PKCS#10 the card signed; a layer
@@ -132,9 +141,10 @@ public sealed class AdcsEnrolmentAgentTests
         using var store = FileEnrolmentAgentKeyStore.Open(file.Path, file.Password, allowFileKeys: true);
 
         var signed = new SignedCms();
-        signed.Decode(await CmcRequest.CreateAsync(AdcsTestCertificates.CardRequest("CN=jnowak"), store));
+        signed.Decode(await CmcRequest.CreateAsync(AdcsTestCertificates.CardRequest("CN=jnowak"), Requester, store));
 
-        Assert.Equal("2.16.840.1.101.3.4.2.1", signed.SignerInfos[0].DigestAlgorithm.Value);
+        Assert.All(signed.SignerInfos.Cast<SignerInfo>(),
+            signer => Assert.Equal("2.16.840.1.101.3.4.2.1", signer.DigestAlgorithm.Value));
     }
 
     [Fact]
@@ -144,7 +154,7 @@ public sealed class AdcsEnrolmentAgentTests
         using var store = FileEnrolmentAgentKeyStore.Open(file.Path, file.Password, allowFileKeys: true);
 
         var refusal = await Assert.ThrowsAsync<CertificateAuthorityException>(
-            () => CmcRequest.CreateAsync([], store));
+            () => CmcRequest.CreateAsync([], Requester, store));
 
         Assert.Contains("no certificate request", refusal.Message, StringComparison.Ordinal);
     }
@@ -154,13 +164,14 @@ public sealed class AdcsEnrolmentAgentTests
     {
         var pkcs10 = AdcsTestCertificates.CardRequest("CN=jnowak");
 
-        var reader = new AsnReader(CmcRequest.PkiData(pkcs10, 1), AsnEncodingRules.DER);
+        var reader = new AsnReader(CmcRequest.PkiData(pkcs10, Requester), AsnEncodingRules.DER);
         var body = reader.ReadSequence();
 
         Assert.False(reader.HasData);
 
-        // controlSequence, reqSequence, cmsSequence, otherMsgSequence.
-        Assert.False(body.ReadSequence().HasData);
+        // controlSequence, reqSequence, cmsSequence, otherMsgSequence. The first
+        // is no longer empty: it names the requester.
+        Assert.True(body.ReadSequence().HasData);
 
         var requests = body.ReadSequence();
         Assert.True(requests.HasData);
@@ -177,7 +188,7 @@ public sealed class AdcsEnrolmentAgentTests
         // tag of TaggedCertificationRequest. An explicit reading would nest one
         // sequence deeper and a CA rejects the result.
         var reader = new AsnReader(
-            CmcRequest.PkiData(AdcsTestCertificates.CardRequest("CN=jnowak"), 7),
+            CmcRequest.PkiData(AdcsTestCertificates.CardRequest("CN=jnowak"), Requester),
             AsnEncodingRules.DER);
 
         var body = reader.ReadSequence();
@@ -185,7 +196,7 @@ public sealed class AdcsEnrolmentAgentTests
 
         var tagged = body.ReadSequence().ReadSequence(new Asn1Tag(TagClass.ContextSpecific, 0));
 
-        Assert.Equal(7, tagged.ReadInteger());
+        Assert.Equal(1, tagged.ReadInteger());
     }
 
     [Fact]
@@ -193,6 +204,70 @@ public sealed class AdcsEnrolmentAgentTests
         Assert.Equal(
             "CertificateTemplate:BlinkySmartcardUser",
             CmcRequest.TemplateAttribute("BlinkySmartcardUser"));
+
+    [Fact]
+    public void The_requester_travels_in_a_reginfo_control_the_way_ms_wcce_spells_it()
+    {
+        // MS-WCCE 2.2.2.6.3: UTF-8, Name=Value, pairs joined by &. Without this the
+        // CA issues for whoever called it - with a computer-bound agent, the computer.
+        var reader = new AsnReader(
+            CmcRequest.PkiData(AdcsTestCertificates.CardRequest("CN=jnowak"), Requester),
+            AsnEncodingRules.DER);
+
+        var control = reader.ReadSequence().ReadSequence().ReadSequence();
+
+        Assert.Equal(2, control.ReadInteger());
+        Assert.Equal("1.3.6.1.5.5.7.7.18", control.ReadObjectIdentifier());
+        Assert.Equal(
+            "requestername=" + Requester,
+            System.Text.Encoding.UTF8.GetString(control.ReadSetOf().ReadOctetString()));
+    }
+
+    [Theory]
+    [InlineData(@"BLINKY\jnowak", @"BLINKY\jnowak")]
+    [InlineData(@" AD\Administrator ", @"AD\Administrator")]
+    public void A_requester_name_is_domain_backslash_account(string given, string expected) =>
+        Assert.Equal(expected, CmcRequest.RequesterName(given));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("jnowak")]
+    [InlineData("jnowak@blinky.lab")]
+    [InlineData(@"\jnowak")]
+    [InlineData(@"BLINKY\")]
+    [InlineData(@"A\B\C")]
+    // The separators of the attribute string. MS-WCCE defines no escape, so a
+    // name carrying one would reach the CA as a different name and an extra pair.
+    [InlineData(@"BLINKY\j&certificatetemplate=SubCA")]
+    [InlineData(@"BLINKY\j=k")]
+    public void Anything_else_is_refused_before_it_reaches_the_ca(string? given)
+    {
+        var refusal = Assert.Throws<IssuancePolicyException>(() => CmcRequest.RequesterName(given));
+
+        Assert.Contains(@"DOMAIN\sAMAccountName", refusal.Message, StringComparison.Ordinal);
+    }
+
+/// <summary>
+    /// Every SignerInfo checked the way its kind is checked: the agent's by its
+    /// signature, the no-signature one by its hash. <c>SignedCms.CheckSignature</c>
+    /// looks for a certificate for both and fails on the second with "Cannot find the
+    /// original signer", which is true and beside the point.
+    /// </summary>
+    internal static void Verify(SignedCms signed)
+    {
+        foreach (SignerInfo signer in signed.SignerInfos)
+        {
+            if (signer.SignerIdentifier.Type == SubjectIdentifierType.NoSignature)
+            {
+                signer.CheckHash();
+            }
+            else
+            {
+                signer.CheckSignature(verifySignatureOnly: true);
+            }
+        }
+    }
 
     /// <summary>The PKCS#10 back out of a PKIData, for comparison.</summary>
     private static byte[] InnerRequest(byte[] content)
