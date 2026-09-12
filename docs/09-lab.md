@@ -260,6 +260,43 @@ in advance.
 | The token vanishes from Windows | It is attached to WSL2 |
 | Smart-card logon fails but the certificate looks perfect | The issuing CA is not in `NTAuthCertificates`, or the KDC has no PKINIT certificate — see [04](04-pki-backends.md#strong-certificate-mapping) |
 
+## The ADCS connector on a Windows member server, through a tunnel
+
+HZCS01 (`172.16.2.40`), Windows Server 2022, joined to `ad.digitalworkspace.pl`.
+Recorded because the obvious way to try the connector there fails twice before it
+works, and neither failure says why.
+
+```bash
+dotnet publish src/Blinky.AdcsConnector -c Release -r win-x64 --self-contained true -o publish
+scp -r publish administrator@172.16.2.40:C:/Blinky/AdcsConnector
+ssh -L 18444:127.0.0.1:8444 administrator@172.16.2.40 "C:\Blinky\AdcsConnector\Blinky.AdcsConnector.exe"
+dotnet run --project tools/AdcsProbe -- --connector https://127.0.0.1:18444 \
+  --client client.p12 --client-password ... --fingerprint <listener sha256>
+```
+
+- **Self-contained**, because the server has no .NET runtime and does not need one.
+- **Listen on `127.0.0.1`** and tunnel. No firewall rule, and nothing else on the
+  network can reach a connector that is being tried out.
+- **Over a key-authenticated SSH session the connector runs as a local account.**
+  It can sign with a machine-store agent and it cannot read the directory or
+  authenticate to a CA — ADSI says the domain does not exist. Registration checks
+  and submissions need the service, as the computer or a managed service account.
+- **A PKCS#12 listener loads into the machine key set there**, because DPAPI has no
+  user credential in that session; the log says so. See
+  [15](15-adcs-connector.md).
+- **The CA is `SUBCA\DigitalWorkspace Issuing CA - homelab`** (`172.16.2.16`) —
+  the host, not the computer account `SUBCA$`, and the CA's full common name.
+  From the SSH session every config string fails with `RPC_S_SERVER_UNAVAILABLE`,
+  real or not; from a domain session the CA answers.
+- **The enrolment agent is on the computer**: `LocalMachine\My`, SHA-1
+  `52D58935B60E92CFE4B6F26FA7B4DAEE3A757A3D`, template
+  `BlinkyEnrollmentAgent(Computer)`, key not exportable. So the service runs as
+  `LocalSystem`, and Enroll on the smart-card template goes to `HZCS01$`.
+- **Starting it as the local administrator leaves `C:\ProgramData\Blinky`** owned
+  by that account. Remove it before starting the service under another identity, or
+  that identity may not be allowed to reset its access list and the service stops
+  at start.
+
 ## Running the PKCS#11 tests
 
 They are skipped where no module is installed, which includes CI on

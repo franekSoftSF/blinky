@@ -45,6 +45,18 @@ public sealed class CertificateServices(ILogger<CertificateServices> logger) : I
 
     private const uint AccessDenied = 0x80070005;
 
+    /// <summary>
+    /// HRESULTs that mean the call did not get to a certification authority.
+    /// </summary>
+    /// <remarks>
+    /// Facility 7 in the 0x800706xx range is RPC - server unavailable, call failed,
+    /// no endpoint - and file not found or a bad network path is a config string
+    /// naming nothing.
+    /// </remarks>
+    internal static bool NeverReachedTheCa(uint hresult) =>
+        (hresult & 0xFFFFFF00) == 0x80070600
+        || hresult is 0x80070002 or 0x80070035 or 0x80070043;
+
     public CaDescription Describe(string? caConfig, CancellationToken ct)
     {
         var config = Resolve(caConfig);
@@ -62,7 +74,12 @@ public sealed class CertificateServices(ILogger<CertificateServices> logger) : I
             return new CaDescription(
                 config,
                 NameOf(config),
-                AdminAvailable: TryOpenAdmin(config),
+                // Only probed when the CA answered at all. On HZCS01, where
+                // certadm.dll ships with the operating system, a probe against a CA
+                // that does not exist failed with an RPC error, was read as having
+                // reached the database, and reported revocation as available for a
+                // CA that was not there.
+                AdminAvailable: chain is not null && TryOpenAdmin(config),
                 CertificateChain: chain,
                 Templates: TryReadTemplates(NameOf(config)));
         }
@@ -283,19 +300,27 @@ public sealed class CertificateServices(ILogger<CertificateServices> logger) : I
             // permission check and fails there for the right reason, which is
             // exactly what is being asked - whether this account may manage
             // certificates - without touching a real certificate. Access denied
-            // is the answer "no"; anything else means the call was allowed as
-            // far as the database, which is the answer "yes".
+            // is the answer "no". A failure that never reached a CA - the RPC
+            // facility, or a CA that is not found - is also "no"; that reading
+            // was missing, and cost a false "available" on the lab server.
+            // Anything else is taken as the call having got as far as the
+            // database, and the code is logged so that reading can be checked
+            // against a real CA rather than trusted.
             Invoke<object?>(admin, "RevokeCertificate", config, "00", ReasonUnrevoke, ToDate(null));
 
             return true;
         }
-        catch (Exception ex) when (FromTheCa(ex) && (uint)ex.HResult == AccessDenied)
-        {
-            return false;
-        }
         catch (Exception ex) when (FromTheCa(ex))
         {
-            return true;
+            var code = (uint)ex.HResult;
+            var reached = code != AccessDenied && !NeverReachedTheCa(code);
+
+            logger.LogInformation(
+                "The revocation permission probe against {Config} answered 0x{Code:x8}: {Message}. "
+                + "Read as revocation {Available}.",
+                config, code, ex.Message, reached ? "available" : "unavailable");
+
+            return reached;
         }
         finally
         {

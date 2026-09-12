@@ -62,4 +62,22 @@ public sealed class AdcsTransportTests
     [InlineData("'; drop", false)]
     public void A_serial_number_is_hex_and_nothing_else(string? value, bool accepted) =>
         Assert.Equal(accepted, ConnectorEndpoints.IsSerial(value));
+
+    [Theory]
+    // Reached nothing: RPC server unavailable, call failed, no endpoint; a CA
+    // that is not found; a bad network path.
+    [InlineData(0x800706BAu, true)]
+    [InlineData(0x800706BEu, true)]
+    [InlineData(0x800706D9u, true)]
+    [InlineData(0x80070002u, true)]
+    [InlineData(0x80070035u, true)]
+    // Access denied is its own answer, and a CA error means the call arrived.
+    [InlineData(0x80070005u, false)]
+    [InlineData(0x80094004u, false)]
+    public void A_probe_that_never_reached_a_ca_is_not_read_as_revocation_being_available(
+        uint hresult, bool neverReached) =>
+        // On HZCS01 an RPC failure against a CA that did not exist was read as
+        // the call having got as far as the database, and the connector reported
+        // revocation as available.
+        Assert.Equal(neverReached, CertificateServices.NeverReachedTheCa(hresult));
 }

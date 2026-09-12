@@ -177,10 +177,11 @@ over-granted, which is a thing that happens.
 
 ## Running it
 
-The service account matters. A connector running as `LocalSystem` enrols as the
-CA's machine account, which is not an identity anybody can grant *Enroll* to on
-a template in a way that means what they intended. It runs as a dedicated domain
-**integration account**, and that account needs:
+The account the service runs as is the requester the CA sees. **This paragraph used
+to say `LocalSystem` was wrong**, because it enrols as the machine account; the lab
+showed that a computer-bound enrolment agent with Enroll granted to the computer is
+a coherent arrangement, and section 7 now has both. Whichever it is — a group managed
+service account or the computer — it needs:
 
 - *Request Certificates* on the CA, and *Enroll* on the target template;
 - *Enroll* on the *Enrollment Agent* template, and an enrolment agent
@@ -511,9 +512,17 @@ What it has to hold:
   enrol for. Blinky recommends it in the registration check and does not require
   it.
 
-What it must not be: `LocalSystem`, an administrator's own account, or a member of
-*Domain Admins* "to get it working". It should be a **group managed service
-account** if the estate supports one, so that nobody holds its password at all.
+Two arrangements hold up, and the lab uses the second:
+
+- **A group managed service account**, with the agent certificate in its own store.
+  Nobody holds its password, and nothing else on the server runs as it.
+- **The computer itself.** A computer-bound agent certificate in `LocalMachine\My`,
+  the service as `LocalSystem`, and Enroll granted to the computer account
+  (`HZCS01$`). Also passwordless; the agent key is usable by anything running as
+  SYSTEM on that server. This document first ruled it out, and was wrong to.
+
+What it must not be: an administrator's own account, or a member of *Domain Admins*
+"to get it working".
 
 What it produces for Blinky to check, which is 0033: `describe` already reports
 `AdminAvailable` and the agent. It does not yet report whether *Restricted
@@ -639,6 +648,140 @@ It also found a defect in how this was being checked rather than in the code. A
 build of the probe failed and the command carried on, because it was chained with
 `&&` after `grep | head`, whose exit status is not the build's. The probe that ran
 was the previous one. Nothing was concluded from that run.
+
+### On HZCS01, a real domain member, with a real enrolment agent
+
+Windows Server 2022 Datacenter, joined to `ad.digitalworkspace.pl`, reached over
+OpenSSH with a key as its local administrator. No Certificate Authority role, no
+.NET runtime. The connector went there as a self-contained build in
+`C:\Blinky\AdcsConnector`, listened on `127.0.0.1:8444` only, and was reached
+through `ssh -L`, so no firewall rule was needed. The enrolment agent certificate
+was enrolled onto the computer by the lab's owner from a template called
+`BlinkyEnrollmentAgent(Computer)`, issued by *DigitalWorkspace Issuing CA -
+homelab*.
+
+| Asked | Answered |
+|---|---|
+| Start, listener from a PKCS#12 | **Died**: `Access denied` importing the key. Fixed, see below |
+| `describe`, no CA named | 502: no certification authority active on this machine |
+| `describe`, a CA named that does not exist | Revocation reported **available**. Wrong, fixed, see below |
+| `--check`, same | `UNVERIFIED`: the CA did not hand over its certificate; the template could not be read — *the specified domain either does not exist*, because a local account on a domain member cannot read the directory |
+| `describe` with the real agent by SHA-1 fingerprint in `LocalMachine\My` | `store: LocalMachine\My`, *Microsoft Enhanced Cryptographic Provider v1.0*, `exportable: False`, production-ready — matching `certutil`'s *Private key is NOT exportable* |
+| `--submit --remote-agent` | **Signed** by the real, non-exportable agent key; a CMC of 2718 bytes reached `ICertRequest3::Submit` and got `RPC_S_SERVER_UNAVAILABLE` for a CA host that was a placeholder |
+
+Four things were learned there that could not have been learned on the bench:
+
+1. **A key-authenticated session cannot import a key for its own user.** DPAPI
+   protects a user-key-set import with the user's master key, and a logon without
+   the password has none. Measured in that session, loading the same file:
+
+   | Key set | Result |
+   |---|---|
+   | default, user | `Access denied` |
+   | machine | loaded |
+   | ephemeral | loaded |
+
+   A service started by the service control manager has the credential, and so
+   does an interactive logon; a scheduled task set to run without storing a
+   password does not. `Pkcs12File` now tries the user key set and falls back to
+   the machine key set, and the log says which it used. Not the ephemeral set:
+   Schannel will not serve TLS from a key that was never persisted.
+2. **`certadm.dll` ships with Windows Server.** So `ICertAdmin2` was there, the
+   revocation-permission probe really ran, and an RPC failure against a CA that did
+   not exist was read as "got as far as the database". The probe now runs only when
+   the CA handed over its certificate, treats the RPC facility and a CA-not-found as
+   "unavailable", and logs the code it saw. What a *real* CA answers for an
+   unknown serial is still unobserved.
+3. **The connector need not be on the CA.** `ICertRequest3` and `ICertAdmin2` both
+   take a remote config string, and a member server was enough. The one thing lost
+   is the template list, which is read from the CA's own registry and is then
+   unknown rather than empty.
+4. **The legacy CSP signs SHA-256 here.** The agent key is in the *Enhanced
+   Cryptographic Provider*, which under CryptoAPI cannot do SHA-256; .NET reached it
+   in a way that could, and the CMS signature was produced. Worth knowing before
+   anybody "fixes" the template's provider.
+
+**And one assumption in this document turned out to be wrong.** It said a
+connector running as `LocalSystem` enrols as the machine account, "which is not an
+identity anybody can grant Enroll to in a way that means what they intended". The
+lab's owner chose exactly that: a computer-bound enrolment agent. It is a coherent
+arrangement — the requester is `HZCS01$`, Enroll on the smart-card template is
+granted to that computer, the service runs as `LocalSystem`, and there is no
+password anywhere. Its cost is that the agent key is usable by anything running as
+SYSTEM on that server, which is the same population that already administers it.
+Section 7 now lists both.
+
+### First contact with the CA and the forest
+
+Later the same evening the lab's owner started the connector on HZCS01 in their
+own session, as `AD\Administrator`, and it was reached through the same tunnel. The
+CA is *DigitalWorkspace Issuing CA - homelab* on `SUBCA` (`172.16.2.16`).
+
+| Asked | Answered |
+|---|---|
+| `describe`, `SUBCA\DigitalWorkspace Issuing CA - homelab` | The CA handed over its chain, 3532 bytes. Revocation reported available. Template list unknown, because it lives in the CA's registry and the connector is not on the CA |
+| `--check BlinkyEnrollmentAgent(Computer)` | The template was **found and read out of the forest** — a name with parentheses in it, through the escaped filter — every attribute readable, Enroll evaluated for the account. Refused for requiring no authorised signature, which is right for an agent template and was the point of reading one: the smart-card template's name is not known here yet |
+
+What that settles, and what it does not:
+
+- **The config string is the host and the CA's common name.** `SUBCA`, not the
+  computer account `SUBCA$`, and the name as the issuer field spells it, including
+  `- homelab`.
+- **Every config string failed identically from a key-authenticated SSH session**,
+  including a host that does not exist: `RPC_S_SERVER_UNAVAILABLE` in under 32
+  milliseconds, with port 135 open. A local account cannot authenticate DCOM to a
+  domain CA, and the error it gets says nothing about why. Reaching the CA needs a
+  domain identity — the service as the computer, or a person's session.
+- **The directory read works on a real forest.** The attribute names from MS-CRTD
+  are the right ones and are readable by an ordinary domain account; the version 4
+  encoding of the signature policy is still unseen, because the template read
+  requires no signature at all.
+- **The revocation probe is still not proven.** The real CA answered the probe with
+  `0x80070057`, *the parameter is incorrect*, which the probe reads as "got past
+  the permission check". The account was a domain administrator, so "available" is
+  very likely true here — but an invalid-parameter answer may well come before the
+  permission check, in which case an account without *Issue and Manage
+  Certificates* gets the same answer. The run that decides it is the same probe as
+  an account without that right, and until then `AdminAvailable` is a guess with a
+  logged code behind it.
+- **The Enroll answer was for the administrator**, not for the identity the
+  service will run as. With a computer-bound agent that identity is `HZCS01$`.
+
+### What a Microsoft CA requires of a CMC on somebody's behalf — and ours does not do
+
+**This is the blocker for 0030's definition of done, found by reading, not by a
+CA.** [MS-WCCE, *Enroll on Behalf of Certificate Request Using CMS and CMC
+Request Formats*](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wcce/2d1cf183-2507-4026-bc05-7b6b65dfced9)
+and Microsoft's own [annotated CMC EOBO request](https://learn.microsoft.com/en-us/windows/win32/seccertenroll/cmc-eobo-request)
+agree on two things `CmcRequest` does not produce:
+
+- **Who the certificate is for travels in the CMC**, as a `RegInfo` control
+  (`1.3.6.1.5.5.7.7.18`) whose value MUST include `requestername`. The value is
+  UTF-8, `Name=Value` pairs joined by `&`, and the requester name is
+  `DOMAIN\user` — [MS-WCCE 2.2.2.6.3](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wcce/40e555ec-a9e2-4f2c-84ff-7aef6f1e0b0a).
+  Without it the CA has nobody to build the subject for except the requester,
+  which with this lab's agent is the computer.
+- **At least two SignerInfos.** The first is either signed by the enrollee's own
+  key and identified by subject key identifier, or uses the no-signature
+  mechanism; the second is the enrolment agent. `CmcRequest` produces one.
+
+What it takes, all of it on this side of a CA and none of it verified by one yet:
+
+- **The cardholder's `DOMAIN\sAMAccountName`.** `CardholderIdentity` carries a
+  UPN and an `objectSid` and not this, so `Blinky.Directory` has to read
+  `sAMAccountName` and the NetBIOS domain name.
+- **`CmcRequest` writes the `RegInfo` control.** The template can travel there
+  too, or stay in the attribute string.
+- **`PkiDataInspection` allows exactly that control and nothing else**, and the
+  connector logs `requestername` for every signature — the subject a card writes
+  into its PKCS#10 is not what ADCS issues, and the requester name is. Today it
+  refuses every control, so a correct request would be refused at the connector.
+- **The connector adds a no-signature SignerInfo beside the agent's.** .NET has
+  `SubjectIdentifierType.NoSignature` for this. The alternative, a SignerInfo from
+  the card's key, would cost a second card operation and a second PIN, and is only
+  worth it if the CA refuses the first.
+- **An order to check on a CA.** `SignerInfos` is a DER `SET OF`, so "first" and
+  "second" are an encoding order, not an insertion order.
 
 ## Unverified, and named as such
 

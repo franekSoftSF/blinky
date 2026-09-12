@@ -392,6 +392,29 @@ non-existent CA and an unreadable template as accepted. No forest has been read:
 the bench is not in a domain, and there is no registration flow yet for the check
 to stop.
 
+**On a real domain member, with a real agent.** HZCS01 now carries a computer-bound
+enrolment agent from *DigitalWorkspace Issuing CA - homelab*, and a self-contained
+connector build there loaded it from the machine store by fingerprint, reported it
+non-exportable, and signed a CMC with it. Three defects surfaced that the bench
+could not show, and are fixed: a key-authenticated SSH session cannot import a key
+for its own user, the revocation probe mistook an RPC failure for permission, and
+a local account's directory failure read like a network fault.
+
+**A Microsoft CA has answered.** `SUBCA\\DigitalWorkspace Issuing CA - homelab`
+handed its chain to the connector, and the connector read a template out of the
+lab forest with every attribute the registration check needs. Both ran with the
+connector in a domain administrator's session; the identity the service is meant to
+run as, the computer, has not been tried. The revocation probe's reading of the
+real CA's answer is still a guess, and says so.
+
+**And the CMC is not yet what the CA needs.** Microsoft's specification for a CMC on
+somebody's behalf wants the requester name in a `RegInfo` control and at least two
+SignerInfos. Ours has neither, and the connector refuses every control, so a real
+enrolment would fail or be issued for the wrong principal. Reading it cost nothing;
+finding it at the CA would have cost the first day of the lab. It needs the
+cardholder's `DOMAIN\\user` from the directory. [15](15-adcs-connector.md) has the
+detail.
+
 What is left is the database, an account and a CA. CA instances and profiles are
 still not read from the database, so a deployment has one CA and templates are
 mapped per profile in configuration, and `CaInstance` has no CRUD. **The integration account the

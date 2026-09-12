@@ -82,7 +82,12 @@ public static class ConnectorEndpoints
                 // findings, and 0033 reports the first as unknown, not as a refusal.
                 return Results.Json(
                     new AdcsProblem("The directory could not be read for template " + name + ": "
-                                    + ex.Message),
+                                    + ex.Message,
+                        // Seen on HZCS01, a domain member, with the connector running
+                        // as a local administrator: ADSI answers that the domain does
+                        // not exist, which reads like a network fault and is an account.
+                        "The connector has to run as a domain account to read the "
+                        + "directory; a local account on a domain member cannot."),
                     statusCode: StatusCodes.Status502BadGateway);
             }
         });

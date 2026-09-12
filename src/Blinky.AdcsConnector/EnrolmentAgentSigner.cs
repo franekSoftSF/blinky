@@ -72,7 +72,7 @@ public sealed class EnrolmentAgentSigner : IDisposable
         }
 
         var (loaded, source) = options.Path is { Length: > 0 } path
-            ? (FromFile(options, path), "file: " + path)
+            ? FromFile(options, path)
             : FromStore(options);
 
         Require(loaded, source, now);
@@ -176,7 +176,8 @@ public sealed class EnrolmentAgentSigner : IDisposable
         }
     }
 
-    private static X509Certificate2 FromFile(EnrolmentAgentOptions options, string path)
+    private static (X509Certificate2 Certificate, string Source) FromFile(
+        EnrolmentAgentOptions options, string path)
     {
         if (!options.AllowFileKey)
         {
@@ -186,7 +187,9 @@ public sealed class EnrolmentAgentSigner : IDisposable
                 + "its key can be non-exportable; turn the file on deliberately for a laboratory.");
         }
 
-        return X509CertificateLoader.LoadPkcs12FromFile(path, options.Password);
+        var certificate = Pkcs12File.Load(path, options.Password, out var keySet);
+
+        return (certificate, $"file: {path}, {keySet} key set");
     }
 
     private static (X509Certificate2 Certificate, string Source) FromStore(

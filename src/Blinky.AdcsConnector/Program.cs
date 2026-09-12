@@ -78,7 +78,7 @@ builder.Services.AddSingleton<ITemplateDirectory, ActiveDirectoryTemplates>();
 builder.Services.AddSingleton(new ConnectorEnrolmentAgent(
     EnrolmentAgentSigner.Load(options.EnrolmentAgent, DateTimeOffset.UtcNow)));
 
-var serverCertificate = ServerCertificate.Load(options.ServerCertificate);
+var (serverCertificate, serverCertificateSource) = ServerCertificate.Load(options.ServerCertificate);
 
 builder.WebHost.UseUrls(options.ListenUrl);
 builder.WebHost.ConfigureKestrel(kestrel =>
@@ -112,6 +112,8 @@ app.Logger.LogInformation(
     "ADCS connector {Version} listening on {Url}, {Count} client certificate(s) allowed, "
     + "schema {Schema}",
     ConnectorVersion.Value, options.ListenUrl, gate.Count, AdcsTransport.SchemaVersion);
+
+app.Logger.LogInformation("Listener certificate from {Source}", serverCertificateSource);
 
 app.Use(async (context, next) =>
 {
@@ -177,13 +179,13 @@ app.Run();
 /// <summary>The connector's own TLS certificate, from a store or a file.</summary>
 internal static class ServerCertificate
 {
-    public static X509Certificate2 Load(ServerCertificateOptions options)
+    public static (X509Certificate2 Certificate, string Source) Load(ServerCertificateOptions options)
     {
         if (options.Path is { Length: > 0 } path)
         {
-            var fromFile = X509CertificateLoader.LoadPkcs12FromFile(path, options.Password);
+            var fromFile = Pkcs12File.Load(path, options.Password, out var keySet);
 
-            return Require(fromFile, path);
+            return (Require(fromFile, path), $"file: {path}, {keySet} key set");
         }
 
         if (options.Thumbprint is not { Length: > 0 } thumbprint)
@@ -207,7 +209,7 @@ internal static class ServerCertificate
             if (ClientCertificateGate.Normalise(candidate.Thumbprint) == wanted
                 || ClientCertificateGate.FingerprintOf(candidate) == wanted)
             {
-                return Require(candidate, thumbprint);
+                return (Require(candidate, thumbprint), @"store: LocalMachine\My");
             }
         }
 
