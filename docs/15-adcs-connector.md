@@ -167,10 +167,11 @@ second call into a CA that has not finished the first.
 
 ## What has to exist in the main tree
 
-The connector compiles, starts, refuses unauthorised callers and answers all five
-endpoints. The CA class that would call it now exists too. **Nothing wires the
-two together, and no Microsoft CA has seen either.** This is what is missing, in
-the order it has to arrive.
+Both ends of the wire now exist and talk to each other: a signed CMC travels from
+`AdcsCertificateAuthority` through `ConnectorAdcsTransport` into
+`ICertRequest3::Submit`. **Nothing in the running system reaches any of it, and no
+Microsoft CA has seen a request.** What is left is configuration and the console,
+in the order it has to arrive.
 
 ### 1. `Blinky.Pki/Adcs/` — patch 0030. **Written, and no CA has seen it**
 
@@ -206,16 +207,35 @@ RFC 5272 in `AdcsEnrolmentAgentTests` — four sequences, the `[0]` implicit tag
 and the cardholder's PKCS#10 byte for byte inside the agent's signature — which
 proves it is the structure intended, not that a CA agrees.
 
-### 1a. The other half of the transport — patch 0032's remainder
+### 1a. The other half of the transport — patch 0032's remainder. **Written**
 
-- **`ConnectorAdcsTransport : IAdcsTransport`** — the HTTP client for this
-  document's wire. Client certificate from configuration, the connector's server
-  certificate pinned or trusted explicitly, and a refusal when
-  `AdcsTransport.IsSupported` says the far end speaks a version this build does
-  not. `net10.0`, lives in the container, and once it exists the whole path can be
-  exercised against a connector running on a bench with no CA — which reaches the
-  DCOM call and fails there, which is a great deal more than either half proves
-  alone.
+`ConnectorAdcsTransport : IAdcsTransport` in `Blinky.Pki/Adcs`, plus
+`tools/AdcsProbe` to drive it.
+
+**There is no "accept any server certificate" option**, unlike `BackendClient`
+where one exists for a single-machine bench. A CMC signed by the enrolment agent
+is worth intercepting: whoever has one can submit it to the real CA and collect a
+certificate in the cardholder's name. So the transport refuses to be constructed
+without either a pinned SHA-256 fingerprint or a trust anchor — and refuses a
+40-digit value in the fingerprint setting, because that is the SHA-1 thumbprint
+from the wrong field of the certificate dialog and accepting it would mean
+pinning nothing.
+
+A fingerprint is the preferred form and is symmetric with how the connector
+authorises this client. The connector's certificate is routinely self-signed on a
+CA server that is not in the PKI it runs, and pinning one certificate is a
+stronger statement than chaining to a CA that signs many things.
+
+Each failure a deployment actually produces gets its own sentence, because from
+the API they look identical: an unreachable port, a fingerprint that does not
+match, a client certificate the connector was not told about, a connector nobody
+upgraded, a proxy answering in HTML instead of the connector, and a timeout —
+which arrives as the same exception type as a shutdown, and is how "the CA is not
+answering" gets logged as "the request was cancelled".
+
+`tools/AdcsProbe` is read-only by default, like the PIV probes. It prints what
+`describe` said; `--submit` asks a real CA for a real certificate on behalf of a
+real person and is behind a flag for that reason.
 
 ### 2. Choosing a backend at all — today it is hard-wired
 
@@ -259,9 +279,11 @@ Reading null as "the CA has no templates" would refuse a correct registration.
 
 ### 6. Deployment
 
-- **`.env.example` and `docker-compose.yml`** — the connector URL and the
-  client certificate the container presents. Neither exists today; there is not
-  one `ADCS` key in either file.
+- **`.env.example` and `docker-compose.yml`** — the connector URL, the client
+  certificate the container presents, the pinned server fingerprint and the
+  enrolment agent's PKCS#12 with `Blinky:Adcs:AllowFileKeys`. Neither file holds
+  one `ADCS` key today, and the transport's own options record names every one of
+  them.
 - **A client certificate for the API.** Not an agent certificate: the agent CA
   issues workstation identities, and an agent that could impersonate the API to
   the connector would be able to enrol on anybody's behalf. A separate pair,
@@ -320,11 +342,56 @@ That last row cost two defects, both of which would have survived into the lab:
 Both were found by starting the thing and asking it a question. Neither would
 have been found by a unit test, because neither is reachable without COM.
 
+### The whole path, on a machine with no CA
+
+Once `ConnectorAdcsTransport` existed, the same bench carried a request from the
+container's side of the wire into `ICertRequest3::Submit`. The connector on
+`127.0.0.1:18444`, a self-signed listener certificate pinned by fingerprint, a
+client certificate in the connector's allowlist, and a self-signed enrolment agent
+certificate carrying `1.3.6.1.4.1.311.20.2.1`:
+
+```
+dotnet run --project tools/AdcsProbe -- \
+  --connector https://127.0.0.1:18444 \
+  --client client.p12 --client-password ... \
+  --fingerprint <sha256 of the listener certificate> \
+  --ca-config 'CA01\Nonexistent Lab CA' \
+  --submit BlinkySmartcardUser --agent agent.p12 --agent-password ... \
+  --subject 'CN=jnowak'
+```
+
+| Asked | Answered |
+|---|---|
+| `describe` | The connector's version and schema, the CA config string, revocation unavailable, templates not established |
+| `describe` with a fingerprint one digit out | Refused before any request, naming the pinning and the firewall rule as the two usual causes |
+| `describe` with a client certificate not in the allowlist | 403, naming `Connector:AllowedClientThumbprints` on the CA server |
+| `--submit` | `CCertRequest::Submit: RPC_S_SERVER_UNAVAILABLE (0x800706ba)` for a CA that does not exist |
+
+That last row is the point. The enrolment agent's certificate was loaded, a CMC
+was built and signed, it crossed the wire, and `ICertRequest3::Submit` was invoked
+with those bytes. Everything between the container and the CA is proved; what is
+unproved is the CA's opinion of the CMC.
+
+It cost a third defect, of the same kind as the first two. `describe` failed
+outright on this machine, which made a usable connector report as broken:
+`ICertAdmin2` lives in `certadm.dll`, which arrives with the CA role or the
+management tools, while `ICertRequest3` lives in `certcli.dll`, which is on every
+Windows. The two can be present separately, and a machine with only the second can
+enrol and not revoke. `AdminAvailable: false` is now the answer rather than an
+exception.
+
+One consequence of that, worth knowing before reading a `describe`: the wire
+carries a bool, so `AdminAvailable: false` cannot distinguish a service account
+without *Issue and Manage Certificates* from a machine with no `ICertAdmin2` at
+all. Both mean revocation is unavailable. The connector's own log says which.
+
 ## Unverified, and named as such
 
 Nothing here has met a Microsoft CA. It builds, it starts, it refuses what it
-should refuse, and its access control and parsing are under test. That is all
-that is claimed.
+should refuse, its access control and parsing are under test, and a signed CMC has
+reached `ICertRequest3::Submit` on a machine with no CA behind it. That is all
+that is claimed. What a real ADCS thinks of the CMC is the open question, and it
+is the whole of 0030's definition of done.
 
 Three specific things to check first against a lab CA, because they are the
 places where the documentation is thin enough that this code is reasoning from

@@ -331,26 +331,31 @@ write it.
 0035 — writing to the directory — is deferred on purpose, with the reason in the
 roadmap.
 
-One piece of 0032 exists: `Blinky.AdcsConnector` is now a working Windows
-service rather than a skeleton. It listens over mutual TLS, authorises callers
-by SHA-256 fingerprint, and calls `ICertRequest3` and `ICertAdmin2` by late
-binding — submit, retrieve, revoke and a describe that 0033 was shaped around.
-Its access control and its parsing are under test. **Nothing in Blinky calls
-it**: 0030 has not been written, so there is no `IAdcsTransport` and no
-`AdcsCertificateAuthority`, and both `Blinky.Api` and `Blinky.Worker` still
-register the built-in CA as the only `ICertificateAuthority` there can be. It
-has also never met a Microsoft CA. What is left, in the order it has to arrive,
-is listed in [15 — the ADCS connector](15-adcs-connector.md), along with three
-things in the DCOM calls that are reasoned from the shape of the API rather
-than from behaviour anybody here observed.
+**Both ends of the ADCS wire now exist and talk to each other, and no Microsoft
+CA has answered a request.** `Blinky.AdcsConnector` is a working Windows service
+rather than a skeleton: mutual TLS, callers authorised by SHA-256 fingerprint,
+and `ICertRequest3` and `ICertAdmin2` by late binding — submit, retrieve, revoke
+and a describe that 0033 was shaped around. `Blinky.Pki/Adcs` holds
+`IAdcsTransport`, `AdcsCertificateAuthority`, the CMC builder,
+`IEnrolmentAgentKeyStore` and `ConnectorAdcsTransport`. Seventy-six tests cover
+the connector, the wire and the CA side, and none of them needs a CA.
 
-0030 is written, and its definition of done is not met. `Blinky.Pki/Adcs` now
-holds `IAdcsTransport`, `AdcsCertificateAuthority`, the CMC builder and
-`IEnrolmentAgentKeyStore`, with twenty-seven tests that need no CA. What the DoD
-asks for is a CMC a lab ADCS accepts, and there is no lab ADCS: the tests prove
-the structure is the one RFC 5272 describes, not that a Microsoft CA agrees with
-it. Nothing calls the class either, because no `IAdcsTransport` implementation
-exists yet — that is 0032's remaining half.
+Checkable by somebody who did not write it, and this is what was checked: with
+the connector running on a Windows machine that has **no CA installed at all**,
+`tools/AdcsProbe` loaded an enrolment agent certificate, built and signed a CMC,
+sent it over pinned TLS, and `ICertRequest3::Submit` answered
+`RPC_S_SERVER_UNAVAILABLE` for a CA that does not exist. A fingerprint one digit
+out is refused before any request leaves; a client certificate not in the
+connector's allowlist comes back 403 naming the setting to add it to. So
+everything between the container and the CA is proved, and the CA's opinion of
+the CMC is not — which is the whole of 0030's definition of done.
+
+What is left is configuration rather than cryptography: nothing in the running
+system reaches any of this, because `Blinky.Api` and `Blinky.Worker` still
+register the built-in CA as the only `ICertificateAuthority` there can be, and
+`CaInstance` has a jsonb column with no shape and no CRUD. Listed in order in
+[15 — the ADCS connector](15-adcs-connector.md), along with the two things in the
+DCOM calls that are still reasoned from the shape of the API rather than observed.
 
 The enrolment agent's key question is settled, and not in the direction this
 phase assumed. `IKeyProvider` from 0025a has exactly one operation, an HMAC,
@@ -513,8 +518,8 @@ exercised against the thing it is really for.
 | `Blinky.Pki` — built-in CA | **partial** | Issues, revokes, publishes a CRL, both topologies. The CA key is still the file tier, and SoftHSM for *that* key is 0021 and outstanding. The master secrets moved separately, under 0025a |
 | `Blinky.Secrets` | **done** | `IKeyProvider`, the configuration and PKCS#11 providers, the audit decorator and the provisioning. Eleven integration tests pass against SoftHSM2; they still skip on CI, which is `windows-latest` with no module, so the run that counts is the one in [09](09-lab.md) |
 | `tools/SecretsTool` | **done** | Initialises a token, generates or imports a key, lists what is there. Provisioned a token inside the API image on BY-CACMS on 2026-09-12; the tests drive the same provisioning code |
-| `Blinky.Pki` — ADCS | **partial** | The CA class, the CMC and the enrolment agent key store are written; no transport implementation and no CA has seen it — 0030, then 0031–0033 |
-| `Blinky.AdcsConnector` | **partial** | Listens, authorises, and calls `ICertRequest3` and `ICertAdmin2`. Nothing calls it and it has never met a CA — [15](15-adcs-connector.md) |
+| `Blinky.Pki` — ADCS | **partial** | The CA class, the CMC, the enrolment agent key store and the connector transport. Nothing registers it and no CA has answered — 0030 and 0032, then 0031, 0033 |
+| `Blinky.AdcsConnector` | **partial** | Listens, authorises, and calls `ICertRequest3` and `ICertAdmin2`. A signed CMC reaches `Submit` from the container side; no CA has answered — [15](15-adcs-connector.md) |
 | Angular console | **partial** | Shell, inventory and recycle are up and served by the edge; enrolment waits on the API gaps in [11](11-console-enrolment.md) |
 | `blinky-samba-setup` | **done** | Publishes the chain into the directory and issues the KDC's PKINIT certificate. Verified on BY-DC01 |
 | `Blinky.Fido` | open | 0070. CTAP2 over HID — a second transport beside PC/SC, sharing nothing with it below the token |
@@ -523,6 +528,7 @@ exercised against the thing it is really for.
 | `tools/InsProbe` | **done** | Asks a card whether it knows an instruction, with a control |
 | `tools/SchemaTool` | **done** | Generates the schema; `--roundtrip` proves it can be written to |
 | `tools/AgentEnrol` | **done** | The whole enrolment flow; run twice by the smoke test |
+| `tools/AdcsProbe` | **done** | Asks a connector what it is in front of, over the transport the API uses. Read-only unless `--submit`, like the PIV probes |
 
 
 ## Risks being carried

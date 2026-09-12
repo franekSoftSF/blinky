@@ -256,7 +256,27 @@ public sealed class CertificateServices(ILogger<CertificateServices> logger) : I
 
     private bool TryOpenAdmin(string config)
     {
-        var admin = Create("CertificateAuthority.Admin");
+        object admin;
+        try
+        {
+            admin = Create("CertificateAuthority.Admin");
+        }
+        catch (CertificateServiceException)
+        {
+            // ICertAdmin2 lives in certadm.dll, which arrives with the CA role
+            // or the management tools; ICertRequest3 lives in certcli.dll, which
+            // is on every Windows. So the two can be present separately, and a
+            // machine with only the second can enrol and not revoke. Measured on
+            // a bench with neither a CA nor the tools, where this threw out of
+            // describe and took the whole registration down - which reported a
+            // usable connector as broken.
+            logger.LogInformation(
+                "CertificateAuthority.Admin is not registered on this machine, so revocation "
+                + "through this connector is unavailable. Enrolment is unaffected.");
+
+            return false;
+        }
+
         try
         {
             // Un-revoking a serial that cannot exist. It reaches the CA's
