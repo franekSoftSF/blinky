@@ -901,3 +901,16 @@
     grid-column: 2;
   }
 }
+
+.secrets-panel { margin: 1rem 0; }
+.secrets-content { padding: 1rem; }
+.secrets-content p { overflow-wrap: anywhere; }
+.secret-state { display: inline-block; padding: .35rem .6rem; border-radius: .4rem; }
+.secret-state[data-tone='neutral'] { background: #223044; color: #dce8f7; }
+.secret-state[data-tone='success'] { background: #153b34; color: #8af0c1; }
+.secret-state[data-tone='warning'] { background: #40351e; color: #ffd477; }
+.secret-state[data-tone='danger'] { background: #441e2a; color: #ffadb5; }
+html[data-theme='light'] .secret-state[data-tone='neutral'] { background: #e9eff5; color: #35465c; }
+html[data-theme='light'] .secret-state[data-tone='success'] { background: #d9f6e7; color: #145a3b; }
+html[data-theme='light'] .secret-state[data-tone='warning'] { background: #fff0c7; color: #6c4b00; }
+html[data-theme='light'] .secret-state[data-tone='danger'] { background: #ffe0e4; color: #922136; }

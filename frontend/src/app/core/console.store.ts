@@ -148,7 +148,23 @@ export interface DirectoryAccessResult {
   detail: string;
   wouldEnable: string;
 }
+export interface SecretsStatus {
+  provider: string;
+  custody: { tier: string; description: string; productionReady: boolean; detail: string };
+  writingWith: { managementKey: number; pukKek: number };
+  keys: Array<{
+    purpose: string;
+    version: number;
+    label: string;
+    nonExportable: boolean;
+    usage: { operations: number; failures: number; lastUsedAt: string | null } | null;
+  }>;
+  managementKeyMasterConfigured: boolean;
+  legacyPukEnvelopesReadable: boolean;
+}
+
 export interface SystemStatus {
+  secrets?: SecretsStatus | null;
   certificateAuthority: {
     name: string;
     backend: string;
