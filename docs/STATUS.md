@@ -432,7 +432,9 @@ template's minimum key size and, against the same template, warned that ECC keys
 would be denied - what the CA did, said before a card is involved. With the template
 moved to `ECDH_P256` and a 256-bit minimum, a P-256 key and an RSA 2048 key both
 issued from it: the CA enforces the size and not the algorithm, so one template
-serves cards of either kind. Both were revoked straight after.
+serves cards of either kind. Both were revoked straight after, and read back through
+the connector as revoked. The ECC certificate carries digital signature as well as key
+agreement, so it may sign a logon; ECC smart-card logon itself has not been tried.
 
 **The test certificate was revoked at the CA** through the connector, by the same
 `RevokeAsync` the API calls, and the connector now logs every revocation with the

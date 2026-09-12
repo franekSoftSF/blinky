@@ -859,11 +859,24 @@ minimum key size and not the algorithm the template names, and a minimum of 256 
 a card be issued with either. Both certificates were revoked through the connector
 straight afterwards.
 
-Two things that run did not show. The first is the key usage of the ECC
-certificate, which matters for logon, because a certificate that allows only key
-agreement cannot sign a PKINIT request. The probe did not print it then and does now,
-and the revoked certificate can still be opened in the CA console. The second is an
-earlier reading of this document: after the template was first moved to a *Key
+**What the three certificates carry**, read back afterwards with
+`AdcsProbe --retrieve <request id>`. An ADCS serial number ends in the request id, and
+the connector now returns the certificate for a revoked request as well as an issued
+one, because a revoked certificate is still one the CA holds:
+
+| Request | Template cryptography | Key | Key usage |
+|---|---|---|---|
+| 9 | Legacy provider, minimum 2048 | RSA 2048 | Digital signature, key encipherment (`a0`) |
+| 10 | Key Storage Provider, `ECDH_P256`, minimum 256 | P-256 | Digital signature, key agreement (`88`) |
+| 11 | same | RSA 2048 | Digital signature (`80`) |
+
+All three carry *Smart Card Logon* and *Client Authentication*, the UPN and the SID
+extension. **The ECC certificate may sign**, so an `ECDH_P256` template is not the
+trap it might have been: a certificate allowed only key agreement could not sign a
+PKINIT request. That ECC smart-card logon then works still needs a card, a workstation
+with `EnumerateECCCerts` and a domain controller, and has not been tried.
+
+One more thing was wrong in an earlier reading of this document: after the template was first moved to a *Key
 Storage Provider* with RSA, the directory held `msPKI-Asymmetric-Algorithm` `RSA`
 explicitly. Before that move there was no such value at all, because a legacy
 provider names none, not because RSA as a default goes unwritten.
@@ -872,8 +885,10 @@ provider names none, not because RSA as a default goes unwritten.
 `AdcsProbe --revoke`, which goes through `AdcsCertificateAuthority.RevokeAsync` - the
 API's path - reason *cessation of operation*. The CA accepted it, and the connector
 logged the serial, the reason and the fingerprint of the client certificate that
-asked, as it now does for every revocation. That the CA lists it as revoked has not
-been read back here; the CA console or the next CRL shows it.
+asked, as it now does for every revocation. Read back through the connector, all
+three requests answer *Revoked by AD\svc_blinky*. **The CA's own record names the
+service account, not whoever asked Blinky to revoke**, so that person has to be in
+Blinky's audit trail, because it is not in the CA's.
 
 ### What a Microsoft CA requires of a CMC on somebody's behalf
 

@@ -183,7 +183,10 @@ public sealed class CertificateServices(
         var message = TryInvoke<string>(certRequest, "GetDispositionMessage");
         var status = TryInvoke<int>(certRequest, "GetLastStatus");
 
-        if (disposition != AdcsDisposition.Issued)
+        // A revoked certificate is still a certificate the CA holds, and reading it
+        // back is how anybody checks what was issued after the fact - the lab's
+        // first ECC certificate was revoked before its key usage had been looked at.
+        if (disposition is not (AdcsDisposition.Issued or AdcsDisposition.Revoked))
         {
             logger.LogWarning(
                 "Request {RequestId} came back {Disposition}: {Message}",

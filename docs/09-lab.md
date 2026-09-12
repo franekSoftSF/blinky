@@ -310,6 +310,9 @@ dotnet run --project tools/AdcsProbe -- --connector https://127.0.0.1:18444 \
   `ECDH_P256` and a 256-bit minimum, and both `--key ECCP256` and `--key RSA2048`
   issue. `--check` says so as `template-key-algorithm`, a warning. The test user is
   `AD\BlinkyUser`.
+- **`--retrieve <request id>` reads a certificate back**, revoked or not, and prints its
+  key, key usage, EKUs, UPN and SID extension. The request id is the end of the ADCS
+  serial number: `...00000A` is request 10.
 - **`--revoke <serial>` revokes at the CA** through the connector, reason
   `CessationOfOperation` unless `--reason` says otherwise. The first test
   certificate, `47000000097012D4FEBA5C0A0E000000000009`, was revoked this way.
