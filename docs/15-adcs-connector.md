@@ -257,7 +257,7 @@ Both ends of the wire now exist and talk to each other: a signed CMC travels fro
 setting, and no Microsoft CA has seen a request.** What is left is the database,
 the console, an account and a CA, in the order they have to arrive.
 
-### 1. `Blinky.Pki/Adcs/` — patch 0030. **Written, and no CA has seen it**
+### 1. `Blinky.Pki/Adcs/` — patch 0030. **A lab CA has issued from it**
 
 - **`IAdcsTransport`** — describe, submit, retrieve, revoke, in the wire
   contract's own vocabulary rather than a translated one. A translating layer is
@@ -519,7 +519,7 @@ What it has to hold:
   enrol for. Blinky recommends it in the registration check and does not require
   it.
 
-Two arrangements hold up, and the lab uses the second:
+Two arrangements hold up, and the lab started on the second:
 
 - **A group managed service account**, with the agent certificate in its own store.
   Nobody holds its password, and nothing else on the server runs as it.
@@ -530,6 +530,19 @@ Two arrangements hold up, and the lab uses the second:
 
 What it must not be: an administrator's own account, or a member of *Domain Admins*
 "to get it working".
+
+**What the lab ended up with is a third, hybrid arrangement**, and it is what issued
+the first certificate. The service runs as a domain account, `AD\svc_blinky`. The
+agent certificate is still the computer-bound one in `LocalMachine\My`, with its
+private key readable by that account. Enroll on `BlinkySmartCardLogon` is granted
+through a group, and the account holds the CA's certificate-management permission,
+which the revocation probe confirmed. It works, and it has the costs of both
+arrangements: the account has a password somebody set, and the key is still usable
+by anything running as SYSTEM on the server. Whether the grant is *Issue and Manage
+Certificates* alone or also *Manage CA* is not visible from the connector. The
+first is all Blinky needs; the second lets the account reconfigure the CA, and an
+account that also reaches the enrolment agent key should not have it. Neither Restricted
+Enrollment Agents nor certificate manager restrictions are configured in the lab.
 
 What it produces for Blinky to check, which is 0033: `describe` already reports
 `AdminAvailable` and the agent. It does not yet report whether *Restricted
@@ -788,10 +801,50 @@ The lab is deliberately generous: its owner runs it as a domain administrator.
 Nothing measured here says what a least-privileged integration account needs,
 which is still section 7's question.
 
+### The first certificate
+
+With the service running as `AD\svc_blinky` (section 7), `AdcsProbe --submit
+BlinkySmartCardLogon --remote-agent --requester AD\BlinkyUser` sent the CMC built by
+`CmcRequest`, signed by the connector, to the CA. Done with the lab owner's consent,
+for a test account, with a key the probe generated and discarded.
+
+| Attempt | Answer |
+|---|---|
+| ECC P-256 key, as a card would have | **Denied by Policy Module, `0x80094811` `CERTSRV_E_KEY_LENGTH`**: the key is shorter than the template's minimum. The request is in the CA's failed requests with that message |
+| RSA 2048 key, `--key RSA2048` | **Issued.** Serial `47000000097012D4FEBA5C0A0E000000000009`, chain of three |
+
+What the issued certificate says, and why each part matters:
+
+- **Subject `CN=BlinkyUser, OU=Users, OU=DIGITALWORKSPACE, DC=ad,
+  DC=digitalworkspace, DC=pl`.** The request asked for `CN=BlinkyUser`. The CA
+  ignored it and built the subject from the directory object that `requestername`
+  named, so the `RegInfo` control was read and used.
+- **UPN `BlinkyUser@ad.digitalworkspace.pl`** in the subject alternative name, from
+  the same object.
+- **The SID extension `1.3.6.1.4.1.311.25.2`** carries
+  `S-1-5-21-3474637876-781497690-2719985338-1132`: the strong mapping KB5014754
+  requires. It is there because the template takes the subject from the directory.
+- **Not issued for the requester.** Neither `svc_blinky` nor `HZCS01$` appears.
+
+So the EOBO shape is what a Microsoft CA accepts. That includes the order of the
+two SignerInfos as DER encodes the `SET OF`, which was the last unchecked point.
+
+**What the key-length denial means for the product.** A card's default profile is
+`ECCP256`, and a template left on the default cryptography settings (legacy CSP,
+RSA, minimum 2048) refuses every card key Blinky would send. The CA only says so at
+submission. It is a template setting: *Key Storage Provider* with an ECC algorithm
+and a 256-bit minimum, or an RSA profile in Blinky. The registration check does not
+read `msPKI-Minimal-Key-Size` or the template's algorithm, and should compare them
+with each mapped profile's algorithm before a card is involved. ECC smart-card logon
+also needs Windows to allow ECC certificates for logon, which is not tried here.
+
+The test certificate has not been revoked; its key no longer exists.
+
 ### What a Microsoft CA requires of a CMC on somebody's behalf
 
 **This was the blocker for 0030's definition of done, found by reading, not by a
-CA. The shape is now written; no CA has accepted it yet.** [MS-WCCE, *Enroll on Behalf of Certificate Request Using CMS and CMC
+CA. The shape is written, and the lab CA has issued from it** — see *The first
+certificate* above. [MS-WCCE, *Enroll on Behalf of Certificate Request Using CMS and CMC
 Request Formats*](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wcce/2d1cf183-2507-4026-bc05-7b6b65dfced9)
 and Microsoft's own [annotated CMC EOBO request](https://learn.microsoft.com/en-us/windows/win32/seccertenroll/cmc-eobo-request)
 agree on two things `CmcRequest` does not produce:
@@ -806,7 +859,7 @@ agree on two things `CmcRequest` does not produce:
   key and identified by subject key identifier, or uses the no-signature
   mechanism; the second is the enrolment agent. `CmcRequest` produces one.
 
-What it took, all of it on this side of a CA and none of it verified by one yet:
+What it took:
 
 - **The cardholder's `DOMAIN\sAMAccountName`.** `CardholderIdentity` now has an
   optional `LogonName`, and `AdcsCertificateAuthority` refuses to issue without it
@@ -831,12 +884,15 @@ What it took, all of it on this side of a CA and none of it verified by one yet:
   SignerInfo from the card's key, would cost a second card operation and a second
   PIN, and is only worth it if the CA refuses this one.
 - **An order to check on a CA.** `SignerInfos` is a DER `SET OF`, so "first" and
-  "second" are an encoding order, not an insertion order. Still unchecked.
+  "second" are an encoding order, not an insertion order. The CA accepted the
+  encoding order.
 
 ## Unverified, and named as such
 
-A Microsoft CA has answered describe and the revocation probe, and the forest has
-answered the template checks. No CA has been sent a CMC in the shape above. It
+A Microsoft CA has answered describe and the revocation probe, the forest has
+answered the template checks, and the CA has issued a certificate from a CMC in the
+shape above, for the user it named. No card key has been issued, and nothing has
+been revoked at the CA. It
 builds, it starts, it refuses what it should refuse, its access control and parsing
 are under test, and a signed CMC has reached `ICertRequest3::Submit` on a machine
 with no CA behind it. That is all that is claimed. What a real ADCS thinks of the CMC is the open question, and it

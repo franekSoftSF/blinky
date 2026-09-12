@@ -42,6 +42,7 @@ var remoteAgent = arguments.ContainsKey("remote-agent");
 var check = arguments.GetValueOrDefault("check");
 var subject = arguments.GetValueOrDefault("subject", "CN=probe");
 var requester = arguments.GetValueOrDefault("requester");
+var keyAlgorithm = arguments.GetValueOrDefault("key", "ECCP256");
 
 if (connector is null || clientPath is null)
 {
@@ -50,7 +51,7 @@ if (connector is null || clientPath is null)
         + "       (--fingerprint <sha256> | --server-ca <pem-or-der>)\n"
         + "       [--ca-config 'HOST\\CA name'] [--submit <template> --requester 'DOMAIN\\user'\n"
         + "        (--remote-agent | --agent <p12> --agent-password ...)]\n"
-        + "       [--check <template> [--remote-agent]]");
+        + "       [--check <template> [--remote-agent]] [--key ECCP256|RSA2048]");
 
     return 2;
 }
@@ -162,12 +163,22 @@ try
 
     using var ca = new AdcsCertificateAuthority("probe", transport, agent);
 
-    var issued = await ca.IssueAsync(Context(subject, requester, template));
+    var issued = await ca.IssueAsync(Context(subject, requester, template, keyAlgorithm));
 
     Console.WriteLine();
     Console.WriteLine($"issued      {issued.Certificate.Subject}");
     Console.WriteLine($"serial      {issued.SerialNumber}");
     Console.WriteLine($"chain       {issued.Chain.Count} certificate(s)");
+
+    // What ADCS put in, which is not what the request asked for: the subject and
+    // the UPN come from the directory object the requester name points at.
+    foreach (var extension in issued.Certificate.Extensions)
+    {
+        if (extension.Oid?.Value is "2.5.29.17" or "1.3.6.1.4.1.311.25.2")
+        {
+            Console.WriteLine($"{extension.Oid.FriendlyName ?? extension.Oid.Value,-11} {extension.Format(false)}");
+        }
+    }
 
     return 0;
 }
@@ -196,19 +207,32 @@ catch (CertificateAuthorityException ex)
 /// agent's signature. A probe that pretended to attest would be claiming
 /// something about hardware that is not present.
 /// </remarks>
-static CertificateRequestContext Context(string subject, string? requester, string template)
+/// <remarks>
+/// ECCP256 by default because that is what a card is issued with. RSA2048 exists
+/// because a template left on the default cryptography - a legacy CSP, RSA, 2048
+/// bits minimum - refuses a P-256 key as too short, which is how HZCS01's first
+/// submission ended: CERTSRV_E_KEY_LENGTH, after the CA had read the CMC.
+/// </remarks>
+static CertificateRequestContext Context(
+    string subject, string? requester, string template, string algorithm)
 {
-    using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+    using AsymmetricAlgorithm key = algorithm.ToUpperInvariant() switch
+    {
+        "ECCP256" => ECDsa.Create(ECCurve.NamedCurves.nistP256),
+        "RSA2048" => RSA.Create(2048),
+        _ => throw new ArgumentException($"--key {algorithm} is neither ECCP256 nor RSA2048."),
+    };
 
-    var pkcs10 = new CertificateRequest(subject, key, HashAlgorithmName.SHA256)
-        .CreateSigningRequest();
+    var request = key is RSA rsa
+        ? new CertificateRequest(subject, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)
+        : new CertificateRequest(subject, (ECDsa)key, HashAlgorithmName.SHA256);
 
     return new CertificateRequestContext(
-        pkcs10,
+        request.CreateSigningRequest(),
         new AttestedKey(0, "9A", key.ExportSubjectPublicKeyInfo(), null, null),
         new CardholderIdentity(subject, null, null, null, requester),
         new IssuanceProfile(
-            "probe", "9A", "ECCP256", 365,
+            "probe", "9A", algorithm.ToUpperInvariant(), 365,
             ["1.3.6.1.5.5.7.3.2"],
             IncludeUpnSan: false,
             IncludeSidExtension: false,
