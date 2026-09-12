@@ -22,18 +22,41 @@ namespace Blinky.Pki.Adcs;
 /// talking to CES or to the connector.
 /// </para>
 /// </remarks>
-public sealed class AdcsCertificateAuthority(
-    string name,
-    IAdcsTransport transport,
-    IEnrolmentAgentKeyStore agent,
-    AdcsCaOptions? options = null) : ICertificateAuthority, IDisposable
+public sealed class AdcsCertificateAuthority : ICertificateAuthority, IDisposable
 {
-    private readonly AdcsCaOptions settings = options ?? new AdcsCaOptions();
+    private readonly string name;
+    private readonly IAdcsTransport transport;
+    private readonly IEnrolmentAgentSource? agents;
+    private readonly AdcsCaOptions settings;
+
+    /// <summary>An instance whose enrolment agent is already open.</summary>
+    public AdcsCertificateAuthority(
+        string name, IAdcsTransport transport, IEnrolmentAgentKeyStore agent,
+        AdcsCaOptions? options = null)
+        : this(name, transport, new OpenedEnrolmentAgentSource(agent), options)
+    {
+    }
+
+    /// <param name="agents">
+    /// Null for an instance that only revokes. Revocation goes through
+    /// <c>ICertAdmin2</c> with no enrolment agent signature, and a process that
+    /// never issues should not be made to hold, or reach for, the key that
+    /// asks for certificates in other people's names.
+    /// </param>
+    public AdcsCertificateAuthority(
+        string name, IAdcsTransport transport, IEnrolmentAgentSource? agents,
+        AdcsCaOptions? options = null)
+    {
+        this.name = name;
+        this.transport = transport;
+        this.agents = agents;
+        settings = options ?? new AdcsCaOptions();
+    }
 
     public string Name => name;
 
     /// <summary>Where the enrolment agent's key lives, for the console.</summary>
-    public string AgentDescription => agent.Description;
+    public string AgentDescription => agents?.Description ?? "none - this instance does not issue";
 
     /// <summary>What this is in front of, for the console.</summary>
     public string TransportDescription => transport.Description;
@@ -71,13 +94,32 @@ public sealed class AdcsCertificateAuthority(
     public async Task<IssuedCertificate> IssueAsync(
         CertificateRequestContext context, CancellationToken ct = default)
     {
-        if (context.Profile.AdcsTemplateName is not { Length: > 0 } template)
+        // The profile's own template first, and this instance's mapping second.
+        // Profiles still live in code and name no CA, so for now the template is
+        // a property of the pair - this instance, that profile - and the mapping
+        // is where that pair is written down. When profiles become rows, the row
+        // carries it and the mapping goes.
+        var template = context.Profile.AdcsTemplateName is { Length: > 0 } named
+            ? named
+            : settings.Templates.GetValueOrDefault(context.Profile.Name);
+
+        if (template is not { Length: > 0 })
         {
             throw new IssuancePolicyException(
-                $"The profile {context.Profile.Name} names no ADCS template, and a Microsoft CA "
-                + "issues from a template or not at all. Set AdcsTemplateName to the template's "
-                + "name - not its display name.");
+                $"The profile {context.Profile.Name} names no ADCS template for {Name}, and a "
+                + "Microsoft CA issues from a template or not at all. Set "
+                + $"Blinky:Adcs:Templates:{context.Profile.Name} to the template's name - not its "
+                + "display name.");
         }
+
+        if (agents is null)
+        {
+            throw new CertificateAuthorityException(
+                $"{Name} was set up to revoke and not to issue, so it holds no enrolment agent. "
+                + "Issuance belongs to the API.");
+        }
+
+        var agent = await agents.OpenAsync(ct);
 
         var cmc = await CmcRequest.CreateAsync(context.Pkcs10, agent, ct: ct);
 
@@ -215,7 +257,11 @@ public sealed class AdcsCertificateAuthority(
         return what + detail + code;
     }
 
-    public void Dispose() => agent.Dispose();
+    public void Dispose()
+    {
+        (agents as IDisposable)?.Dispose();
+        (transport as IDisposable)?.Dispose();
+    }
 }
 
 /// <summary>
@@ -223,14 +269,17 @@ public sealed class AdcsCertificateAuthority(
 /// the CA's.
 /// </summary>
 /// <remarks>
-/// Not yet the shape of <c>CaInstance.Configuration</c>. That column is jsonb
-/// with no schema and no CRUD anywhere, and giving it one is its own change -
-/// docs/15-adcs-connector.md.
+/// Built from <see cref="AdcsInstanceOptions"/>, which is the shape
+/// <c>CaInstance.Configuration</c> is meant to take - docs/15-adcs-connector.md.
 /// </remarks>
 /// <param name="AllowRevocation">
 /// Whether this deployment permits revoking at the CA at all. Separate from
 /// whether the account <i>could</i>: an estate that revokes through its own
 /// change process wants Blinky to refuse rather than to succeed.
+/// </param>
+/// <param name="TemplateMap">
+/// Profile name to ADCS template name, for profiles that do not name one
+/// themselves.
 /// </param>
 /// <param name="Algorithms">
 /// What the template will accept. Asserted rather than discovered, because a
@@ -240,13 +289,17 @@ public sealed class AdcsCertificateAuthority(
 /// </param>
 public sealed record AdcsCaOptions(
     bool AllowRevocation = true,
-    IReadOnlySet<string>? AlgorithmSet = null)
+    IReadOnlySet<string>? AlgorithmSet = null,
+    IReadOnlyDictionary<string, string>? TemplateMap = null)
 {
     public IReadOnlySet<string> Algorithms { get; } = AlgorithmSet
         ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "RSA2048", "RSA3072", "RSA4096", "ECCP256", "ECCP384",
         };
+
+    public IReadOnlyDictionary<string, string> Templates { get; } =
+        TemplateMap ?? new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 /// <summary>

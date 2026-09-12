@@ -30,36 +30,58 @@ builder.Services.AddSingleton(_ => AgentCertificateAuthority.Load(
 builder.Services.AddSingleton<TokenInventoryService>();
 builder.Services.AddSingleton<JobService>();
 
-// The certificate authority, loaded from what scripts/new-ca.sh produced. CA
-// instances and profiles in the database are the open half of patch 0022.
-builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
-    Blinky.Pki.BuiltIn.BuiltInCaFactory.LoadFromDirectory(
-        builder.Configuration["Blinky:Ca:Directory"] ?? "/etc/blinky/ca",
-        builder.Configuration["Blinky:Ca:Password"],
-        builder.Configuration.GetValue("Blinky:Ca:AllowFileKeys", false),
+// The certificate authority: the built-in one, loaded from what
+// scripts/new-ca.sh produced, or a Microsoft CA through the connector. One
+// value chooses, and nothing downstream of this registration knows which it got
+// - that is the promise docs/04 makes about the two backends, kept here rather
+// than in every caller. CA instances and profiles read from the database are
+// the open half of patch 0022; until then the choice is configuration.
+var caBackend = Blinky.Pki.Adcs.AdcsInstance.Backend(builder.Configuration["Blinky:Ca:Backend"]);
 
-        // How long an issued list claims to be good for. Short is safer -
-        // a revocation reaches relying parties sooner - but only as far as
-        // publication is reliable, because an expired CRL does not fail open:
-        // it breaks every chain built under it. Whatever this is, the copy
-        // Samba holds in the directory has to be refreshed inside it, which is
-        // what scripts/publish-crl-to-directory.sh is for.
-        TimeSpan.FromHours(
-            builder.Configuration.GetValue("Blinky:Ca:CrlValidityHours", 8)),
-        // The address relying parties are told to fetch revocation from, and
-        // it has to be one they can reach: not localhost, not the container
-        // name, and over HTTP rather than HTTPS - see CaPublication. Left
-        // unset, certificates are issued with neither extension, which is
-        // what they were until 21 August 2026 and why the first smart-card
-        // logon reported CERT_TRUST_REVOCATION_STATUS_UNKNOWN.
-        //
-        // OcspUrl is separate and unset in every deployment today, because
-        // nothing answers OCSP yet - 0041a. It exists now because the address
-        // lands in the certificate at issuance and cannot be added to a card
-        // afterwards. Set it in the change that starts a responder.
-        Blinky.Pki.BuiltIn.CaPublication.FromBaseUrl(
-            builder.Configuration["Blinky:Ca:PublicUrl"],
-            builder.Configuration["Blinky:Ca:OcspUrl"])));
+if (caBackend == CaBackend.Adcs)
+{
+    var adcs = new Blinky.Pki.Adcs.AdcsInstanceOptions();
+    builder.Configuration.GetSection("Blinky:Adcs").Bind(adcs);
+
+    // Built now, so that a wrong URL, an unreadable client certificate or a
+    // missing pin stops the API in front of whoever configured it. The
+    // enrolment agent is not opened until the first enrolment: the connector
+    // lives on a server with its own maintenance windows, and an API that will
+    // not start while that server reboots is an outage nobody here caused.
+    builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(
+        Blinky.Pki.Adcs.AdcsInstance.Create(adcs, issues: true));
+}
+else
+{
+    builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
+        Blinky.Pki.BuiltIn.BuiltInCaFactory.LoadFromDirectory(
+            builder.Configuration["Blinky:Ca:Directory"] ?? "/etc/blinky/ca",
+            builder.Configuration["Blinky:Ca:Password"],
+            builder.Configuration.GetValue("Blinky:Ca:AllowFileKeys", false),
+
+            // How long an issued list claims to be good for. Short is safer -
+            // a revocation reaches relying parties sooner - but only as far as
+            // publication is reliable, because an expired CRL does not fail open:
+            // it breaks every chain built under it. Whatever this is, the copy
+            // Samba holds in the directory has to be refreshed inside it, which is
+            // what scripts/publish-crl-to-directory.sh is for.
+            TimeSpan.FromHours(
+                builder.Configuration.GetValue("Blinky:Ca:CrlValidityHours", 8)),
+            // The address relying parties are told to fetch revocation from, and
+            // it has to be one they can reach: not localhost, not the container
+            // name, and over HTTP rather than HTTPS - see CaPublication. Left
+            // unset, certificates are issued with neither extension, which is
+            // what they were until 21 August 2026 and why the first smart-card
+            // logon reported CERT_TRUST_REVOCATION_STATUS_UNKNOWN.
+            //
+            // OcspUrl is separate and unset in every deployment today, because
+            // nothing answers OCSP yet - 0041a. It exists now because the address
+            // lands in the certificate at issuance and cannot be added to a card
+            // afterwards. Set it in the change that starts a responder.
+            Blinky.Pki.BuiltIn.CaPublication.FromBaseUrl(
+                builder.Configuration["Blinky:Ca:PublicUrl"],
+                builder.Configuration["Blinky:Ca:OcspUrl"])));
+}
 
 // The directory, or an honest absence of one. Registered either way so the
 // endpoints exist and answer "there is no directory here" rather than failing
@@ -863,9 +885,25 @@ app.MapGet("/api/system/status",
                 statusCode: 401);
         }
 
-        var capabilities = await ca.DescribeAsync(ct);
+        // A built-in CA answers from this process and cannot fail here. A
+        // Microsoft CA answers through a connector on another machine, and a
+        // status page that returned 500 because that machine was rebooting
+        // would hide the one fact worth showing - so an unreachable CA is part
+        // of the status rather than a failure of it.
+        Blinky.Pki.CaCapabilities? capabilities = null;
+        string? caProblem = null;
+
+        try
+        {
+            capabilities = await ca.DescribeAsync(ct);
+        }
+        catch (Blinky.Pki.CertificateAuthorityException ex)
+        {
+            caProblem = ex.Message;
+        }
 
         var built = ca as Blinky.Pki.BuiltIn.BuiltInCertificateAuthority;
+        var adcs = ca as Blinky.Pki.Adcs.AdcsCertificateAuthority;
 
         // The CRL is read from the file the worker writes rather than built
         // here: one producer, so the status reports what is actually published
@@ -901,7 +939,15 @@ app.MapGet("/api/system/status",
             certificateAuthority = new
             {
                 name = ca.Name,
-                backend = capabilities.Backend.ToString(),
+                backend = (capabilities?.Backend ?? (adcs is null ? CaBackend.BuiltIn : CaBackend.Adcs))
+                    .ToString(),
+
+                // Additive: false with a reason when a connector did not answer.
+                reachable = caProblem is null,
+                problem = caProblem,
+                transport = adcs?.TransportDescription,
+                enrolmentAgent = adcs?.AgentDescription,
+
                 topology = built?.Topology.ToString(),
                 issuer = built?.Issuer.Subject,
                 anchor = built?.TrustAnchor.Subject,
@@ -911,9 +957,9 @@ app.MapGet("/api/system/status",
                 // controller will accept for logon. False is not a defect - it
                 // means the configuration cannot, and says so before anybody
                 // enrols.
-                canIssueLogonCredentials = capabilities.CanIssueSmartCardLogon,
-                capabilities.SupportsRevocation,
-                capabilities.PublishesCrl,
+                canIssueLogonCredentials = capabilities?.CanIssueSmartCardLogon ?? false,
+                supportsRevocation = capabilities?.SupportsRevocation ?? false,
+                publishesCrl = capabilities?.PublishesCrl ?? false,
             },
 
             // Where the signing key lives. Present now, with one tier

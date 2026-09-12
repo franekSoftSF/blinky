@@ -370,10 +370,21 @@ everything between the container and the CA is proved, and the CA's opinion of
 the CMC is not — which is the whole of 0030's definition of done. Loading the
 agent from a Windows store by fingerprint has not been run: the bench used a file.
 
-What is left is configuration, an account and a CA. Nothing in the running system
-reaches any of this, because `Blinky.Api` and `Blinky.Worker` still register the
-built-in CA as the only `ICertificateAuthority` there can be, and `CaInstance`
-has a jsonb column with no shape and no CRUD. **The integration account the
+**The API can be pointed at it with one setting.** `Blinky:Ca:Backend=Adcs` builds
+the ADCS backend from `AdcsInstanceOptions`, the shape `CaInstance.Configuration`
+is meant to take, and nothing downstream knows which backend it got. A wrong
+backend name or `Transport=Ces` stops the API and the worker at start with a
+sentence, which was checked by starting both. The enrolment agent is opened at the
+first enrolment, so the API starts while the CA server reboots, and the status page
+reports an unreachable CA instead of failing. The worker does nothing for an ADCS
+CA on purpose: its revocation-list runner replays every revocation into the CA and
+would re-revoke every revoked certificate at ADCS each cycle. The same change
+stopped the scheduler writing revocation-list jobs on a worker with no CA to run
+them, which had been expiring in the console as failures.
+
+What is left is the database, an account and a CA. CA instances and profiles are
+still not read from the database, so a deployment has one CA and templates are
+mapped per profile in configuration, and `CaInstance` has no CRUD. **The integration account the
 connector runs as has to be designed before it is created**: it issues and
 revokes, and *Issue and Manage Certificates* is CA-wide unless certificate
 manager restrictions confine it. The lab server `HZCS01` was reached over SSH on

@@ -48,6 +48,18 @@ services:
       Blinky__AgentCa__KeyPath: /etc/blinky/certs/agent-ca.key
       Blinky__Ca__Directory: /etc/blinky/ca
 
+      # BuiltIn, or Adcs for a Microsoft CA through the connector. The
+      # enrolment agent is not configured here on purpose: with the connector
+      # it lives on the CA server, in the integration account's store, and a
+      # slot for one in this file would invite the arrangement docs/15 moved
+      # away from.
+      Blinky__Ca__Backend: ${CA_BACKEND:-BuiltIn}
+      Blinky__Adcs__Connector__Url: ${ADCS_CONNECTOR_URL:-}
+      Blinky__Adcs__Connector__ServerFingerprint: ${ADCS_CONNECTOR_FINGERPRINT:-}
+      Blinky__Adcs__Connector__ClientCertificatePath: ${ADCS_CLIENT_CERTIFICATE:-/etc/blinky/certs/adcs-client.p12}
+      Blinky__Adcs__Connector__ClientCertificatePasswordFile: ${ADCS_CLIENT_CERTIFICATE_PASSWORD_FILE:-}
+      Blinky__Adcs__Templates__smartcard-logon: ${ADCS_TEMPLATE_SMARTCARD_LOGON:-}
+
       # The directory people are read out of. Unset, the endpoints answer
       # "no directory is configured" and cardholders are entered by hand,
       # which is a normal way to run this.
@@ -199,6 +211,10 @@ services:
       # writes. One producer, so there is one list - the store behind it is
       # per-process, and two processes each building their own would publish
       # two different answers to the same question.
+      #
+      # With Adcs there is no list to build - the CA publishes its own - and
+      # the worker schedules and runs nothing for the CA.
+      Blinky__Ca__Backend: ${CA_BACKEND:-BuiltIn}
       Blinky__Ca__Directory: /etc/blinky/ca
       Blinky__Ca__Password: ${CA_PASSWORD:-blinky}
       Blinky__Ca__AllowFileKeys: "true"

@@ -252,9 +252,9 @@ in front of whoever installed it, rather than at somebody's enrolment.
 
 Both ends of the wire now exist and talk to each other: a signed CMC travels from
 `AdcsCertificateAuthority` through `ConnectorAdcsTransport` into
-`ICertRequest3::Submit`. **Nothing in the running system reaches any of it, and no
-Microsoft CA has seen a request.** What is left is configuration and the console,
-in the order it has to arrive.
+`ICertRequest3::Submit`. **The API can now be pointed at it with one
+setting, and no Microsoft CA has seen a request.** What is left is the database,
+the console, an account and a CA, in the order they have to arrive.
 
 ### 1. `Blinky.Pki/Adcs/` — patch 0030. **Written, and no CA has seen it**
 
@@ -332,24 +332,75 @@ be exported; `--submit` asks a real CA for a real certificate on behalf of a rea
 person and is behind a flag for that reason. `--remote-agent` has the connector
 sign, `--agent` signs with a file here.
 
-### 2. Choosing a backend at all — today it is hard-wired
+### 2. Choosing a backend — **one configuration value, not yet a database row**
 
-`Blinky.Api/Program.cs:35` and `Blinky.Worker/Program.cs:54` both register
-`BuiltInCaFactory.LoadFromDirectory` as *the* `ICertificateAuthority`. There is
-no seam. Both need a resolver that reads `CaInstance.Backend` and
-`CaInstance.Configuration` and produces the right implementation, and
-`CredentialIssuanceService` and `MaintenanceRunner` need to ask it for the
-instance a profile names rather than taking a singleton.
+`Blinky:Ca:Backend` in the API and the worker: `BuiltIn`, which is what an
+unset value means and what every earlier deployment was, or `Adcs`. Anything
+else stops the process at start with a sentence rather than falling back to the
+built-in CA, because a typo that issued from the wrong authority would first be
+noticed as a workstation that does not trust the certificate. A digit is refused
+too: `Enum.TryParse` reads "1" as `Adcs`.
 
-Until that exists, an ADCS instance in the database changes nothing.
+**In the API**, `Adcs` builds an `AdcsCertificateAuthority` from
+`AdcsInstanceOptions`, and nothing downstream of the registration knows which it
+got. What can be checked locally is checked at start — the transport name, an
+absolute https URL, the client certificate, the pin. **The enrolment agent is not
+opened until the first enrolment**: the connector lives on a server with its own
+maintenance windows, and an API that will not start while that server reboots is
+an outage nobody here caused. A connector that was down is asked again at the next
+enrolment rather than remembered as down; an agent that opened is kept, and dropped
+if its certificate expires while kept.
 
-### 3. `CaInstance` has a jsonb column and no shape
+`/api/system/status` stopped assuming the CA answers. It used to call
+`DescribeAsync` bare, which for a built-in CA cannot fail and for a Microsoft CA
+is a network call — so the status page would have returned 500 on exactly the day
+the page mattered. It now reports `reachable` and `problem`, and names the
+transport and the enrolment agent. Additive fields; nothing the console reads
+changed name.
 
-`Configuration` is `"{}"`. The ADCS shape needs writing down as a record and
-validating on save: connector URL, client certificate, expected server
-fingerprint, CA config string, template name, and whether revocation is
-permitted. A jsonb column that different code parses differently is a schema
-nobody validates.
+**In the worker**, `Adcs` means it does nothing for the CA, and that is a
+decision rather than something unfinished left switched on. `MaintenanceRunner`
+replays every revocation into the CA before building a list, which is right for a
+CA whose list lives in memory and would, against ADCS, re-revoke every revoked
+certificate at the CA every cycle and then fail for want of a list to write. The
+CA publishes its own. Revocation through ADCS is 0034 and happens when Blinky
+revokes, not on a timer.
+
+The same change found a defect that had nothing to do with ADCS: the scheduler
+that creates the revocation-list job was registered whenever the worker had a
+database, and the runner only when it had a CA directory. A worker without one
+wrote a job every period that nothing would ever pick up, and each expired in the
+console as a failure. They are now registered together.
+
+**What is still missing** is the half this was meant to be: the resolver that reads
+`CaInstance.Backend` and `CaInstance.Configuration` per profile. Profiles still
+live in code and name no CA instance, so a template is mapped per instance and
+profile in `Blinky:Adcs:Templates`, and a deployment has one CA. That is 0022's
+open half, and it is where this configuration moves when profiles become rows.
+
+### 3. `CaInstance.Configuration` — **the shape exists, the column does not use it**
+
+`AdcsInstanceOptions` in `Blinky.Pki/Adcs` is the shape: name, transport,
+connector URL, client certificate and its password *file*, the server fingerprint
+or anchor, the CA config string, where the enrolment agent lives, the template map,
+and whether revocation is permitted. Nothing in it is key material, and that is
+the property to keep when it becomes a jsonb column, because a column holding a
+PKCS#12 password would put that password in every backup of the database.
+
+The column is still `"{}"`, nothing validates it on save, and nothing reads it.
+
+| Setting | What it is |
+|---|---|
+| `Blinky:Ca:Backend` | `BuiltIn` or `Adcs`. Unset is `BuiltIn` |
+| `Blinky:Adcs:Name` | What the console and the logs call the CA |
+| `Blinky:Adcs:Transport` | `Connector`. `Ces` is refused by name until 0031 exists |
+| `Blinky:Adcs:Connector:Url` | Absolute https |
+| `Blinky:Adcs:Connector:ClientCertificatePath` / `:ClientCertificatePasswordFile` | The certificate that buys the agent's signature. The file wins over `:ClientCertificatePassword` |
+| `Blinky:Adcs:Connector:ServerFingerprint` or `:ServerCertificateAuthorityPath` | One of the two is required |
+| `Blinky:Adcs:Connector:CaConfig` | `HOSTCA name`, when the connector's default is not the CA meant |
+| `Blinky:Adcs:EnrolmentAgent:Location` | `Connector`, or `File` with `:Path`, `:PasswordFile` and `:AllowFileKeys` |
+| `Blinky:Adcs:Templates:<profile>` | The ADCS template for that profile |
+| `Blinky:Adcs:AllowRevocation` | Default true |
 
 ### 4. `CaInstance` has no CRUD, which the repository's own rule forbids
 
@@ -374,12 +425,13 @@ Reading null as "the CA has no templates" would refuse a correct registration.
 
 ### 6. Deployment
 
-- **`.env.example` and `docker-compose.yml`** — the connector URL, the client
-  certificate the container presents and the pinned server fingerprint. **No
-  enrolment agent key**: with the connector as the transport it lives on the
-  Windows server, and a compose file that offered a slot for one would invite the
-  arrangement this document moved away from. Neither file holds one `ADCS` key
-  today, and the transport's own options record names every one of them.
+- **`.env.example` and `docker-compose.yml`** — **done, and not run.**
+  `CA_BACKEND`, the connector URL, its fingerprint, the client certificate and its
+  password file, and the smart-card template, all defaulting to the built-in CA.
+  **No enrolment agent key**: with the connector as the transport it lives on the
+  Windows server, and a slot for one in the compose file would invite the
+  arrangement this document moved away from. The compose file was edited on a
+  machine without Docker and has not been parsed by `docker compose config`.
 - **A client certificate for the API, and it is now the most sensitive file in
   the container.** It buys the enrolment agent's signature. Not an agent
   certificate: the agent CA issues workstation identities, and an agent that could
