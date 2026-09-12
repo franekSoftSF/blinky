@@ -266,7 +266,10 @@ public sealed class AdcsCertificateAuthority : ICertificateAuthority, IDisposabl
         }
     }
 
-    private static string Explain(string what, AdcsSubmitResponse answer)
+    /// <summary>CERTSRV_E_KEY_LENGTH.</summary>
+    internal const int KeyLengthDenied = unchecked((int)0x80094811);
+
+    internal static string Explain(string what, AdcsSubmitResponse answer)
     {
         var detail = answer.StatusMessage is { Length: > 0 } message
             ? ": " + message
@@ -276,7 +279,16 @@ public sealed class AdcsCertificateAuthority : ICertificateAuthority, IDisposabl
             ? $" (0x{hresult:x8})"
             : string.Empty;
 
-        return what + detail + code;
+        // The CA's own sentence names the template and not the arithmetic, and the
+        // arithmetic is the surprise: the lab CA denied a card's P-256 key this way
+        // against a template on the default 2048.
+        var hint = answer.HResult == KeyLengthDenied
+            ? ". The key is shorter than the template's minimum key size, which the CA compares "
+              + "with the key's length whatever the algorithm - a P-256 key is 256 bits. The "
+              + "registration check reads that minimum."
+            : string.Empty;
+
+        return what + detail + code + hint;
     }
 
     public void Dispose()
@@ -304,10 +316,11 @@ public sealed class AdcsCertificateAuthority : ICertificateAuthority, IDisposabl
 /// themselves.
 /// </param>
 /// <param name="Algorithms">
-/// What the template will accept. Asserted rather than discovered, because a
-/// template's key requirements are not on the wire: a describe reports which
-/// templates exist and not what each one demands. A wrong value here shows up as
-/// a denial naming the key length, which is the CA telling the truth.
+/// The key algorithms this deployment enrols with. The registration check sets them
+/// against each template's minimum key size and named algorithm, which the connector
+/// reads off the template object; the first version of this said a template's key
+/// requirements were not on the wire, and the lab CA's CERTSRV_E_KEY_LENGTH for a
+/// P-256 key was the first anybody heard of them.
 /// </param>
 public sealed record AdcsCaOptions(
     bool AllowRevocation = true,

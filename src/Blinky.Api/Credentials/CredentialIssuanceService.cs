@@ -23,6 +23,7 @@ public sealed class CredentialIssuanceService(
     Database database,
     ICertificateAuthority authority,
     Blinky.Api.Jobs.JobService jobs,
+    LogonNames logonNames,
     ILogger<CredentialIssuanceService> logger)
 {
     private readonly AttestationVerifier verifier = new(YubicoRoots.PivAttestation);
@@ -58,12 +59,14 @@ public sealed class CredentialIssuanceService(
 
         var attested = attestation.Attestation!;
 
+        var logonName = await logonNames.ResolveAsync(request.Cardholder, ct);
+
         var context = new CertificateRequestContext(
             DecodePem(request.CertificateSigningRequestPem, "CERTIFICATE REQUEST"),
             new AttestedKey(request.TokenSerial, slot.Name, attested.PublicKeyInfo,
                 attested.PinPolicy.ToString(), attested.TouchPolicy.ToString()),
             new CardholderIdentity(request.Cardholder.DisplayName, request.Cardholder.Upn,
-                request.Cardholder.ObjectSid, null),
+                request.Cardholder.ObjectSid, null, logonName),
             Profiles.ByName(request.ProfileName, slot.Name));
 
         var issued = await authority.IssueAsync(context, ct);

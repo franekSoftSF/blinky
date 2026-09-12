@@ -2,7 +2,7 @@
 //
 // Asks a Blinky.AdcsConnector what it is in front of, over the same transport
 // the API uses, with the same pinning and the same version check. Read-only
-// unless --submit is given.
+// unless --submit or --revoke is given.
 //
 //     dotnet run --project tools/AdcsProbe -- \
 //         --connector https://ca01.blinky.lab:8444 \
@@ -40,6 +40,7 @@ var agentPath = arguments.GetValueOrDefault("agent");
 var agentPassword = arguments.GetValueOrDefault("agent-password");
 var remoteAgent = arguments.ContainsKey("remote-agent");
 var check = arguments.GetValueOrDefault("check");
+var revoke = arguments.GetValueOrDefault("revoke");
 var subject = arguments.GetValueOrDefault("subject", "CN=probe");
 var requester = arguments.GetValueOrDefault("requester");
 var keyAlgorithm = arguments.GetValueOrDefault("key", "ECCP256");
@@ -51,7 +52,8 @@ if (connector is null || clientPath is null)
         + "       (--fingerprint <sha256> | --server-ca <pem-or-der>)\n"
         + "       [--ca-config 'HOST\\CA name'] [--submit <template> --requester 'DOMAIN\\user'\n"
         + "        (--remote-agent | --agent <p12> --agent-password ...)]\n"
-        + "       [--check <template> [--remote-agent]] [--key ECCP256|RSA2048]");
+        + "       [--check <template> [--remote-agent]] [--key ECCP256|RSA2048]\n"
+        + "       [--revoke <serial> [--reason CessationOfOperation]]");
 
     return 2;
 }
@@ -132,6 +134,27 @@ try
             RegistrationOutcome.Unverified => 5,
             _ => 4,
         };
+    }
+
+    if (revoke is not null)
+    {
+        // Through the same class the API revokes with, so a refusal reads the way
+        // an operator would see it. Cessation of operation by default: a test
+        // certificate whose key was thrown away was not compromised.
+        using var revokingCa = new AdcsCertificateAuthority("probe", transport, (IEnrolmentAgentSource?)null);
+
+        var reason = Enum.Parse<Blinky.Pki.X509RevocationReason>(
+            arguments.GetValueOrDefault("reason", nameof(Blinky.Pki.X509RevocationReason.CessationOfOperation)),
+            ignoreCase: true);
+
+        Console.WriteLine();
+        Console.WriteLine($"revoking    {revoke} at the CA, reason {reason}. This cannot be undone.");
+
+        await revokingCa.RevokeAsync(new RevocationRequest(revoke, reason));
+
+        Console.WriteLine("revoked     the CA accepted it; it is on the next CRL the CA publishes");
+
+        return 0;
     }
 
     if (template is null)

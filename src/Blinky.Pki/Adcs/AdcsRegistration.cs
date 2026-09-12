@@ -208,7 +208,7 @@ public static class AdcsRegistration
                 continue;
             }
 
-            CheckTemplate(template, info, findings);
+            CheckTemplate(template, info, findings, settings.Algorithms);
         }
     }
 
@@ -236,7 +236,8 @@ public static class AdcsRegistration
 
     /// <summary>The template object's own faults, each in its own sentence.</summary>
     internal static void CheckTemplate(
-        string template, AdcsTemplateInfo info, List<RegistrationFinding> findings)
+        string template, AdcsTemplateInfo info, List<RegistrationFinding> findings,
+        IReadOnlySet<string>? algorithms = null)
     {
         if (!info.Found)
         {
@@ -308,6 +309,62 @@ public static class AdcsRegistration
                 $"{account} does not hold Enroll on {template}, so the CA will deny every request. "
                 + "Grant Enroll on the template's Security tab to the integration account, or to a "
                 + "group it is in."));
+        }
+
+        if (algorithms is { Count: > 0 })
+        {
+            CheckKeys(template, info, findings, algorithms);
+        }
+    }
+
+    private static void CheckKeys(
+        string template, AdcsTemplateInfo info, List<RegistrationFinding> findings,
+        IReadOnlySet<string> algorithms)
+    {
+        var ordered = algorithms.Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+        if (info.MinimalKeySize is not { } minimum)
+        {
+            Unknown(findings, template, "minimum key size");
+        }
+        else
+        {
+            var tooShort = ordered.Where(a => TemplateKeys.BitsOf(a) is { } bits && bits < minimum).ToList();
+
+            if (tooShort.Count > 0)
+            {
+                var all = tooShort.Count == ordered.Count;
+
+                // A refusal only when nothing this deployment enrols with gets
+                // through. When some do, the CA will issue those and deny the rest,
+                // and which one a card gets is chosen per enrolment.
+                findings.Add(new(
+                    "template-key-too-short",
+                    all ? RegistrationSeverity.Refusal : RegistrationSeverity.Warning,
+                    $"{template} demands keys of at least {minimum} bits, and the CA compares that "
+                    + "with the key's length whatever the algorithm - a P-256 key is 256 bits. "
+                    + $"Enrolments with {string.Join(", ", tooShort)} will be denied with "
+                    + "CERTSRV_E_KEY_LENGTH"
+                    + (all ? ", which is every algorithm this deployment enrols with. " : ". ")
+                    + "Lower the minimum key size on the template's Cryptography tab, or enrol "
+                    + "with a longer key."));
+            }
+        }
+
+        if (TemplateKeys.AsymmetricAlgorithm(info.SignaturePolicies) is { } named)
+        {
+            var other = ordered.Where(a => TemplateKeys.BitsOf(a) is not null && !TemplateKeys.Matches(a, named)).ToList();
+
+            if (other.Count > 0)
+            {
+                findings.Add(new(
+                    "template-key-algorithm",
+                    RegistrationSeverity.Warning,
+                    $"{template} names {named} as its key algorithm, and this deployment also enrols "
+                    + $"with {string.Join(", ", other)}. Whether the CA refuses a key of another "
+                    + "algorithm that is long enough has not been observed; a certificate issued "
+                    + "for one may still not be what the template's owner intended."));
+            }
         }
     }
 

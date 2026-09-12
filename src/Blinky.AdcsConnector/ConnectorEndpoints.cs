@@ -227,7 +227,8 @@ public static class ConnectorEndpoints
         });
 
         app.MapPost("/connector/revoke", async (
-            AdcsRevokeRequest request, CertificateServiceHost host, CancellationToken ct) =>
+            AdcsRevokeRequest request, CertificateServiceHost host, HttpContext context,
+            ILoggerFactory loggers, CancellationToken ct) =>
         {
             if (Refuse(request.SchemaVersion) is { } mismatch)
             {
@@ -245,6 +246,19 @@ public static class ConnectorEndpoints
                     request.SerialNumber, request.Reason, request.EffectiveAt, request.CaConfig,
                     token),
                 ct);
+
+            // With Issue and Manage Certificates granted CA-wide, as in the lab, this
+            // account can revoke any certificate the CA holds, so every attempt is
+            // recorded with the client certificate that asked - the same record a
+            // signature gets.
+            var caller = context.Connection.ClientCertificate is { } presented
+                ? ClientCertificateGate.FingerprintOf(presented)
+                : "none";
+
+            loggers.CreateLogger("Blinky.AdcsConnector.Revocation").LogInformation(
+                "Revocation of {Serial}, reason {Reason}, asked by {Caller}: {Outcome}",
+                request.SerialNumber, request.Reason, caller,
+                outcome.Revoked ? "revoked" : outcome.StatusMessage ?? "not revoked");
 
             return Results.Ok(new AdcsRevokeResponse(
                 outcome.Revoked, outcome.StatusMessage, outcome.HResult));

@@ -57,7 +57,7 @@ public sealed class ActiveDirectoryTemplates(ILogger<ActiveDirectoryTemplates> l
         [
             "cn", "displayName", "msPKI-Template-Schema-Version", "msPKI-Certificate-Name-Flag",
             "msPKI-RA-Signature", "msPKI-RA-Application-Policies", "pKIExtendedKeyUsage",
-            "nTSecurityDescriptor",
+            "msPKI-Minimal-Key-Size", "nTSecurityDescriptor",
         ]);
 
         var found = search.FindOne();
@@ -78,7 +78,8 @@ public sealed class ActiveDirectoryTemplates(ILogger<ActiveDirectoryTemplates> l
             SignaturePolicies: Many(found, "msPKI-RA-Application-Policies"),
             ExtendedKeyUsages: Many(found, "pKIExtendedKeyUsage"),
             AccountMayEnroll: MayEnroll(found, account),
-            Account: account.Name);
+            Account: account.Name,
+            MinimalKeySize: Number(found, "msPKI-Minimal-Key-Size"));
     }
 
     /// <summary>

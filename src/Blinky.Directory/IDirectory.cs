@@ -85,6 +85,19 @@ public interface IDirectory
     /// there is no answer to the question in general — only about somebody.
     /// </param>
     Task<DirectoryWriteAccess> CanWriteAsync(string subjectDn, CancellationToken ct = default);
+
+    /// <summary>
+    /// The NetBIOS name of the domain an object lives in - the <c>AD</c> in
+    /// <c>AD\BlinkyUser</c>.
+    /// </summary>
+    /// <remarks>
+    /// A Microsoft CA takes a request on somebody's behalf only as
+    /// <c>DOMAIN\sAMAccountName</c>, and neither half is in a UPN: the UPN suffix
+    /// is often not the domain's name, and the NetBIOS name never is. It lives on
+    /// the domain's <c>crossRef</c> in the Configuration partition.
+    /// </remarks>
+    /// <returns>Null when it could not be read, which the caller refuses by name.</returns>
+    Task<string?> NetBiosDomainAsync(string distinguishedName, CancellationToken ct = default);
 }
 
 /// <summary>What a connection test found.</summary>
@@ -166,4 +179,8 @@ public sealed class NoDirectory : IDirectory
     public Task<DirectoryWriteAccess> CanWriteAsync(string subjectDn,
         CancellationToken ct = default) =>
         Task.FromResult(DirectoryWriteAccess.Unknown("No directory is configured."));
+
+    public Task<string?> NetBiosDomainAsync(string distinguishedName,
+        CancellationToken ct = default) =>
+        Task.FromResult<string?>(null);
 }

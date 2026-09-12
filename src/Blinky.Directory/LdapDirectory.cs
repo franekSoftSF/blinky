@@ -33,6 +33,9 @@ public sealed class LdapDirectory(LdapDirectoryOptions options) : IDirectory, ID
         "objectSid", "distinguishedName", "userAccountControl",
     ];
 
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> netBiosNames =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private LdapConnection? connection;
     private bool disposed;
 
@@ -264,6 +267,79 @@ public sealed class LdapDirectory(LdapDirectoryOptions options) : IDirectory, ID
             }
         }, ct);
 
+    public Task<string?> NetBiosDomainAsync(string distinguishedName,
+        CancellationToken ct = default)
+    {
+        if (options.NetBiosDomain is { Length: > 0 } configured)
+        {
+            return Task.FromResult<string?>(configured);
+        }
+
+        if (DomainOf(distinguishedName) is not { } domain)
+        {
+            return Task.FromResult<string?>(null);
+        }
+
+        if (netBiosNames.TryGetValue(domain, out var known))
+        {
+            return Task.FromResult<string?>(known);
+        }
+
+        return Task.Run<string?>(() =>
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var ldap = Connect();
+
+            var rootDse = (SearchResponse)ldap.SendRequest(new SearchRequest(
+                string.Empty, "(objectClass=*)", SearchScope.Base, "configurationNamingContext"));
+
+            if (rootDse.Entries.Count == 0
+                || Text(rootDse.Entries[0], "configurationNamingContext") is not { } configuration)
+            {
+                return null;
+            }
+
+            // The crossRef for the domain naming context, not a guess from the DN's
+            // first DC= component: a domain called ad.digitalworkspace.pl may well
+            // be AD, and may equally be anything its administrator typed in 2004.
+            var response = (SearchResponse)ldap.SendRequest(new SearchRequest(
+                $"CN=Partitions,{configuration}",
+                $"(&(objectClass=crossRef)(nCName={Escape(domain)}))",
+                SearchScope.OneLevel,
+                "nETBIOSName"));
+
+            var name = response.Entries.Count == 1 ? Text(response.Entries[0], "nETBIOSName") : null;
+
+            if (name is { Length: > 0 })
+            {
+                netBiosNames[domain] = name;
+            }
+
+            return name;
+        }, ct);
+    }
+
+    /// <summary>The domain naming context an object is in: its DN from the first DC= on.</summary>
+    public static string? DomainOf(string? distinguishedName)
+    {
+        if (string.IsNullOrWhiteSpace(distinguishedName))
+        {
+            return null;
+        }
+
+        var index = distinguishedName.IndexOf("DC=", StringComparison.OrdinalIgnoreCase);
+
+        // At the start or after a comma, so an OU called "DC=" in some string does
+        // not count. A DN with no domain component is not an AD object.
+        while (index > 0 && distinguishedName[index - 1] != ',')
+        {
+            index = distinguishedName.IndexOf("DC=", index + 3, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return index < 0 ? null : distinguishedName[index..];
+    }
+
     private Task<IReadOnlyList<DirectoryUser>> RunAsync(string filter, int limit,
         CancellationToken ct) =>
         Task.Run<IReadOnlyList<DirectoryUser>>(() =>
@@ -429,4 +505,5 @@ public sealed record LdapDirectoryOptions(
     DirectorySource Source,
     string? BindDn = null,
     string? BindPassword = null,
-    bool UseTls = true);
+    bool UseTls = true,
+    string? NetBiosDomain = null);
