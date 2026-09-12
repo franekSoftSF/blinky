@@ -1,7 +1,14 @@
+import { I18n } from '../core/i18n';
 import { DatePipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { ConsoleStore, SystemStatus } from '../core/console.store';
-import { crlTone, custodyLabel, custodyTone } from '../core/system-status-presentation';
+import {
+  crlTone,
+  custodyLabel,
+  custodyTone,
+  secretExportTone,
+  secretWriteKeyPresent,
+} from '../core/system-status-presentation';
 
 @Component({
   selector: 'app-system-status',
@@ -121,6 +128,140 @@ import { crlTone, custodyLabel, custodyTone } from '../core/system-status-presen
         }
       </article>
 
+      <article class="panel secrets-panel">
+        <header>
+          <h2>{{ i18n.t('secretsTitle') }}</h2>
+        </header>
+        <div class="secrets-content">
+          @if (s.secrets; as secrets) {
+            <p>
+              {{ i18n.t('secretsProvider') }}: <strong>{{ secrets.provider }}</strong> ·
+              {{ secrets.custody.tier }}
+            </p>
+            <p
+              class="secret-state"
+              [attr.data-tone]="secrets.custody.productionReady ? 'success' : 'warning'"
+            >
+              {{ i18n.t(secrets.custody.productionReady ? 'secretsReady' : 'secretsLab') }}
+            </p>
+            <p>{{ secrets.custody.description }}</p>
+            <p>{{ secrets.custody.detail }}</p>
+            <h3>{{ i18n.t('secretsWriting') }}</h3>
+            @for (
+              write of [
+                {
+                  purpose: 'ManagementKeyMaster',
+                  version: secrets.writingWith.managementKey,
+                  label: 'secretsMaster',
+                },
+                { purpose: 'PukKek', version: secrets.writingWith.pukKek, label: 'secretsKek' },
+              ];
+              track write.purpose
+            ) {
+              <p>
+                {{
+                  write.purpose === 'ManagementKeyMaster'
+                    ? i18n.t('secretsMaster')
+                    : i18n.t('secretsKek')
+                }}: <strong>{{ write.version }}</strong>
+                @if (
+                  write.purpose !== 'ManagementKeyMaster' || secrets.managementKeyMasterConfigured
+                ) {
+                  <span
+                    class="secret-state"
+                    [attr.data-tone]="
+                      secretWriteKeyPresent(secrets, write.purpose, write.version)
+                        ? 'neutral'
+                        : 'warning'
+                    "
+                    >{{
+                      i18n.t(
+                        secretWriteKeyPresent(secrets, write.purpose, write.version)
+                          ? 'secretsPresent'
+                          : 'secretsMissing'
+                      )
+                    }}</span
+                  >
+                }
+              </p>
+            }
+            @if (!secrets.managementKeyMasterConfigured) {
+              <p class="secret-state" data-tone="neutral">{{ i18n.t('secretsNoMaster') }}</p>
+            }
+            <p
+              class="secret-state"
+              [attr.data-tone]="secrets.legacyPukEnvelopesReadable ? 'neutral' : 'warning'"
+            >
+              {{
+                i18n.t(
+                  secrets.legacyPukEnvelopesReadable ? 'secretsLegacyOk' : 'secretsLegacyWarning'
+                )
+              }}
+            </p>
+            <p>{{ i18n.t('secretsCounters') }}</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{{ i18n.t('secretsPurpose') }}</th>
+                    <th>{{ i18n.t('secretsVersion') }}</th>
+                    <th>{{ i18n.t('secretsLabel') }}</th>
+                    <th>{{ i18n.t('secretsExport') }}</th>
+                    <th>{{ i18n.t('secretsOperations') }}</th>
+                    <th>{{ i18n.t('secretsFailures') }}</th>
+                    <th>{{ i18n.t('secretsLastUsed') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (key of secrets.keys; track key.purpose + ':' + key.version) {
+                    <tr>
+                      <td>
+                        {{
+                          key.purpose === 'ManagementKeyMaster'
+                            ? i18n.t('secretsMaster')
+                            : key.purpose === 'PukKek'
+                              ? i18n.t('secretsKek')
+                              : key.purpose
+                        }}
+                      </td>
+                      <td>{{ key.version }}</td>
+                      <td>{{ key.label }}</td>
+                      <td>
+                        <span
+                          class="secret-state"
+                          [attr.data-tone]="secretExportTone(key.nonExportable)"
+                          >{{
+                            i18n.t(key.nonExportable ? 'secretsProtected' : 'secretsExportable')
+                          }}</span
+                        >
+                      </td>
+                      @if (key.usage; as usage) {
+                        <td>{{ usage.operations }}</td>
+                        <td>{{ usage.failures }}</td>
+                        <td>
+                          {{
+                            usage.lastUsedAt
+                              ? (usage.lastUsedAt | date: 'yyyy-MM-dd HH:mm:ss Z')
+                              : '—'
+                          }}
+                        </td>
+                      } @else {
+                        <td colspan="3">{{ i18n.t('secretsUnused') }}</td>
+                      }
+                    </tr>
+                  } @empty {
+                    <tr>
+                      <td colspan="7">{{ i18n.t('secretsEmpty') }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <p class="secret-state" data-tone="neutral">{{ i18n.t('secretsUnavailable') }}</p>
+          }
+        </div>
+      </article>
       <section class="infra-grid">
         <article class="infrastructure-card">
           <header>
@@ -262,6 +403,9 @@ import { crlTone, custodyLabel, custodyTone } from '../core/system-status-presen
     }`,
 })
 export class SystemStatusPage {
+  protected readonly i18n = inject(I18n);
+  protected readonly secretExportTone = secretExportTone;
+  protected readonly secretWriteKeyPresent = secretWriteKeyPresent;
   private readonly store = inject(ConsoleStore);
   protected readonly status = signal<SystemStatus | null>(null);
   protected readonly loading = signal(false);
