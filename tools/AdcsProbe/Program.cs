@@ -194,10 +194,11 @@ try
     Console.WriteLine($"chain       {issued.Chain.Count} certificate(s)");
 
     // What ADCS put in, which is not what the request asked for: the subject and
-    // the UPN come from the directory object the requester name points at.
+    // the UPN come from the directory object the requester name points at, and the
+    // key usage from the template - an ECDH template may not allow a signature.
     foreach (var extension in issued.Certificate.Extensions)
     {
-        if (extension.Oid?.Value is "2.5.29.17" or "1.3.6.1.4.1.311.25.2")
+        if (extension.Oid?.Value is "2.5.29.15" or "2.5.29.17" or "1.3.6.1.4.1.311.25.2")
         {
             Console.WriteLine($"{extension.Oid.FriendlyName ?? extension.Oid.Value,-11} {extension.Format(false)}");
         }

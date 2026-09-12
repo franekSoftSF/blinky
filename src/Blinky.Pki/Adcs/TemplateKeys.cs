@@ -12,9 +12,10 @@ namespace Blinky.Pki.Adcs;
 /// said so.
 /// </para>
 /// <para>
-/// The algorithm a version 4 template names is read too, and compared less firmly.
-/// Whether the CA refuses a key of another algorithm that is long enough has not been
-/// observed, so a mismatch is a warning and not a refusal.
+/// The algorithm a version 4 template names is read too, and a mismatch is only a
+/// warning, because the CA does not enforce it. Measured on the lab CA with the template
+/// set to <c>ECDH_P256</c> and a 256-bit minimum: a P-256 key and an RSA 2048 key were
+/// both issued from the same template, on the same day.
 /// </para>
 /// </remarks>
 public static class TemplateKeys

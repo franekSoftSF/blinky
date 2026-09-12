@@ -441,7 +441,7 @@ transport.
 | `template-wrong-signature-policy` | Refusal | The required signature is not *Certificate Request Agent* |
 | `account-cannot-enroll` | Refusal | The template's security descriptor does not grant Enroll to the account or any group in its token |
 | `template-key-too-short` | Refusal, or Warning | `msPKI-Minimal-Key-Size` is longer than a key algorithm this deployment enrols with (`Blinky:Adcs:KeyAlgorithms`, all five when unset). The CA compares it with the key's length whatever the algorithm, so P-256 is 256 bits. A refusal when no configured algorithm gets through, a warning when some do |
-| `template-key-algorithm` | Warning | A version 4 template names an algorithm in `msPKI-RA-Application-Policies` and the deployment also enrols with another. Not a refusal, because whether the CA enforces the algorithm rather than only the size has not been observed |
+| `template-key-algorithm` | Warning | A version 4 template names an algorithm in `msPKI-RA-Application-Policies` and the deployment also enrols with another. Not a refusal, because the CA does not enforce the algorithm: the lab CA issued an RSA 2048 key against a template naming `ECDH_P256` |
 | `template-publication-unknown`, `template-unreadable`, `template-attribute-unknown` | Unknown | Something could not be read |
 
 **Three outcomes, not a bool.** `Accepted` means nothing refused and nothing left
@@ -849,10 +849,24 @@ denied with `CERTSRV_E_KEY_LENGTH`, which is what the CA did. A denial with that
 code now also says, in Blinky's own words, that an ECC key is measured in its own
 bits.
 
-**Whether one template can take both** is not established. The minimum is one
-number, and 256 passes both lengths; whether the CA then also enforces the
-algorithm a version 4 template names is the unobserved half. Two submissions
-settle it, one of each, after the template's minimum is lowered.
+**One template takes both.** The lab's owner set `BlinkySmartCardLogon` to a
+*Key Storage Provider* with an ECC algorithm; the directory then held
+`msPKI-Asymmetric-Algorithm` `ECDH_P256`, not the ECDSA the owner chose, and a
+256-bit minimum. With the same test account, a P-256 key issued
+(`470000000A1FCD49636F1BFBDA00000000000A`) and an RSA 2048 key issued
+(`470000000BE836A32CA027F38100000000000B`), a second apart. So the CA enforces the
+minimum key size and not the algorithm the template names, and a minimum of 256 lets
+a card be issued with either. Both certificates were revoked through the connector
+straight afterwards.
+
+Two things that run did not show. The first is the key usage of the ECC
+certificate, which matters for logon, because a certificate that allows only key
+agreement cannot sign a PKINIT request. The probe did not print it then and does now,
+and the revoked certificate can still be opened in the CA console. The second is an
+earlier reading of this document: after the template was first moved to a *Key
+Storage Provider* with RSA, the directory held `msPKI-Asymmetric-Algorithm` `RSA`
+explicitly. Before that move there was no such value at all, because a legacy
+provider names none, not because RSA as a default goes unwritten.
 
 **The test certificate was revoked** through the connector the next day with
 `AdcsProbe --revoke`, which goes through `AdcsCertificateAuthority.RevokeAsync` - the

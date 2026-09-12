@@ -317,10 +317,10 @@ public sealed class AdcsRegistrationTests
     }
 
     [Fact]
-    public async Task A_template_named_for_ecc_warns_about_rsa_rather_than_refusing_it()
+    public async Task A_template_named_for_ecc_warns_that_rsa_will_still_issue()
     {
-        // Long enough, and of another algorithm. What the CA does with that has not
-        // been seen, so it is said and not refused.
+        // Long enough, and of another algorithm. The lab CA issued an RSA 2048 key
+        // against a template naming ECDH_P256, so refusing here would refuse what works.
         var report = await Check(Transport(Correct() with
         {
             SchemaVersion = 4,
