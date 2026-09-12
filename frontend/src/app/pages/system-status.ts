@@ -6,6 +6,7 @@ import {
   crlTone,
   custodyLabel,
   custodyTone,
+  secretExportLabel,
   secretExportTone,
   secretWriteKeyPresent,
 } from '../core/system-status-presentation';
@@ -230,9 +231,7 @@ import {
                         <span
                           class="secret-state"
                           [attr.data-tone]="secretExportTone(key.nonExportable)"
-                          >{{
-                            i18n.t(key.nonExportable ? 'secretsProtected' : 'secretsExportable')
-                          }}</span
+                          >{{ i18n.t(secretExportLabel(key.nonExportable)) }}</span
                         >
                       </td>
                       @if (key.usage; as usage) {
@@ -405,6 +404,7 @@ import {
 export class SystemStatusPage {
   protected readonly i18n = inject(I18n);
   protected readonly secretExportTone = secretExportTone;
+  protected readonly secretExportLabel = secretExportLabel;
   protected readonly secretWriteKeyPresent = secretWriteKeyPresent;
   private readonly store = inject(ConsoleStore);
   protected readonly status = signal<SystemStatus | null>(null);

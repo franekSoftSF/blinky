@@ -180,6 +180,26 @@ public class KeyProviderTests
         Assert.Contains("environment", provider.Custody.Detail);
     }
 
+    /// <summary>
+    /// And says nothing at all about per-key custody, because there is no
+    /// device to have asked.
+    /// </summary>
+    /// <remarks>
+    /// This reported false for a while and the console drew a red "exportable —
+    /// unprotected" against every key of the default arrangement. True, and
+    /// useless: an alarm that fires on the default is one nobody reads, and it
+    /// made the case that matters — a token holding a key it would hand out —
+    /// indistinguishable from an ordinary laboratory. False now means a device
+    /// was asked and said yes.
+    /// </remarks>
+    [Fact]
+    public void Configuration_reports_no_opinion_on_whether_a_key_can_leave()
+    {
+        using var provider = Provider();
+
+        Assert.All(provider.Keys, key => Assert.Null(key.NonExportable));
+    }
+
     private static IConfiguration Settings(params (string Key, string Value)[] values) =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(values.Select(v =>

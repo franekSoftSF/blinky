@@ -156,7 +156,7 @@ export interface SecretsStatus {
     purpose: string;
     version: number;
     label: string;
-    nonExportable: boolean;
+    nonExportable: boolean | null;
     usage: { operations: number; failures: number; lastUsedAt: string | null } | null;
   }>;
   managementKeyMasterConfigured: boolean;

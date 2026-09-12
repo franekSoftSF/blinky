@@ -386,7 +386,7 @@ public sealed class Pkcs11KeyProvider : IKeyProvider
     private KeyCustody Describe(IEnumerable<KeyDescription> keys)
     {
         var all = keys.ToList();
-        var everythingSealed = all.Count > 0 && all.TrueForAll(k => k.NonExportable);
+        var everythingSealed = all.Count > 0 && all.TrueForAll(k => k.NonExportable == true);
         var where = $"PKCS#11 token {options.TokenLabel} via {options.Module}";
 
         return everythingSealed

@@ -79,8 +79,17 @@ public interface IKeyProvider : IDisposable
 /// That the device says the key cannot leave it. Read from the object rather
 /// than assumed from the provider type, because a token can be provisioned
 /// wrongly and look identical from the outside.
+/// <para>
+/// <b>Null where there is no device to ask</b>, which is the whole reason this
+/// is not a plain bool. A configuration value is of course extractable, so
+/// answering false is true and useless: it fires the alarm on the default
+/// arrangement, and an alarm that fires on the default is one nobody reads.
+/// Worse, it makes the case that matters - a token holding a key it would hand
+/// out, the interface of a device with the custody of a file - look identical
+/// to an ordinary laboratory. False means a device was asked and said yes.
+/// </para>
 /// </param>
-public sealed record KeyDescription(KeyRef Key, string Label, bool NonExportable);
+public sealed record KeyDescription(KeyRef Key, string Label, bool? NonExportable);
 
 /// <summary>
 /// How the long-lived secrets are held.
