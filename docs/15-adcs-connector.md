@@ -9,41 +9,63 @@ elsewhere before it is of any use.
 
 ## What it is, and what it deliberately is not
 
-It is a transport. It takes bytes that are already a complete certificate
-request, calls `ICertRequest3::Submit`, and returns what the CA said.
+It is a transport, and it is where the enrolment agent's key lives. It signs a
+`PKIData` it did not build, submits the result through `ICertRequest3::Submit`,
+and returns what the CA said.
 
-It is **not** a certificate authority, and it holds no enrolment agent key.
-Every decision about what a certificate should say — the subject, the template,
-the SID extension, and above all the enrolment agent's signature over the
-cardholder's PKCS#10 — is made on the other side of this wire, in
-`AdcsCertificateAuthority`, and is shared with the CES transport. That is what
-makes the roadmap's promise true: *switching transports is one config value and
-no other change*. A decision made here would be a decision CES does not make,
-and the two would drift apart within a release.
+It is **not** a certificate authority, and it decides nothing about a
+certificate. Who it is for, against which template, and what goes into the
+request are chosen on the other side of this wire, in `AdcsCertificateAuthority`,
+and shared with the CES transport. That is what keeps the roadmap's promise true:
+*switching transports is one config value and no other change*. A decision made
+here would be a decision CES does not make, and the two would drift apart within
+a release.
 
-The consequences are worth stating plainly, because they are the reason the
-connector is small:
+**The enrolment agent's key used to be on the other side too, and moved here on
+purpose.** The first version of this document kept it in the container and
+called the connector a transport and nothing more. That lost on the one thing
+that matters most for this key, which is how it is held:
+
+- **In the integration account's store the key can be non-exportable**, or live
+  in a TPM, and never exist as a file. In the container the only tier was a
+  PKCS#12 exported from a template that allows export, with a password beside
+  it — exactly what [06](06-security.md) calls not production-ready.
+- **The CA server is already the most trusted machine here.** Whoever holds it
+  issues what they like with or without an agent, so the key adds almost nothing
+  for an attacker there, and a great deal for one in a container.
+- **Windows renews it.** Autoenrollment keeps an agent certificate current on a
+  domain server; in a container, renewal is a person remembering.
+
+So the decision stayed where it was and the key moved. The container still
+builds the `PKIData` with `CmcRequest`. It sends that to `/connector/sign`, which
+refuses anything that is not exactly one enrolment, signs, and logs what it
+vouched for. CES deployments have no Blinky service on the Windows side and keep
+the key in the container, behind the same `IEnrolmentAgentKeyStore`.
+
+The consequences, stated plainly:
 
 - The connector references `Blinky.Contracts` and **not** `Blinky.Pki`. It
   cannot see `ICertificateAuthority` and cannot grow half an implementation of
-  one.
-- The enrolment agent's private key stays in the container, behind
-  `IEnrolmentAgentKeyStore`, and never reaches the CA server. A key there would
-  be a second copy of the most powerful credential in the system, on a machine
-  Blinky does not own. [06](06-security.md) ranks it second in the custody list.
+  one. The certificate rules it shares with `FileEnrolmentAgentKeyStore` are
+  duplicated, and a test runs the same certificates through both.
+- **The client certificate the container presents is now worth as much as the
+  enrolment agent key**, because holding it buys that key's signature. It is the
+  cost of the move, and the reason signing is restricted as it is below.
 - The connector never sees a PIN, a PUK or a management key. Nothing it logs
-  can leak one, and there is no redaction rule here because there is nothing to
-  redact.
+  can leak one.
 
 ## The shape
 
 ```
-Blinky.Api / Blinky.Worker            (Linux container)
-        │  builds the CMC, signs it with the EA certificate
+Blinky.Api                             (Linux container)
+        │  chooses cardholder and template, builds PKIData
         │
-        │  HTTPS, mutual TLS, JSON        ← this document
+        │  HTTPS, mutual TLS, JSON         ← this document
+        │    /connector/sign    PKIData in, CMC out
+        │    /connector/submit  CMC in, certificate out
         ▼
-Blinky.AdcsConnector                  (Windows, beside the CA)
+Blinky.AdcsConnector                   (Windows, beside the CA)
+        │  refuses anything but one enrolment, signs as the agent
         │  ICertRequest3 / ICertAdmin2, in process
         ▼
     ADCS
@@ -68,7 +90,8 @@ will be reading the body in a terminal.
 | Method | Path | Answers |
 |---|---|---|
 | `GET` | `/connector/health` | That the service is up. No CA call — a healthy connector in front of a stopped CA is a different fault from a connector that failed to start |
-| `GET` | `/connector/describe` | The CA's config string, its name, its chain, whether this account may *manage* certificates, and its template list. What 0033 checks at registration |
+| `GET` | `/connector/describe` | The CA's config string, its name, its chain, whether this account may *manage* certificates, its template list, and the enrolment agent it holds — with whether that key may be exported, read off the key. What 0033 checks at registration |
+| `POST` | `/connector/sign` | A CMS signature over a `PKIData`, as the enrolment agent. 400 with the reason for anything that is not one enrolment; 409 when this connector holds no agent |
 | `POST` | `/connector/submit` | A disposition, and a certificate with its chain when the disposition is issued |
 | `POST` | `/connector/retrieve` | The same, for a request a certificate manager has since approved |
 | `POST` | `/connector/revoke` | Whether the revocation was accepted |
@@ -116,6 +139,36 @@ Four consequences, each of which is in the code for a reason:
   2026. Both are accepted when locating the connector's *own* certificate in
   the machine store, because which one Windows prints depends on the version.
 
+### What the enrolment agent will sign
+
+A client certificate buys a signature, so the question the connector answers is
+never "sign these bytes". `PkiDataInspection` parses the content before the key is
+touched and refuses, each with its own sentence:
+
+| Refused | Because |
+|---|---|
+| Anything in `controlSequence` | A control can be `id-cmc-revokeRequest`, which is a signed revocation |
+| No request, or more than one | One agent signature is one enrolment |
+| A request tagged `[1]` or `[2]` | CRMF and other formats are not what a card produces, and signing a format this code does not read is signing something unread |
+| Anything in `cmsSequence` | Nested signed content would reach the CA under this signature without having been read here |
+| Anything in `otherMsgSequence`, or bytes after the `PKIData` | Nothing Blinky builds puts anything there |
+| A PKCS#10 whose own signature does not verify | Its proof of possession is broken, and the agent should not be on record as having vouched for it |
+
+Blinky's own `CmcRequest` produces none of the refused shapes, so refusing all of
+them costs nothing.
+
+**Every signature is logged on the CA server** with the request's subject, the
+SHA-256 of the key it vouched for, and the fingerprint of the client certificate
+that asked. The subject a card writes is not what ADCS issues — the template
+builds that from the directory — so the key hash is the field to match against
+the issued certificate afterwards. This record did not exist while the key lived
+in the container.
+
+The agent certificate's dates are checked again at every signature, not only at
+start. A service that runs for a year outlives the certificate it started with,
+and ADCS would refuse the CMC with a message about the signer rather than the
+date.
+
 `Connector:AllowedTemplates` is defence in depth and nothing more — ADCS
 enforces template permissions itself and is the authority. It exists so that a
 connector installed for smart-card logon cannot be talked into requesting a
@@ -126,16 +179,39 @@ over-granted, which is a thing that happens.
 
 The service account matters. A connector running as `LocalSystem` enrols as the
 CA's machine account, which is not an identity anybody can grant *Enroll* to on
-a template in a way that means what they intended. It runs as a domain service
-account, and that account needs:
+a template in a way that means what they intended. It runs as a dedicated domain
+**integration account**, and that account needs:
 
 - *Request Certificates* on the CA, and *Enroll* on the target template;
+- *Enroll* on the *Enrollment Agent* template, and an enrolment agent
+  certificate issued to it, in its own personal store;
 - *Issue and Manage Certificates* **only if revocation through this connector
   is wanted** — a separate grant, routinely missing, and `describe` reports its
   absence as `AdminAvailable: false` so the console can say revocation is
   unavailable instead of offering a button that fails;
 - read access to the private key of the connector's own TLS certificate. This
   is the most common reason a first start fails, and the error says so.
+
+What this account is, and why it has to be designed rather than created, is
+recorded as work still to do below.
+
+**The enrolment agent key, on that account.** Enrol the integration account for
+the agent certificate *as that account*, so the key is generated in its store and
+never exported at all; if it has to be imported, import it without marking the
+key exportable. `describe` reports what the key's own policy says, and the
+container treats an exportable key as not production-ready. Two traps:
+
+- **Whether a key may be exported is decided at import, not inherited from the
+  file.** Measured: the same PKCS#12 loaded twice gave one exportable key and one
+  that was not, depending only on the import flag. "It was exported from
+  somewhere" says nothing about the key now on the server.
+- **Strong private key protection must be off.** It asks for consent in a window,
+  a service in session 0 cannot draw one, and the connector signs silently so
+  that this fails with a message instead of hanging.
+
+`CurrentUser` is the integration account's own store, loaded by the service
+control manager when it starts the service — not the store of whoever installed
+it. That is the usual reason a certificate visible in `certmgr.msc` is "not found".
 
 State lives under `%ProgramData%\Blinky\AdcsConnector`, created with
 inheritance switched off for the reason `AgentPaths` records: a directory
@@ -164,6 +240,13 @@ second call into a CA that has not finished the first.
 | `Connector:AllowedClientThumbprints` | SHA-256, any separators. Startup fails when empty |
 | `Connector:AllowedTemplates` | Empty means no restriction |
 | `Connector:RequestTimeoutSeconds` | Default 60, floor 5 |
+| `Connector:EnrolmentAgent:Thumbprint` | SHA-1 or SHA-256 of the agent certificate. Unset means this connector signs nothing and `/connector/sign` answers 409 |
+| `Connector:EnrolmentAgent:StoreLocation` | `CurrentUser` by default — the integration account's store — or `LocalMachine`, where the key's ACL then has to name the account |
+| `Connector:EnrolmentAgent:Path` / `:Password` / `:AllowFileKey` | A PKCS#12 instead, refused without `AllowFileKey`. For a laboratory |
+
+An agent that is configured and unusable — expired, missing *Certificate Request
+Agent*, or with a key this account cannot reach — stops the service at start,
+in front of whoever installed it, rather than at somebody's enrolment.
 
 ## What has to exist in the main tree
 
@@ -196,10 +279,17 @@ in the order it has to arrive.
   `KeyPurpose` behind `IKeyProvider`, for the reason this document got wrong
   before 0025a landed and the interface could be read. `IKeyProvider` has exactly
   one operation, an HMAC, because both secrets it was built for are KDF roots; an
-  enrolment agent signature is a CMS `SignerInfo`. `FileEnrolmentAgentKeyStore`
-  refuses to load without `Blinky:Adcs:AllowFileKeys`, and refuses a certificate
-  ADCS would refuse — no key, out of date, or no *Certificate Request Agent*.
-  [06](06-security.md) now ranks this key second in the custody list.
+  enrolment agent signature is a CMS `SignerInfo`. Its one operation is
+  asynchronous, because the key need not be in this process. Two implementations:
+  - `ConnectorEnrolmentAgentKeyStore`, for any deployment whose transport is the
+    connector — the key on the Windows server, asked for a signature over the
+    wire, and custody reported from what the key itself says about export.
+  - `FileEnrolmentAgentKeyStore`, for CES, where there is no Blinky service on
+    the Windows side to hold a key. Refused without `Blinky:Adcs:AllowFileKeys`.
+
+  Both refuse a certificate ADCS would refuse — out of date, or no *Certificate
+  Request Agent* — and [06](06-security.md) ranks this key second in the custody
+  list.
 
 What remains of 0030 is the part that needs a CA: the definition of done is a CMC
 a lab ADCS accepts, and there is no lab ADCS. The encoding is asserted against
@@ -209,8 +299,11 @@ proves it is the structure intended, not that a CA agrees.
 
 ### 1a. The other half of the transport — patch 0032's remainder. **Written**
 
-`ConnectorAdcsTransport : IAdcsTransport` in `Blinky.Pki/Adcs`, plus
-`tools/AdcsProbe` to drive it.
+`ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAgent` in
+`Blinky.Pki/Adcs`, plus `tools/AdcsProbe` to drive it. The second interface is
+what `ConnectorEnrolmentAgentKeyStore` talks to, and it is separate from the first
+because CES has no equivalent: nothing on the far side of a CES call can hold a
+key for Blinky.
 
 **There is no "accept any server certificate" option**, unlike `BackendClient`
 where one exists for a single-machine bench. A CMC signed by the enrolment agent
@@ -234,8 +327,10 @@ which arrives as the same exception type as a shutdown, and is how "the CA is no
 answering" gets logged as "the request was cancelled".
 
 `tools/AdcsProbe` is read-only by default, like the PIV probes. It prints what
-`describe` said; `--submit` asks a real CA for a real certificate on behalf of a
-real person and is behind a flag for that reason.
+`describe` said, including the agent the connector holds and whether its key may
+be exported; `--submit` asks a real CA for a real certificate on behalf of a real
+person and is behind a flag for that reason. `--remote-agent` has the connector
+sign, `--agent` signs with a file here.
 
 ### 2. Choosing a backend at all — today it is hard-wired
 
@@ -280,14 +375,17 @@ Reading null as "the CA has no templates" would refuse a correct registration.
 ### 6. Deployment
 
 - **`.env.example` and `docker-compose.yml`** — the connector URL, the client
-  certificate the container presents, the pinned server fingerprint and the
-  enrolment agent's PKCS#12 with `Blinky:Adcs:AllowFileKeys`. Neither file holds
-  one `ADCS` key today, and the transport's own options record names every one of
-  them.
-- **A client certificate for the API.** Not an agent certificate: the agent CA
-  issues workstation identities, and an agent that could impersonate the API to
-  the connector would be able to enrol on anybody's behalf. A separate pair,
-  and its fingerprint is what goes into `AllowedClientThumbprints`.
+  certificate the container presents and the pinned server fingerprint. **No
+  enrolment agent key**: with the connector as the transport it lives on the
+  Windows server, and a compose file that offered a slot for one would invite the
+  arrangement this document moved away from. Neither file holds one `ADCS` key
+  today, and the transport's own options record names every one of them.
+- **A client certificate for the API, and it is now the most sensitive file in
+  the container.** It buys the enrolment agent's signature. Not an agent
+  certificate: the agent CA issues workstation identities, and an agent that could
+  impersonate the API to the connector would be able to enrol on anybody's
+  behalf. A separate pair, its fingerprint in `AllowedClientThumbprints`, and
+  eventually behind PKCS#11 for the same reason the master secrets are.
 - **`installer/`** — holds `agent.wxs` and nothing else. The connector needs
   its own: service registration under a named account, the `%ProgramData%`
   directory, the firewall rule for `ListenUrl`, and the private-key grant that
@@ -297,7 +395,42 @@ Reading null as "the CA has no templates" would refuse a correct registration.
   ADCS that already works against the built-in CA, and none of it can be
   checked without one.
 
-### 7. `docs/STATUS.md`, `docs/status.json`, `docs/07-roadmap.md`
+### 7. The integration account — **still to do, and it has to be designed**
+
+The connector issues and revokes certificates, so it needs a domain identity that
+may do both, and that identity is the most powerful account this product asks a
+customer to create. It is written down here so that it is designed rather than
+created in a hurry on the day the lab is built.
+
+What it has to hold:
+
+- *Request Certificates* on the CA and *Enroll* on the smart-card template, for
+  issuance.
+- *Enroll* on the *Enrollment Agent* template and the agent certificate in its own
+  store, generated there so the key was never exported.
+- *Issue and Manage Certificates*, for revocation — and this is the grant to be
+  careful with. As a CA role it covers every certificate the CA ever issued. ADCS
+  can restrict a certificate manager to named users and groups, and a deployment
+  should use that to confine this account to cardholders rather than hand it the
+  whole CA.
+- Ideally **Restricted Enrollment Agents** on the CA, limiting whom this agent may
+  enrol for. Blinky recommends it in the registration check and does not require
+  it.
+
+What it must not be: `LocalSystem`, an administrator's own account, or a member of
+*Domain Admins* "to get it working". It should be a **group managed service
+account** if the estate supports one, so that nobody holds its password at all.
+
+What it produces for Blinky to check, which is 0033: `describe` already reports
+`AdminAvailable` and the agent. It does not yet report whether *Restricted
+Enrollment Agents* or certificate manager restrictions are configured, and a
+registration check that cannot see those cannot recommend them with any evidence.
+
+Revocation through this account is 0034. Until then `SupportsRevocation` follows
+`AdminAvailable`, and the grant is the only thing standing between the connector
+and every certificate the CA holds.
+
+### 8. `docs/STATUS.md`, `docs/status.json`, `docs/07-roadmap.md`
 
 Both status files together, including `status.updated`, and 0032 does not
 become `done` until an enrolment has gone through a real CA. The transport
@@ -384,6 +517,34 @@ One consequence of that, worth knowing before reading a `describe`: the wire
 carries a bool, so `AdminAvailable: false` cannot distinguish a service account
 without *Issue and Manage Certificates* from a machine with no `ICertAdmin2` at
 all. Both mean revocation is unavailable. The connector's own log says which.
+
+### The enrolment agent on the connector, on the same bench
+
+After the key moved, the same run with the connector holding the agent certificate
+and `tools/AdcsProbe --remote-agent`:
+
+| Asked | Answered |
+|---|---|
+| `describe` | The agent's source, its provider — *Microsoft Software Key Storage Provider* — and `exportable: False`, reported as not production-ready because the source is a file |
+| `--submit --remote-agent` | The container built the `PKIData`, the connector signed it, and a CMC of 1446 bytes reached `ICertRequest3::Submit`, answered `RPC_S_SERVER_UNAVAILABLE` |
+
+And on the connector, the record this arrangement adds:
+
+```
+Signed as enrolment agent for CN=jnowak, key 29CB236D…CCF18F2, asked by DA85B5AF…BC81495
+Submitting a Cmc request of 1446 bytes to CA01\Nonexistent Lab CA
+```
+
+Two things this run did **not** exercise, because doing so would have meant
+importing an enrolment agent certificate into the store of the person running
+it: loading the agent from `CurrentUser\My` by fingerprint, and a key that is
+genuinely non-exportable in a store. Both were run from a file. The store path is
+the first thing to try on the lab server.
+
+It also found a defect in how this was being checked rather than in the code. A
+build of the probe failed and the command carried on, because it was chained with
+`&&` after `grep | head`, whose exit status is not the build's. The probe that ran
+was the previous one. Nothing was concluded from that run.
 
 ## Unverified, and named as such
 

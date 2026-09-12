@@ -24,6 +24,9 @@
     <PackageReference Include="Serilog.Settings.Configuration" />
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="Serilog.Sinks.File" />
+    <!-- CMS, for the enrolment agent's signature. The key lives on this
+         server; the PKIData it signs is built on the other side of the wire. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -36,11 +39,20 @@
 
   <ItemGroup>
     <!-- Contracts only. The connector deliberately does not reference
-         Blinky.Pki: it builds no request, signs nothing and holds no
-         enrolment agent key - see docs/15-adcs-connector.md. A reference to
-         the CA interface would invite exactly the drift that makes the two
-         transports stop being interchangeable. -->
+         Blinky.Pki: it builds no request and chooses no cardholder or template.
+         It holds the enrolment agent's key and signs a PKIData that arrives
+         already built - see docs/15-adcs-connector.md. A reference to the CA
+         interface would invite exactly the drift that makes the two transports
+         stop being interchangeable. -->
     <ProjectReference Include="..\Blinky.Contracts\Blinky.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- So a test can hand the signer a certificate directly. The production
+         path reads a Windows store, and a unit test that imported an enrolment
+         agent certificate into the store of whoever runs it would leave one
+         behind. -->
+    <InternalsVisibleTo Include="Blinky.UnitTests" />
   </ItemGroup>
 
 </Project>

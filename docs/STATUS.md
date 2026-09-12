@@ -336,36 +336,49 @@ CA has answered a request.** `Blinky.AdcsConnector` is a working Windows service
 rather than a skeleton: mutual TLS, callers authorised by SHA-256 fingerprint,
 and `ICertRequest3` and `ICertAdmin2` by late binding — submit, retrieve, revoke
 and a describe that 0033 was shaped around. `Blinky.Pki/Adcs` holds
-`IAdcsTransport`, `AdcsCertificateAuthority`, the CMC builder,
-`IEnrolmentAgentKeyStore` and `ConnectorAdcsTransport`. Seventy-six tests cover
-the connector, the wire and the CA side, and none of them needs a CA.
+`IAdcsTransport`, `AdcsCertificateAuthority`, the CMC builder, the connector
+transport and two enrolment agent key stores. A hundred and six tests cover the
+connector, the wire and the CA side, and none of them needs a CA.
+
+**The enrolment agent's key lives on the Windows server, and moved there on
+purpose.** It was first kept in the container. That lost on custody: in the
+integration account's store the key can be non-exportable or in a TPM, the CA
+server is already the most trusted machine in the arrangement, and the only tier
+the container had was an exported PKCS#12 with a password beside it. The decision
+did not move with the key. The container still chooses the cardholder and
+template and builds the `PKIData`; the connector refuses anything that is not one
+PKCS#10 enrolment, signs, and logs the subject, the key hash and the calling
+certificate. The price is that the container's client certificate for the
+connector now buys the agent's signature and is worth as much as the key. CES
+deployments keep the key in the container, because nothing of Blinky's runs on
+that side.
+
+It is not `IKeyProvider` from 0025a in either place: that interface computes an
+HMAC, and an agent signature is a CMS `SignerInfo`. Custody is read off the key
+rather than inferred from where it is, because the same PKCS#12 imported twice
+gave one exportable key and one not, depending only on the import flag.
+[06](06-security.md) ranks this key second in the custody list.
 
 Checkable by somebody who did not write it, and this is what was checked: with
-the connector running on a Windows machine that has **no CA installed at all**,
-`tools/AdcsProbe` loaded an enrolment agent certificate, built and signed a CMC,
-sent it over pinned TLS, and `ICertRequest3::Submit` answered
-`RPC_S_SERVER_UNAVAILABLE` for a CA that does not exist. A fingerprint one digit
-out is refused before any request leaves; a client certificate not in the
-connector's allowlist comes back 403 naming the setting to add it to. So
+the connector holding the agent on a Windows machine that has **no CA installed
+at all**, `tools/AdcsProbe --remote-agent` had the connector sign a `PKIData`
+built on the container side, and the CMC reached `ICertRequest3::Submit`, which
+answered `RPC_S_SERVER_UNAVAILABLE` for a CA that does not exist. A fingerprint
+one digit out is refused before any request leaves; a client certificate not in
+the connector's allowlist comes back 403 naming the setting to add it to. So
 everything between the container and the CA is proved, and the CA's opinion of
-the CMC is not — which is the whole of 0030's definition of done.
+the CMC is not — which is the whole of 0030's definition of done. Loading the
+agent from a Windows store by fingerprint has not been run: the bench used a file.
 
-What is left is configuration rather than cryptography: nothing in the running
-system reaches any of this, because `Blinky.Api` and `Blinky.Worker` still
-register the built-in CA as the only `ICertificateAuthority` there can be, and
-`CaInstance` has a jsonb column with no shape and no CRUD. Listed in order in
-[15 — the ADCS connector](15-adcs-connector.md), along with the two things in the
-DCOM calls that are still reasoned from the shape of the API rather than observed.
-
-The enrolment agent's key question is settled, and not in the direction this
-phase assumed. `IKeyProvider` from 0025a has exactly one operation, an HMAC,
-because both secrets it was built for are key-derivation roots, and an enrolment
-agent signature is a CMS `SignerInfo`. So a third `KeyPurpose` would have been a
-key the provider cannot use. It is a sibling of `ICaKeyStore` instead, file-backed
-only for now and refusing to load without an explicit opt-in or without
-*Certificate Request Agent* on the certificate. [06](06-security.md) now ranks it
-second in the custody list, above the management-key master: what it produces is
-a logon identity in somebody else's name.
+What is left is configuration, an account and a CA. Nothing in the running system
+reaches any of this, because `Blinky.Api` and `Blinky.Worker` still register the
+built-in CA as the only `ICertificateAuthority` there can be, and `CaInstance`
+has a jsonb column with no shape and no CRUD. **The integration account the
+connector runs as has to be designed before it is created**: it issues and
+revokes, and *Issue and Manage Certificates* is CA-wide unless certificate
+manager restrictions confine it. The lab server `HZCS01` was reached over SSH on
+2026-09-12; it is joined to the domain and has no Certificate Authority role
+installed. Listed in order in [15 — the ADCS connector](15-adcs-connector.md).
 
 ### Phase 4 — The boring lifecycle — **in progress**
 

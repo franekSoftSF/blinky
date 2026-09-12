@@ -79,7 +79,7 @@ public sealed class AdcsCertificateAuthority(
                 + "name - not its display name.");
         }
 
-        var cmc = CmcRequest.Create(context.Pkcs10, agent);
+        var cmc = await CmcRequest.CreateAsync(context.Pkcs10, agent, ct: ct);
 
         var answer = await transport.SubmitAsync(
             cmc, AdcsRequestFormat.Cmc, CmcRequest.TemplateAttribute(template), ct);

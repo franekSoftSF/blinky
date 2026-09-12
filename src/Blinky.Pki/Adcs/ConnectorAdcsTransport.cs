@@ -29,7 +29,7 @@ namespace Blinky.Pki.Adcs;
 /// either a pinned fingerprint or a trust anchor.
 /// </para>
 /// </remarks>
-public sealed class ConnectorAdcsTransport : IAdcsTransport, IDisposable
+public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAgent, IDisposable
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -156,6 +156,28 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IDisposable
 
         return await PostAsync<AdcsRevokeRequest, AdcsRevokeResponse>(
             "/connector/revoke", body, ct);
+    }
+
+    public async Task<AdcsEnrolmentAgentInfo?> DescribeAgentAsync(CancellationToken ct = default) =>
+        (await DescribeAsync(ct)).EnrolmentAgent;
+
+    public async Task<byte[]> SignPkiDataAsync(byte[] pkiData, CancellationToken ct = default)
+    {
+        var answer = await PostAsync<AdcsSignRequest, AdcsSignResponse>(
+            "/connector/sign",
+            new AdcsSignRequest(AdcsTransport.SchemaVersion, Convert.ToBase64String(pkiData)),
+            ct);
+
+        try
+        {
+            return Convert.FromBase64String(answer.SignedData);
+        }
+        catch (FormatException ex)
+        {
+            throw new CertificateAuthorityException(
+                $"The connector at {options.BaseAddress} returned a signature that is not base64.",
+                ex);
+        }
     }
 
     private async Task<TAnswer> PostAsync<TBody, TAnswer>(

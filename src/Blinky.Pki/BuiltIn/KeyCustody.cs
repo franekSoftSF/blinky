@@ -30,6 +30,14 @@ public enum KeyCustodyTier
 
     /// <summary>A PKCS#11 device that will not export the key at all.</summary>
     Hsm,
+
+    /// <summary>
+    /// A Windows key storage provider on another machine - the enrolment agent
+    /// on the connector's server. Whether that is a TPM or a DPAPI-protected file,
+    /// and whether the key may be exported, is read from the key and carried in
+    /// <see cref="KeyCustody.Detail"/>; the tier alone does not say.
+    /// </summary>
+    WindowsKeyStore,
 }
 
 /// <summary>

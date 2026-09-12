@@ -24,6 +24,13 @@ public sealed class ConnectorOptions
     public ServerCertificateOptions ServerCertificate { get; set; } = new();
 
     /// <summary>
+    /// The enrolment agent this connector signs CMCs with. Unset means it signs
+    /// nothing and <c>/connector/sign</c> refuses, which is correct for a
+    /// connector whose deployment keeps the key in the container.
+    /// </summary>
+    public EnrolmentAgentOptions EnrolmentAgent { get; set; } = new();
+
+    /// <summary>
     /// SHA-256 thumbprints of the client certificates allowed to call, upper
     /// case hex without separators.
     /// </summary>
@@ -78,4 +85,49 @@ public sealed class ServerCertificateOptions
     public string? Path { get; set; }
 
     public string? Password { get; set; }
+}
+
+/// <summary>
+/// Where the enrolment agent's certificate and key are: a Windows store by
+/// fingerprint, or a file.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The store is the point of putting the key on this server at all. The
+/// certificate is issued to the integration account the connector runs as, so
+/// it lands in that account's personal store, and a key there can be marked
+/// non-exportable - or live in a TPM - which no file in a container can match.
+/// </para>
+/// <para>
+/// Strong private key protection must be off. It asks for consent in a window,
+/// a service in session 0 cannot draw one, and the symptom is a signature call
+/// that fails with a message about a UI that does not exist.
+/// </para>
+/// </remarks>
+public sealed class EnrolmentAgentOptions
+{
+    /// <summary>SHA-1 or SHA-256, any separators.</summary>
+    public string? Thumbprint { get; set; }
+
+    /// <summary>
+    /// <c>CurrentUser</c> - the integration account's own store, loaded by the
+    /// service control manager when it starts the service - or
+    /// <c>LocalMachine</c>, where the key's ACL then has to name the account.
+    /// </summary>
+    public string StoreLocation { get; set; } = "CurrentUser";
+
+    /// <summary>A PKCS#12 instead of the store. For a laboratory.</summary>
+    public string? Path { get; set; }
+
+    public string? Password { get; set; }
+
+    /// <summary>
+    /// Must be true for <see cref="Path"/> to be accepted, for the reason every
+    /// other file-held key in Blinky has the same switch: nobody decides to keep
+    /// this in a file, they inherit it from whatever got the lab working.
+    /// </summary>
+    public bool AllowFileKey { get; set; }
+
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(Thumbprint) || !string.IsNullOrWhiteSpace(Path);
 }

@@ -70,6 +70,13 @@ builder.Services.AddSingleton(gate);
 builder.Services.AddSingleton<ICertificateServices, CertificateServices>();
 builder.Services.AddSingleton<CertificateServiceHost>();
 
+// Loaded now, so an enrolment agent that is configured and unusable - expired,
+// missing the Certificate Request Agent policy, or with a key this account
+// cannot reach - stops the service here, in front of whoever installed it,
+// rather than at somebody's enrolment.
+builder.Services.AddSingleton(new ConnectorEnrolmentAgent(
+    EnrolmentAgentSigner.Load(options.EnrolmentAgent, DateTimeOffset.UtcNow)));
+
 var serverCertificate = ServerCertificate.Load(options.ServerCertificate);
 
 builder.WebHost.UseUrls(options.ListenUrl);

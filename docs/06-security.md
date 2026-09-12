@@ -105,25 +105,52 @@ operation, an HMAC, because both secrets it was built for are key-derivation
 roots. An enrolment agent signature is a CMS `SignerInfo` over a CMC, and no
 amount of HMAC produces one.
 
-So the same arrangement the CA key already has. The signature happens behind the
-interface, there is no way to ask for the key, and a file-backed store refuses to
-load unless `Blinky:Adcs:AllowFileKeys` is set — the same explicit opt-in, for
+The signature happens behind the interface and there is no way to ask for the
+key. **Where the key physically is depends on the transport, and was changed
+once on purpose.**
+
+**With the connector, the key lives on the Windows server beside the CA**, in the
+integration account's own store, and `ConnectorEnrolmentAgentKeyStore` asks for a
+signature over the wire. This section first said the opposite — that the key
+never reaches the connector — and that lost on the property that matters most for
+this key:
+
+- In a Windows store the key can be **non-exportable**, or in a TPM, and never
+  exist as a file. In the container the only tier was a PKCS#12 exported from a
+  template that permits export, with its password beside it.
+- The CA server is already the most trusted machine in the arrangement. Whoever
+  holds it issues what they like, agent or not, so the key adds almost nothing
+  there and a great deal in a container.
+- Autoenrollment renews it.
+
+Custody is **read off the key, not inferred from where it is.** The connector
+reports the key's own export policy and provider, and the container treats an
+exportable key, or one whose provider will not say, as not production-ready.
+Measured while building it: the same PKCS#12 loaded twice gave one exportable key
+and one that was not, depending only on the flag at import. Being on a Windows
+server settles nothing.
+
+**What moved with it, and what did not.** The decision did not: the container
+still chooses the cardholder and template and builds the `PKIData`. The connector
+parses it before signing and refuses anything that is not exactly one PKCS#10
+enrolment — no controls, because a control can be a signed revocation; no nested
+content; no second request; no request whose own signature fails — and logs the
+subject, the key hash and the calling client certificate for every signature it
+makes. **The cost:** the client certificate the container uses to reach the
+connector now buys this key's signature, and is worth as much as the key.
+
+**With CES there is no Blinky service on the Windows side**, so the key stays in
+the container behind `FileEnrolmentAgentKeyStore`, refused unless
+`Blinky:Adcs:AllowFileKeys` is set — the same explicit opt-in the CA key has, for
 the same reason: nobody decides to keep this in a file, they inherit it from
-whatever got the lab working and never look again. `FileEnrolmentAgentKeyStore`
-is the only implementation today and reports itself as not production-ready every
-time.
+whatever got the lab working. A PKCS#11 tier for this case does not exist yet.
 
-It also refuses a certificate ADCS would refuse, at load rather than at
-somebody's enrolment: no private key, outside its validity dates, or missing
-*Certificate Request Agent* (`1.3.6.1.4.1.311.20.2.1`). A certificate carrying no
-extended key usage extension at all is refused too — that absence means
-"unrestricted" for TLS and means "the CA will not accept this as an enrolment
-agent" here.
-
-**The key never reaches the connector.** `Blinky.AdcsConnector` is a transport:
-it builds no request and signs nothing, so the CMC arrives already signed and the
-CA server holds no copy of this credential. See
-[15](15-adcs-connector.md).
+Both refuse a certificate ADCS would refuse before it is used: outside its
+validity dates, or missing *Certificate Request Agent* (`1.3.6.1.4.1.311.20.2.1`).
+A certificate carrying no extended key usage extension at all is refused too —
+that absence means "unrestricted" for TLS and "not an enrolment agent" to ADCS.
+The connector and the container each hold a copy of these rules, and a test runs
+the same certificates through both. See [15](15-adcs-connector.md).
 
 ## Where the second and third of those actually live
 

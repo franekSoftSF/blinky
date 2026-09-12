@@ -15,7 +15,9 @@
 // rule, a connector nobody upgraded, a service account without Enroll. Each of
 // those has its own sentence here, and none of them needs a card or a database.
 //
-// --submit asks a real CA for a real certificate on behalf of a real person.
+// --submit asks a real CA for a real certificate on behalf of a real person,
+// signed by the enrolment agent the connector holds (--remote-agent) or by one
+// in a local file (--agent).
 // It is behind a flag for the same reason the PIV probes are read-only.
 
 using System.Security.Cryptography;
@@ -36,6 +38,7 @@ var caConfig = arguments.GetValueOrDefault("ca-config");
 var template = arguments.GetValueOrDefault("submit");
 var agentPath = arguments.GetValueOrDefault("agent");
 var agentPassword = arguments.GetValueOrDefault("agent-password");
+var remoteAgent = arguments.ContainsKey("remote-agent");
 var subject = arguments.GetValueOrDefault("subject", "CN=probe");
 
 if (connector is null || clientPath is null)
@@ -43,8 +46,8 @@ if (connector is null || clientPath is null)
     Console.Error.WriteLine(
         "usage: --connector https://host:8444 --client <p12> [--client-password ...]\n"
         + "       (--fingerprint <sha256> | --server-ca <pem-or-der>)\n"
-        + "       [--ca-config 'HOST\\CA name'] [--submit <template> --agent <p12>\n"
-        + "        --agent-password ... --subject 'CN=...']");
+        + "       [--ca-config 'HOST\\CA name'] [--submit <template> --subject 'CN=...'\n"
+        + "        (--remote-agent | --agent <p12> --agent-password ...)]");
 
     return 2;
 }
@@ -84,16 +87,30 @@ try
         ? "templates   " + string.Join(", ", templates)
         : "templates   not established - which is not the same as none");
 
+    if (described.EnrolmentAgent is { } held)
+    {
+        var custody = ConnectorEnrolmentAgentKeyStore.CustodyOf(held);
+
+        Console.WriteLine($"agent       {held.Source}, {held.Provider ?? "provider not named"}");
+        Console.WriteLine($"            exportable: {held.Exportable?.ToString() ?? "not said"}, "
+            + $"production-ready: {custody.ProductionReady}");
+    }
+    else
+    {
+        Console.WriteLine("agent       none held by this connector");
+    }
+
     if (template is null)
     {
         return 0;
     }
 
-    if (agentPath is null)
+    if (agentPath is null && !remoteAgent)
     {
         Console.Error.WriteLine(
-            "--submit needs --agent: a CMC without an enrolment agent's signature is a request "
-            + "ADCS will refuse, and sending one would only prove that.");
+            "--submit needs --remote-agent, or --agent for a key in a file here: a CMC without an "
+            + "enrolment agent's signature is a request ADCS will refuse, and sending one would "
+            + "only prove that.");
 
         return 2;
     }
@@ -103,7 +120,9 @@ try
         $"submitting a request for {subject} against {template}. This asks a real CA for a "
         + "real certificate.");
 
-    using var agent = FileEnrolmentAgentKeyStore.Open(agentPath, agentPassword, allowFileKeys: true);
+    using IEnrolmentAgentKeyStore agent = remoteAgent
+        ? await ConnectorEnrolmentAgentKeyStore.OpenAsync(transport, connector)
+        : FileEnrolmentAgentKeyStore.Open(agentPath!, agentPassword, allowFileKeys: true);
 
     Console.WriteLine($"agent       {agent.Certificate.Subject}");
     Console.WriteLine($"            {agent.Custody.Detail}");

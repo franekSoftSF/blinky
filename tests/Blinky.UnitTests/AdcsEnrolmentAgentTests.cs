@@ -99,14 +99,14 @@ public sealed class AdcsEnrolmentAgentTests
     }
 
     [Fact]
-    public void The_cmc_carries_the_cardholders_request_untouched_inside_the_agents_signature()
+    public async Task The_cmc_carries_the_cardholders_request_untouched_inside_the_agents_signature()
     {
         using var file = AdcsTestCertificates.AgentPkcs12();
         using var store = FileEnrolmentAgentKeyStore.Open(file.Path, file.Password, allowFileKeys: true);
 
         var pkcs10 = AdcsTestCertificates.CardRequest("CN=jnowak");
 
-        var cmc = CmcRequest.Create(pkcs10, store);
+        var cmc = await CmcRequest.CreateAsync(pkcs10, store);
 
         var signed = new SignedCms();
         signed.Decode(cmc);
@@ -126,25 +126,25 @@ public sealed class AdcsEnrolmentAgentTests
     }
 
     [Fact]
-    public void The_signature_is_sha256_rather_than_whatever_the_default_is()
+    public async Task The_signature_is_sha256_rather_than_whatever_the_default_is()
     {
         using var file = AdcsTestCertificates.AgentPkcs12();
         using var store = FileEnrolmentAgentKeyStore.Open(file.Path, file.Password, allowFileKeys: true);
 
         var signed = new SignedCms();
-        signed.Decode(CmcRequest.Create(AdcsTestCertificates.CardRequest("CN=jnowak"), store));
+        signed.Decode(await CmcRequest.CreateAsync(AdcsTestCertificates.CardRequest("CN=jnowak"), store));
 
         Assert.Equal("2.16.840.1.101.3.4.2.1", signed.SignerInfos[0].DigestAlgorithm.Value);
     }
 
     [Fact]
-    public void An_empty_request_is_refused_rather_than_signed()
+    public async Task An_empty_request_is_refused_rather_than_signed()
     {
         using var file = AdcsTestCertificates.AgentPkcs12();
         using var store = FileEnrolmentAgentKeyStore.Open(file.Path, file.Password, allowFileKeys: true);
 
-        var refusal = Assert.Throws<CertificateAuthorityException>(
-            () => CmcRequest.Create([], store));
+        var refusal = await Assert.ThrowsAsync<CertificateAuthorityException>(
+            () => CmcRequest.CreateAsync([], store));
 
         Assert.Contains("no certificate request", refusal.Message, StringComparison.Ordinal);
     }
@@ -272,6 +272,27 @@ internal static class AdcsTestCertificates
         File.WriteAllBytes(path, bytes);
 
         return new TempPkcs12 { Path = path, Password = password };
+    }
+
+    /// <summary>
+    /// An enrolment agent certificate without its key - which is all the container
+    /// ever sees of one that lives on the connector's server.
+    /// </summary>
+    public static X509Certificate2 Agent(DateTimeOffset? notBefore = null, DateTimeOffset? notAfter = null)
+    {
+        using var key = RSA.Create(2048);
+
+        var request = new CertificateRequest(
+            "CN=blinky enrolment agent", key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            [new Oid("1.3.6.1.4.1.311.20.2.1")], critical: false));
+
+        using var withKey = request.CreateSelfSigned(
+            notBefore ?? DateTimeOffset.UtcNow.AddDays(-1),
+            notAfter ?? DateTimeOffset.UtcNow.AddDays(365));
+
+        return X509CertificateLoader.LoadCertificate(withKey.RawData);
     }
 
     /// <summary>A PKCS#10 of the shape a card produces: signed by its own key.</summary>

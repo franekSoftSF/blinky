@@ -152,6 +152,11 @@ public sealed record AdcsRevokeResponse(
 /// Reported here so the console can say revocation is unavailable instead of
 /// offering a button that fails.
 /// </param>
+/// <param name="EnrolmentAgent">
+/// The enrolment agent this connector signs with, or null when it holds none -
+/// which is the normal state for a connector in front of a CES deployment, and a
+/// misconfiguration for one that is expected to sign.
+/// </param>
 public sealed record AdcsDescribeResponse(
     int SchemaVersion,
     string ConnectorVersion,
@@ -159,7 +164,55 @@ public sealed record AdcsDescribeResponse(
     string CaName,
     bool AdminAvailable,
     string? CertificateChain = null,
-    IReadOnlyList<string>? Templates = null);
+    IReadOnlyList<string>? Templates = null,
+    AdcsEnrolmentAgentInfo? EnrolmentAgent = null);
+
+/// <summary>
+/// What the container may know about an enrolment agent key it cannot touch.
+/// </summary>
+/// <remarks>
+/// Facts read from the key where it lives rather than assumed from where that
+/// is. A key in a Windows store can be exportable or not, decided by the flag it
+/// was imported with and by nothing about the file it came from - measured, see
+/// docs/15. Reporting "on the Windows server" as if that settled custody would be
+/// the claim this project refuses to make about SoftHSM.
+/// </remarks>
+/// <param name="Certificate">Base64 DER, without the key.</param>
+/// <param name="Source">
+/// "store: CurrentUser\My" or "file: C:\...". A file is a laboratory
+/// arrangement on this side exactly as it is on the container's.
+/// </param>
+/// <param name="Exportable">
+/// Whether the key's own export policy allows it to leave. Null when the provider
+/// does not say, which is not the same as false.
+/// </param>
+/// <param name="Provider">
+/// The key storage provider by name - "Microsoft Platform Crypto Provider" is a
+/// TPM, "Microsoft Software Key Storage Provider" is a file under the account's
+/// profile protected by DPAPI, and the difference is the whole question.
+/// </param>
+public sealed record AdcsEnrolmentAgentInfo(
+    string Certificate,
+    string Source,
+    bool? Exportable,
+    string? Provider);
+
+/// <summary>
+/// Sign a CMC's <c>PKIData</c> as the enrolment agent this connector holds.
+/// </summary>
+/// <remarks>
+/// The connector signs and decides nothing else. Who the certificate is for and
+/// against which template is decided on the container side and arrives already
+/// built; the connector refuses anything that is not a <c>PKIData</c> carrying
+/// exactly one certification request, so that holding a client certificate buys a
+/// signature over an enrolment and not over arbitrary bytes. See
+/// docs/15-adcs-connector.md.
+/// </remarks>
+/// <param name="PkiData">Base64 DER of the <c>PKIData</c>, not the CMS around it.</param>
+public sealed record AdcsSignRequest(int SchemaVersion, string PkiData);
+
+/// <param name="SignedData">Base64 DER of the CMS SignedData - the CMC itself.</param>
+public sealed record AdcsSignResponse(string SignedData);
 
 /// <summary>
 /// A refusal, with a reason a person can act on. Never carries the request.

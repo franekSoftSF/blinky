@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Blinky.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -6,15 +7,18 @@ using Microsoft.AspNetCore.Routing;
 namespace Blinky.AdcsConnector;
 
 /// <summary>
-/// The connector's whole surface: four things a CA can be asked, and a
-/// liveness answer.
+/// The connector's whole surface: four things a CA can be asked, a signature
+/// from the enrolment agent it holds, and a liveness answer.
 /// </summary>
 /// <remarks>
 /// Deliberately thin. Everything that decides what a certificate should say
 /// lives on the other side of this wire, in <c>AdcsCertificateAuthority</c>,
 /// and is shared with the CES transport; anything decided here would be a
 /// decision the CES route does not make, which is how "switching transports is
-/// one config value" stops being true.
+/// one config value" stops being true. Signing is the one exception, and it is
+/// an exception about where a key lives rather than about who decides: the
+/// <c>PKIData</c> arrives built, and the connector only refuses what is not one
+/// enrolment.
 /// </remarks>
 public static class ConnectorEndpoints
 {
@@ -34,7 +38,8 @@ public static class ConnectorEndpoints
         }));
 
         app.MapGet("/connector/describe", async (
-            CertificateServiceHost host, string? caConfig, CancellationToken ct) =>
+            CertificateServiceHost host, ConnectorEnrolmentAgent agent, string? caConfig,
+            CancellationToken ct) =>
         {
             var description = await host.RunAsync(
                 "Describe", (services, token) => services.Describe(caConfig, token), ct);
@@ -46,7 +51,76 @@ public static class ConnectorEndpoints
                 description.CaName,
                 description.AdminAvailable,
                 Encode(description.CertificateChain),
-                description.Templates));
+                description.Templates,
+                agent.Signer?.Describe()));
+        });
+
+        app.MapPost("/connector/sign", (
+            AdcsSignRequest request, ConnectorEnrolmentAgent agent, HttpContext context,
+            ILoggerFactory loggers) =>
+        {
+            if (Refuse(request.SchemaVersion) is { } mismatch)
+            {
+                return mismatch;
+            }
+
+            if (agent.Signer is not { } signer)
+            {
+                // Conflict rather than a bad request: the request is fine, and this
+                // connector is configured for a deployment that keeps the key in
+                // the container.
+                return Results.Json(
+                    new AdcsProblem(
+                        "This connector holds no enrolment agent. Set "
+                        + "Connector:EnrolmentAgent:Thumbprint to the certificate in the "
+                        + "integration account's store."),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+
+            if (!TryDecode(request.PkiData, out var pkiData))
+            {
+                return Problem("The PKIData is not base64.");
+            }
+
+            var logger = loggers.CreateLogger("Blinky.AdcsConnector.EnrolmentAgent");
+            var caller = context.Connection.ClientCertificate is { } presented
+                ? ClientCertificateGate.FingerprintOf(presented)
+                : "none";
+
+            try
+            {
+                var (signed, inspected) = signer.Sign(pkiData, DateTimeOffset.UtcNow);
+
+                // The record this arrangement adds: every signature the enrolment
+                // agent made, on the CA server, with the key it vouched for and the
+                // caller that asked. The subject a card writes into its request
+                // is not what ADCS will issue - the template builds that from the
+                // directory - so the key hash is the field to match against the
+                // certificate afterwards.
+                logger.LogInformation(
+                    "Signed as enrolment agent for {Subject}, key {KeySha256}, asked by {Caller}",
+                    inspected.Subject, inspected.PublicKeySha256, caller);
+
+                return Results.Ok(new AdcsSignResponse(Convert.ToBase64String(signed)));
+            }
+            catch (PkiDataRefusedException ex)
+            {
+                logger.LogWarning(
+                    "Refused to sign for {Caller}: {Reason}", caller, ex.Message);
+
+                return Problem(ex.Message);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or CryptographicException)
+            {
+                logger.LogError(ex, "The enrolment agent could not sign");
+
+                return Results.Json(
+                    new AdcsProblem(
+                        "The enrolment agent could not sign: " + ex.Message,
+                        "If the key was imported with strong private key protection, it is "
+                        + "waiting for consent in a window a service cannot draw."),
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
         });
 
         app.MapPost("/connector/submit", async (

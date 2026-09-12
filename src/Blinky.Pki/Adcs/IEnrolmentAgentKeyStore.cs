@@ -45,12 +45,21 @@ public interface IEnrolmentAgentKeyStore : IDisposable
     /// SignedData.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The content type travels inside <paramref name="content"/> because for
     /// CMC it is not <c>id-data</c> but <c>id-cct-PKIData</c>, and a CA that
     /// receives the wrong one rejects the request with a message about the
     /// format rather than about the content.
+    /// </para>
+    /// <para>
+    /// Asynchronous because the key need not be in this process. Where the
+    /// connector is the transport the key lives on the Windows server beside
+    /// the CA, and this call crosses the wire to it - see
+    /// <see cref="ConnectorEnrolmentAgentKeyStore"/>. A synchronous signature
+    /// over a network call would be a thread blocked per enrolment.
+    /// </para>
     /// </remarks>
-    byte[] SignCms(ContentInfo content);
+    Task<byte[]> SignCmsAsync(ContentInfo content, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -134,6 +143,22 @@ public sealed class FileEnrolmentAgentKeyStore : IEnrolmentAgentKeyStore
                 $"{where} holds a certificate but no private key, so it cannot sign anything.");
         }
 
+        RequireAgentCertificate(certificate, where, now);
+    }
+
+    /// <summary>
+    /// The rules that do not need the key: dates and the Certificate Request
+    /// Agent policy.
+    /// </summary>
+    /// <remarks>
+    /// Split out for a key held elsewhere. The container cannot see a key on the
+    /// connector's server, but it can see the certificate, and refusing an expired
+    /// or wrongly issued one before asking for a signature says why in a sentence
+    /// instead of in a CA's denial.
+    /// </remarks>
+    internal static void RequireAgentCertificate(
+        X509Certificate2 certificate, string where, DateTimeOffset now)
+    {
         if (now < certificate.NotBefore.ToUniversalTime())
         {
             throw new CertificateAuthorityException(
@@ -173,7 +198,7 @@ public sealed class FileEnrolmentAgentKeyStore : IEnrolmentAgentKeyStore
                 .Cast<System.Security.Cryptography.Oid>()
                 .Any(oid => oid.Value == CertificateRequestAgentEku));
 
-    public byte[] SignCms(ContentInfo content)
+    public Task<byte[]> SignCmsAsync(ContentInfo content, CancellationToken ct = default)
     {
         var signed = new SignedCms(content, detached: false);
 
@@ -186,9 +211,9 @@ public sealed class FileEnrolmentAgentKeyStore : IEnrolmentAgentKeyStore
             DigestAlgorithm = new System.Security.Cryptography.Oid("2.16.840.1.101.3.4.2.1"),
         };
 
-        signed.ComputeSignature(signer);
+        signed.ComputeSignature(signer, silent: true);
 
-        return signed.Encode();
+        return Task.FromResult(signed.Encode());
     }
 
     public void Dispose() => certificate.Dispose();

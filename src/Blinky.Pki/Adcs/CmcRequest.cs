@@ -49,7 +49,9 @@ public static class CmcRequest
     /// answer refers back to it, which with one request per envelope it does not,
     /// so it is fixed rather than configurable.
     /// </param>
-    public static byte[] Create(byte[] pkcs10, IEnrolmentAgentKeyStore agent, uint bodyPartId = 1)
+    public static Task<byte[]> CreateAsync(
+        byte[] pkcs10, IEnrolmentAgentKeyStore agent, uint bodyPartId = 1,
+        CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(pkcs10);
         ArgumentNullException.ThrowIfNull(agent);
@@ -64,7 +66,7 @@ public static class CmcRequest
         var content = new ContentInfo(
             new System.Security.Cryptography.Oid(PkiDataContentType), PkiData(pkcs10, bodyPartId));
 
-        return agent.SignCms(content);
+        return agent.SignCmsAsync(content, ct);
     }
 
     /// <summary>
