@@ -12,4 +12,9 @@
     <ProjectReference Include="..\..\src\Blinky.Pki\Blinky.Pki.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- For the queue option, where the probe plays the API a connector dials. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
 </Project>

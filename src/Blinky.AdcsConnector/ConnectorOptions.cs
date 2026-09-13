@@ -65,6 +65,38 @@ public sealed class ConnectorOptions
     /// refusal that says why.
     /// </summary>
     public int RequestTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// The API this connector dials, for an estate where nothing may connect into the
+    /// CA's network. Set, the connector opens no listener at all: <see cref="ListenUrl"/>,
+    /// <see cref="ServerCertificate"/> and <see cref="AllowedClientThumbprints"/> are not
+    /// read, and the API is authenticated the other way round - by its TLS certificate.
+    /// </summary>
+    public ApiOptions Api { get; set; } = new();
+
+    public bool DialsApi => !string.IsNullOrWhiteSpace(Api.Url);
+}
+
+/// <summary>How the connector reaches the API when it is the one that dials.</summary>
+public sealed class ApiOptions
+{
+    /// <summary><c>https://by-cacms.blinky.lab:9443</c> - the agents' listener, where the edge verifies client certificates.</summary>
+    public string? Url { get; set; }
+
+    /// <summary>
+    /// SHA-256 of the API's TLS certificate, to pin it. Unset, the certificate has to
+    /// chain to a root this machine trusts and name the host in <see cref="Url"/>.
+    /// </summary>
+    public string? ServerFingerprint { get; set; }
+
+    /// <summary>
+    /// What this connector presents: a certificate from the deployment's agent CA, with
+    /// its SHA-256 listed in <c>Blinky:Adcs:Connector:ClientFingerprints</c> on the API.
+    /// </summary>
+    public ServerCertificateOptions ClientCertificate { get; set; } = new();
+
+    /// <summary>How long one poll may be held open by the API. Capped by the API at 25.</summary>
+    public int WaitSeconds { get; set; } = 25;
 }
 
 /// <summary>

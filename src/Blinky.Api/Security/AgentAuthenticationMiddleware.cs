@@ -188,6 +188,30 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
             return;
         }
 
+        if (ConnectorIdentities.IsConnectorRoute(path))
+        {
+            var connectors = context.RequestServices.GetRequiredService<ConnectorIdentities>();
+
+            // Decided before the agent lookup and instead of it. An enrolled
+            // workstation's certificate verifies at the edge exactly as a
+            // connector's does, and collecting PKIData to be signed is not something
+            // a workstation may do.
+            if (!connectors.Accepts(certificate, out var fingerprint))
+            {
+                logger.LogWarning(
+                    "Refused a certificate on the connector routes that is not a connector's: {Fingerprint}",
+                    fingerprint);
+
+                await Deny(context, "this certificate is not an ADCS connector's; add its SHA-256 "
+                                    + "fingerprint to Blinky:Adcs:Connector:ClientFingerprints");
+                return;
+            }
+
+            context.Items["connector"] = fingerprint;
+            await next(context);
+            return;
+        }
+
         using var session = database.OpenSession();
         var agent = session.Query<Agent>()
             .SingleOrDefault(a => a.ClientCertificateThumbprint == certificate.Thumbprint);

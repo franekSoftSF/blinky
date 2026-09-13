@@ -120,9 +120,7 @@ public static class ConnectorEndpoints
             }
 
             var logger = loggers.CreateLogger("Blinky.AdcsConnector.EnrolmentAgent");
-            var caller = context.Connection.ClientCertificate is { } presented
-                ? ClientCertificateGate.FingerprintOf(presented)
-                : "none";
+            var caller = ConnectorCaller.Of(context);
 
             try
             {
@@ -251,9 +249,7 @@ public static class ConnectorEndpoints
             // account can revoke any certificate the CA holds, so every attempt is
             // recorded with the client certificate that asked - the same record a
             // signature gets.
-            var caller = context.Connection.ClientCertificate is { } presented
-                ? ClientCertificateGate.FingerprintOf(presented)
-                : "none";
+            var caller = ConnectorCaller.Of(context);
 
             loggers.CreateLogger("Blinky.AdcsConnector.Revocation").LogInformation(
                 "Revocation of {Serial}, reason {Reason}, asked by {Caller}: {Outcome}",

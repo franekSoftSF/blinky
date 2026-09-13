@@ -26,6 +26,10 @@ using Blinky.Contracts;
 using Blinky.Domain;
 using Blinky.Pki;
 using Blinky.Pki.Adcs;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 var arguments = ParseArguments(args);
 
@@ -45,8 +49,9 @@ var retrieve = arguments.GetValueOrDefault("retrieve");
 var subject = arguments.GetValueOrDefault("subject", "CN=probe");
 var requester = arguments.GetValueOrDefault("requester");
 var keyAlgorithm = arguments.GetValueOrDefault("key", "ECCP256");
+var queueUrl = arguments.GetValueOrDefault("queue");
 
-if (connector is null || clientPath is null)
+if (queueUrl is null && (connector is null || clientPath is null))
 {
     Console.Error.WriteLine(
         "usage: --connector https://host:8444 --client <p12> [--client-password ...]\n"
@@ -54,22 +59,35 @@ if (connector is null || clientPath is null)
         + "       [--ca-config 'HOST\\CA name'] [--submit <template> --requester 'DOMAIN\\user'\n"
         + "        (--remote-agent | --agent <p12> --agent-password ...)]\n"
         + "       [--check <template> [--remote-agent]] [--key ECCP256|RSA2048]\n"
-        + "       [--revoke <serial> [--reason CessationOfOperation]] [--retrieve <request id>]");
+        + "       [--revoke <serial> [--reason CessationOfOperation]] [--retrieve <request id>]\n"
+        + "   or: --queue https://127.0.0.1:19443 --queue-certificate <p12> [--queue-password ...]\n"
+        + "       --connector-fingerprint <sha256>   (the connector dials this probe instead)");
 
     return 2;
 }
 
-var options = new ConnectorTransportOptions(
-    new Uri(connector),
-    clientPath,
-    clientPassword,
-    fingerprint,
-    serverCa,
-    caConfig);
-
 try
 {
-    using var transport = new ConnectorAdcsTransport(options);
+    // --queue: this probe plays the API's half of a connector that dials in, with the
+    // same queue and the same transport the API uses, so the connector's polling mode
+    // can be run against a real CA before an API with it is deployed anywhere.
+    var queue = queueUrl is null ? null : new ConnectorQueue();
+
+    await using var host = queue is null
+        ? null
+        : await QueueHost.StartAsync(
+            queueUrl!,
+            arguments.GetValueOrDefault("queue-certificate") ?? throw new ArgumentException("--queue needs --queue-certificate"),
+            arguments.GetValueOrDefault("queue-password"),
+            arguments.GetValueOrDefault("connector-fingerprint") ?? throw new ArgumentException("--queue needs --connector-fingerprint"),
+            queue);
+
+    connector ??= "the connector polling this probe";
+
+    using var transport = queue is null
+        ? new ConnectorAdcsTransport(new ConnectorTransportOptions(
+            new Uri(connector), clientPath, clientPassword, fingerprint, serverCa, caConfig))
+        : new ConnectorAdcsTransport(queue, caConfig);
 
     Console.WriteLine($"transport   {transport.Description}");
 
@@ -312,4 +330,64 @@ static Dictionary<string, string> ParseArguments(string[] args)
     }
 
     return parsed;
+}
+
+/// <summary>The API's two connector routes, over the same queue, with a fingerprint for a gate.</summary>
+internal static class QueueHost
+{
+    public static async Task<Microsoft.AspNetCore.Builder.WebApplication> StartAsync(
+        string url, string certificatePath, string? password, string connectorFingerprint, ConnectorQueue queue)
+    {
+        var wanted = string.Concat(connectorFingerprint.Where(char.IsAsciiHexDigit)).ToUpperInvariant();
+        var certificate = X509CertificateLoader.LoadPkcs12FromFile(certificatePath, password);
+
+        var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.UseUrls(url);
+        builder.WebHost.ConfigureKestrel(kestrel => kestrel.ConfigureHttpsDefaults(https =>
+        {
+            https.ServerCertificate = certificate;
+            https.ClientCertificateMode = Microsoft.AspNetCore.Server.Kestrel.Https.ClientCertificateMode.RequireCertificate;
+            https.ClientCertificateValidation = (_, _, _) => true;
+        }));
+
+        var app = builder.Build();
+
+        app.Use(async (context, next) =>
+        {
+            var presented = await context.Connection.GetClientCertificateAsync();
+            var seen = presented?.GetCertHashString(HashAlgorithmName.SHA256);
+
+            if (seen != wanted)
+            {
+                Console.Error.WriteLine($"queue       refused a poll from {seen ?? "no certificate"}");
+                context.Response.StatusCode = 401;
+                return;
+            }
+
+            await next();
+        });
+
+        app.MapGet(AdcsQueue.NextPath, async (int? wait, CancellationToken ct) =>
+        {
+            var item = await queue.NextAsync(
+                TimeSpan.FromSeconds(Math.Clamp(wait ?? AdcsQueue.MaximumWaitSeconds, 1, AdcsQueue.MaximumWaitSeconds)), ct);
+
+            if (item is not null)
+            {
+                Console.WriteLine($"queue       handed out {item.Method} {item.Path.Split('?')[0]}");
+            }
+
+            return item is null ? Results.NoContent() : Results.Ok(item);
+        });
+
+        app.MapPost(AdcsQueue.ResultPath, (AdcsWorkResult result) =>
+            queue.Complete(result) ? Results.NoContent() : Results.StatusCode(410));
+
+        await app.StartAsync();
+
+        Console.WriteLine($"queue       listening on {url} for connector {wanted[..16]}...");
+
+        return app;
+    }
 }

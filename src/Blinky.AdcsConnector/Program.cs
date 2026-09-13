@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Microsoft.AspNetCore.TestHost;
 using Serilog;
 
 // Before anything opens a file in it, for the reason AgentPaths gives: a
@@ -57,8 +58,9 @@ var gate = new ClientCertificateGate(options.AllowedClientThumbprints);
 
 // Refused at startup, not at the first request. An empty allowlist would leave
 // a DCOM bridge to a Microsoft CA listening on a network port for anybody who
-// asks, and a service that starts in that state will be found in it.
-if (gate.IsEmpty)
+// asks, and a service that starts in that state will be found in it. A connector
+// that dials the API listens on nothing, so there is nobody to allow.
+if (!options.DialsApi && gate.IsEmpty)
 {
     throw new InvalidOperationException(
         "Connector:AllowedClientThumbprints is empty. The connector will not start without at "
@@ -78,45 +80,75 @@ builder.Services.AddSingleton<ITemplateDirectory, ActiveDirectoryTemplates>();
 builder.Services.AddSingleton(new ConnectorEnrolmentAgent(
     EnrolmentAgentSigner.Load(options.EnrolmentAgent, DateTimeOffset.UtcNow)));
 
-var (serverCertificate, serverCertificateSource) = ServerCertificate.Load(options.ServerCertificate);
+string? serverCertificateSource = null;
 
-builder.WebHost.UseUrls(options.ListenUrl);
-builder.WebHost.ConfigureKestrel(kestrel =>
+if (options.DialsApi)
 {
-    kestrel.AddServerHeader = false;
+    // No socket at all. The calls the API hands over are made through the endpoints
+    // below in memory, so the two directions share every refusal and log line.
+    builder.WebHost.UseTestServer();
+    builder.Services.AddHostedService<ApiPoller>();
+}
+else
+{
+    var (serverCertificate, loadedFrom) = ServerCertificate.Load(options.ServerCertificate, "Connector:ServerCertificate");
+    serverCertificateSource = loadedFrom;
 
-    // A CMC carrying a PKCS#10 and an enrolment agent's signature is a few
-    // kilobytes. A megabyte is generous and still small enough that nothing
-    // reaches the CA by accident.
-    kestrel.Limits.MaxRequestBodySize = 1024 * 1024;
-
-    kestrel.ConfigureHttpsDefaults(https =>
+    builder.WebHost.UseUrls(options.ListenUrl);
+    builder.WebHost.ConfigureKestrel(kestrel =>
     {
-        https.ServerCertificate = serverCertificate;
-        https.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
+        kestrel.AddServerHeader = false;
 
-        // Accepted at the handshake and decided in the application, so that a
-        // refusal is a logged 403 with a reason rather than a TLS alert that
-        // tells whoever is diagnosing it nothing. The authorisation is the
-        // fingerprint allowlist, which is stricter than chain validation
-        // rather than a relaxation of it - see ClientCertificateGate.
-        https.ClientCertificateValidation = (_, _, _) => true;
+        // A CMC carrying a PKCS#10 and an enrolment agent's signature is a few
+        // kilobytes. A megabyte is generous and still small enough that nothing
+        // reaches the CA by accident.
+        kestrel.Limits.MaxRequestBodySize = 1024 * 1024;
+
+        kestrel.ConfigureHttpsDefaults(https =>
+        {
+            https.ServerCertificate = serverCertificate;
+            https.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
+
+            // Accepted at the handshake and decided in the application, so that a
+            // refusal is a logged 403 with a reason rather than a TLS alert that
+            // tells whoever is diagnosing it nothing. The authorisation is the
+            // fingerprint allowlist, which is stricter than chain validation
+            // rather than a relaxation of it - see ClientCertificateGate.
+            https.ClientCertificateValidation = (_, _, _) => true;
+        });
     });
-});
+}
 
 builder.Services.AddWindowsService(service => service.ServiceName = "BlinkyAdcsConnector");
 
 var app = builder.Build();
 
-app.Logger.LogInformation(
-    "ADCS connector {Version} listening on {Url}, {Count} client certificate(s) allowed, "
-    + "schema {Schema}",
-    ConnectorVersion.Value, options.ListenUrl, gate.Count, AdcsTransport.SchemaVersion);
+if (options.DialsApi)
+{
+    app.Logger.LogInformation(
+        "ADCS connector {Version} dialling {Url}, no listener, schema {Schema}",
+        ConnectorVersion.Value, options.Api.Url, AdcsTransport.SchemaVersion);
+}
+else
+{
+    app.Logger.LogInformation(
+        "ADCS connector {Version} listening on {Url}, {Count} client certificate(s) allowed, "
+        + "schema {Schema}",
+        ConnectorVersion.Value, options.ListenUrl, gate.Count, AdcsTransport.SchemaVersion);
 
-app.Logger.LogInformation("Listener certificate from {Source}", serverCertificateSource);
+    app.Logger.LogInformation("Listener certificate from {Source}", serverCertificateSource);
+}
 
 app.Use(async (context, next) =>
 {
+    // The API's calls arrive in memory with the caller already named, having been
+    // authenticated when the connector connected out; the gate is for a listener.
+    if (options.DialsApi)
+    {
+        await next();
+        return;
+    }
+
     var certificate = await context.Connection.GetClientCertificateAsync(context.RequestAborted);
 
     if (!gate.Allows(certificate, TimeProvider.System, out var reason))
@@ -179,7 +211,7 @@ app.Run();
 /// <summary>The connector's own TLS certificate, from a store or a file.</summary>
 internal static class ServerCertificate
 {
-    public static (X509Certificate2 Certificate, string Source) Load(ServerCertificateOptions options)
+    public static (X509Certificate2 Certificate, string Source) Load(ServerCertificateOptions options, string setting)
     {
         if (options.Path is { Length: > 0 } path)
         {
@@ -191,7 +223,7 @@ internal static class ServerCertificate
         if (options.Thumbprint is not { Length: > 0 } thumbprint)
         {
             throw new InvalidOperationException(
-                "Connector:ServerCertificate needs either a Thumbprint in the machine's personal "
+                setting + " needs either a Thumbprint in the machine's personal "
                 + "store or a Path to a PKCS#12 file.");
         }
 

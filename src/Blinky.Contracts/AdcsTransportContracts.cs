@@ -273,3 +273,52 @@ public sealed record AdcsTemplateInfo(
     bool? AccountMayEnroll = null,
     string? Account = null,
     int? MinimalKeySize = null);
+
+/// <summary>
+/// The connector's own connection to the API, for estates where nothing may connect
+/// into the CA's network.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The connector asks for work and answers it; the API never opens a connection to
+/// the CA server. A server holding a CA's enrolment agent key sits in the most
+/// protected zone an estate has, and "the Docker host may connect in" is the rule
+/// that zone is built to refuse. Outbound from it to one address is the rule that
+/// gets approved - and it is the direction the workstation agent already uses.
+/// </para>
+/// <para>
+/// <b>What travels is the same request the direct transport sends</b>: a method, a
+/// path under <c>/connector/</c> and a JSON body, answered with a status and a body.
+/// So the two directions share every contract above, every refusal and every log
+/// line, and differ only in who dialled.
+/// </para>
+/// </remarks>
+public static class AdcsQueue
+{
+    /// <summary>Long-polled by the connector; 204 when nothing arrived in time.</summary>
+    public const string NextPath = "/api/adcs/connector/next";
+
+    /// <summary>Where the connector posts what the work produced.</summary>
+    public const string ResultPath = "/api/adcs/connector/result";
+
+    /// <summary>
+    /// How long one poll waits. Under the edge's sixty-second proxy timeout, so a
+    /// quiet API answers 204 instead of the proxy answering 504.
+    /// </summary>
+    public const int MaximumWaitSeconds = 25;
+}
+
+/// <summary>One call the API wants made against the CA.</summary>
+public sealed record AdcsWorkItem(
+    int SchemaVersion,
+    Guid Id,
+    string Method,
+    string Path,
+    string? Body);
+
+/// <summary>What that call produced, as the connector's own endpoint answered it.</summary>
+public sealed record AdcsWorkResult(
+    int SchemaVersion,
+    Guid Id,
+    int Status,
+    string? Body);

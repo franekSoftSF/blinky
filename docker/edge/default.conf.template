@@ -220,7 +220,7 @@ server {
     # config into /etc/modsecurity.d at startup and a bind mount inside that
     # tree breaks the copy.
     modsecurity_rules '
-        SecRule REQUEST_URI "@rx ^/api/(credentials|agents/enroll|agents/[^/]+/renew-certificate)"             "id:9000100,phase:1,pass,nolog,ctl:requestBodyAccess=Off"
+        SecRule REQUEST_URI "@rx ^/api/(credentials|agents/enroll|agents/[^/]+/renew-certificate|adcs/connector/result)"             "id:9000100,phase:1,pass,nolog,ctl:requestBodyAccess=Off"
     ';
 
     # The doorbell. No body to inspect, and buffering would defeat it.

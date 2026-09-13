@@ -27,8 +27,10 @@ public sealed class AdcsInstanceOptions
     public string Name { get; set; } = "adcs";
 
     /// <summary>
-    /// <c>Connector</c>. <c>Ces</c> is 0031 and is refused until it exists, by
-    /// name, rather than accepted and failing at the first enrolment.
+    /// <c>Connector</c>, where this API connects to the connector, or
+    /// <c>ConnectorPolls</c>, where the connector connects to this API and collects its
+    /// calls. <c>Ces</c> is 0031 and is refused until it exists, by name, rather than
+    /// accepted and failing at the first enrolment.
     /// </summary>
     public string Transport { get; set; } = "Connector";
 
@@ -77,6 +79,13 @@ public sealed class AdcsConnectorOptions
     public string? ServerCertificateAuthorityPath { get; set; }
 
     public string? CaConfig { get; set; }
+
+    /// <summary>
+    /// For <c>ConnectorPolls</c>: SHA-256 fingerprints of the client certificates a
+    /// connector may collect calls with. The edge verifies the chain; this list is
+    /// what makes one certificate a connector and every other agent certificate not.
+    /// </summary>
+    public List<string> ClientFingerprints { get; set; } = [];
 
     public int TimeoutSeconds { get; set; } = 90;
 }
@@ -145,16 +154,22 @@ public static class AdcsInstance
     /// agent's certificate - is checked now, because those are this deployment's
     /// mistakes and belong in front of whoever made them.
     /// </remarks>
-    public static AdcsCertificateAuthority Create(AdcsInstanceOptions options, bool issues)
+    public static AdcsCertificateAuthority Create(
+        AdcsInstanceOptions options, bool issues, ConnectorQueue? queue = null)
     {
+        if (string.Equals(options.Transport, "ConnectorPolls", StringComparison.OrdinalIgnoreCase))
+        {
+            return Polled(options, issues, queue);
+        }
+
         if (!string.Equals(options.Transport, "Connector", StringComparison.OrdinalIgnoreCase))
         {
             throw new CertificateAuthorityException(
                 string.Equals(options.Transport, "Ces", StringComparison.OrdinalIgnoreCase)
                     ? "Blinky:Adcs:Transport is Ces, and the CES/CEP transport is patch 0031, which "
-                      + "has not been written. Use Connector."
+                      + "has not been written. Use Connector or ConnectorPolls."
                     : $"Blinky:Adcs:Transport is {options.Transport}, which is not a transport. "
-                      + "Use Connector.");
+                      + "Use Connector or ConnectorPolls.");
         }
 
         if (!Uri.TryCreate(options.Connector.Url, UriKind.Absolute, out var url)
@@ -181,7 +196,7 @@ public static class AdcsInstance
 
         try
         {
-            var agents = issues ? Agents(options, transport, url) : null;
+            var agents = issues ? Agents(options, transport, url.Authority) : null;
 
             return new AdcsCertificateAuthority(
                 options.Name,
@@ -200,14 +215,91 @@ public static class AdcsInstance
         }
     }
 
+    /// <summary>
+    /// The connector dials this API. Nothing to reach and nothing to pin from here, so
+    /// the one local mistake to refuse is having no way to tell a connector from any
+    /// other certificate the edge accepts.
+    /// </summary>
+    private static AdcsCertificateAuthority Polled(AdcsInstanceOptions options, bool issues, ConnectorQueue? queue)
+    {
+        if (queue is null)
+        {
+            throw new CertificateAuthorityException(
+                "Blinky:Adcs:Transport is ConnectorPolls, and this process has no queue for a "
+                + "connector to collect from. Only the API answers a connector.");
+        }
+
+        if (ConnectorFingerprints(options.Connector.ClientFingerprints).Count == 0)
+        {
+            throw new CertificateAuthorityException(
+                "Blinky:Adcs:Transport is ConnectorPolls and Blinky:Adcs:Connector:ClientFingerprints "
+                + "is empty. Without it no connector can collect a call - and with an issuer alone, "
+                + "every agent certificate the edge accepts could.");
+        }
+
+        var algorithms = KeyAlgorithms(options.KeyAlgorithms);
+        var transport = new ConnectorAdcsTransport(queue, options.Connector.CaConfig);
+
+        try
+        {
+            var agents = issues ? Agents(options, transport, "the connector polling this API") : null;
+
+            return new AdcsCertificateAuthority(
+                options.Name,
+                transport,
+                agents,
+                new AdcsCaOptions(
+                    AllowRevocation: options.AllowRevocation,
+                    AlgorithmSet: algorithms,
+                    TemplateMap: new Dictionary<string, string>(options.Templates, StringComparer.Ordinal)));
+        }
+        catch
+        {
+            transport.Dispose();
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// The SHA-256 fingerprints a connector may present, upper-case hex. A value that is
+    /// not 64 hex digits stops the start: a SHA-1 thumbprint pasted here would match
+    /// nothing and read as a connector that never polls.
+    /// </summary>
+    public static IReadOnlySet<string> ConnectorFingerprints(IEnumerable<string> configured)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var value in configured)
+        {
+            var hex = string.Concat(value.Where(char.IsAsciiHexDigit)).ToUpperInvariant();
+
+            if (hex.Length == 0)
+            {
+                continue;
+            }
+
+            if (hex.Length != 64)
+            {
+                throw new CertificateAuthorityException(
+                    $"Blinky:Adcs:Connector:ClientFingerprints holds {value}, which is {hex.Length} hex "
+                    + "digits rather than a SHA-256 fingerprint's 64.");
+            }
+
+            set.Add(hex);
+        }
+
+        return set;
+    }
+
     private static IEnrolmentAgentSource Agents(
-        AdcsInstanceOptions options, ConnectorAdcsTransport transport, Uri url)
+        AdcsInstanceOptions options, ConnectorAdcsTransport transport, string where)
     {
         var agent = options.EnrolmentAgent;
 
         if (string.Equals(agent.Location, "Connector", StringComparison.OrdinalIgnoreCase))
         {
-            return new ConnectorEnrolmentAgentSource(transport, url.Authority);
+            return new ConnectorEnrolmentAgentSource(transport, where);
         }
 
         if (string.Equals(agent.Location, "File", StringComparison.OrdinalIgnoreCase))

@@ -38,10 +38,25 @@ builder.Services.AddSingleton<JobService>();
 // the open half of patch 0022; until then the choice is configuration.
 var caBackend = Blinky.Pki.Adcs.AdcsInstance.Backend(builder.Configuration["Blinky:Ca:Backend"]);
 
+// Only a connector that dials this API collects from it. Absent otherwise, and the
+// connector routes then answer nobody: ConnectorIdentities.None accepts no
+// certificate.
+Blinky.Pki.Adcs.ConnectorQueue? connectorQueue = null;
+var connectorIdentities = Blinky.Api.Security.ConnectorIdentities.None;
+
 if (caBackend == CaBackend.Adcs)
 {
     var adcs = new Blinky.Pki.Adcs.AdcsInstanceOptions();
     builder.Configuration.GetSection("Blinky:Adcs").Bind(adcs);
+
+    if (string.Equals(adcs.Transport, "ConnectorPolls", StringComparison.OrdinalIgnoreCase))
+    {
+        connectorQueue = new Blinky.Pki.Adcs.ConnectorQueue();
+        connectorIdentities = new Blinky.Api.Security.ConnectorIdentities(
+            Blinky.Pki.Adcs.AdcsInstance.ConnectorFingerprints(adcs.Connector.ClientFingerprints));
+
+        builder.Services.AddSingleton(connectorQueue);
+    }
 
     // Built now, so that a wrong URL, an unreadable client certificate or a
     // missing pin stops the API in front of whoever configured it. The
@@ -49,7 +64,7 @@ if (caBackend == CaBackend.Adcs)
     // lives on a server with its own maintenance windows, and an API that will
     // not start while that server reboots is an outage nobody here caused.
     builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(
-        Blinky.Pki.Adcs.AdcsInstance.Create(adcs, issues: true));
+        Blinky.Pki.Adcs.AdcsInstance.Create(adcs, issues: true, connectorQueue));
 }
 else
 {
@@ -82,6 +97,8 @@ else
                 builder.Configuration["Blinky:Ca:PublicUrl"],
                 builder.Configuration["Blinky:Ca:OcspUrl"])));
 }
+
+builder.Services.AddSingleton(connectorIdentities);
 
 // The directory, or an honest absence of one. Registered either way so the
 // endpoints exist and answer "there is no directory here" rather than failing
@@ -324,6 +341,41 @@ app.MapPost("/api/tokens/inventory",
 
         return Results.Ok(inventory.Accept(report));
     });
+
+// The ADCS connector asking for calls to make against its CA, when it is the one that
+// dials - docs/15. Long-polled: a quiet API holds the request open for up to
+// AdcsQueue.MaximumWaitSeconds and then answers 204, so a call is collected within a
+// round trip instead of a polling interval. Who may reach these is decided in
+// AgentAuthenticationMiddleware, by fingerprint.
+if (connectorQueue is not null)
+{
+    app.MapGet(AdcsQueue.NextPath,
+        async (int? wait, Blinky.Pki.Adcs.ConnectorQueue queue, CancellationToken ct) =>
+        {
+            var seconds = Math.Clamp(wait ?? AdcsQueue.MaximumWaitSeconds, 1, AdcsQueue.MaximumWaitSeconds);
+            var item = await queue.NextAsync(TimeSpan.FromSeconds(seconds), ct);
+
+            return item is null ? Results.NoContent() : Results.Ok(item);
+        });
+
+    app.MapPost(AdcsQueue.ResultPath,
+        (AdcsWorkResult result, Blinky.Pki.Adcs.ConnectorQueue queue, ILogger<Program> logger) =>
+        {
+            if (queue.Complete(result))
+            {
+                return Results.NoContent();
+            }
+
+            // Gone rather than not found: the call existed and its caller stopped
+            // waiting. For a submission that means a certificate the CA may hold and
+            // Blinky does not, so the connector logs it where somebody will look.
+            logger.LogWarning("A connector answered call {Id}, which nobody was waiting for any more", result.Id);
+
+            return Results.Json(
+                new AdcsProblem("Nobody is waiting for this call any more; it timed out on the API's side."),
+                statusCode: StatusCodes.Status410Gone);
+        });
+}
 
 // An agent asking for work. Returns 204 when there is none, which is the
 // normal answer most of the time.

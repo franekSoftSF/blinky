@@ -38,10 +38,12 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
     private readonly X509Certificate2? identity;
     private readonly X509Certificate2Collection anchors = [];
     private readonly string? pinned;
+    private readonly string where;
 
     public ConnectorAdcsTransport(ConnectorTransportOptions options)
     {
         this.options = options;
+        where = options.BaseAddress.ToString();
 
         if (options.ClientCertificatePath is not { Length: > 0 } path)
         {
@@ -90,13 +92,37 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
     internal ConnectorAdcsTransport(ConnectorTransportOptions options, HttpMessageHandler handler)
     {
         this.options = options;
+        where = options.BaseAddress.ToString();
 
         client = new HttpClient(handler) { BaseAddress = options.BaseAddress };
         client.DefaultRequestHeaders.Add(
             AdcsTransport.SchemaHeader, AdcsTransport.SchemaVersion.ToString());
     }
 
-    public string Description => $"connector at {options.BaseAddress}";
+    /// <summary>
+    /// The same transport, for a connector that dials this API and collects its calls
+    /// from <paramref name="queue"/>. Nothing to pin and no client certificate here:
+    /// the connector authenticated itself when it connected, and the edge and the API
+    /// decided whether to let it.
+    /// </summary>
+    public ConnectorAdcsTransport(ConnectorQueue queue, string? caConfig)
+    {
+        options = new ConnectorTransportOptions(new Uri("https://connector.queue/"), CaConfig: caConfig);
+        where = "the connector polling this API";
+
+        // The queue keeps its own two deadlines, and a client timeout shorter than
+        // their sum would report a busy CA as an unreachable connector.
+        client = new HttpClient(new ConnectorQueueHandler(queue))
+        {
+            BaseAddress = options.BaseAddress,
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+
+        client.DefaultRequestHeaders.Add(
+            AdcsTransport.SchemaHeader, AdcsTransport.SchemaVersion.ToString());
+    }
+
+    public string Description => $"connector at {where}";
 
     public async Task<AdcsDescribeResponse> DescribeAsync(CancellationToken ct = default)
     {
@@ -113,7 +139,7 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
         if (!AdcsTransport.IsSupported(described.SchemaVersion))
         {
             throw new CertificateAuthorityException(
-                $"The connector at {options.BaseAddress} speaks schema "
+                $"The connector at {where} speaks schema "
                 + $"{described.SchemaVersion} and this build understands "
                 + $"{AdcsTransport.MinimumSupportedVersion} to "
                 + $"{AdcsTransport.MaximumSupportedVersion}. Its version is "
@@ -181,7 +207,7 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
         catch (FormatException ex)
         {
             throw new CertificateAuthorityException(
-                $"The connector at {options.BaseAddress} returned a signature that is not base64.",
+                $"The connector at {where} returned a signature that is not base64.",
                 ex);
         }
     }
@@ -212,14 +238,14 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
         catch (HttpRequestException ex)
         {
             throw new CertificateAuthorityException(
-                $"The connector at {options.BaseAddress} could not be reached: {ex.Message}. "
+                $"The connector at {where} could not be reached: {ex.Message}. "
                 + "A TLS failure here is usually the pinned fingerprint or the anchor, and a "
                 + "refused connection is usually the firewall rule for its port.", ex);
         }
         catch (TaskCanceledException ex)
         {
             throw new CertificateAuthorityException(
-                $"The connector at {options.BaseAddress} did not answer within "
+                $"The connector at {where} did not answer within "
                 + $"{client.Timeout.TotalSeconds}s. It serialises calls into the CA, so a "
                 + "submission that overran leaves it busy until the CA answers.", ex);
         }
@@ -253,18 +279,18 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
         if (response.StatusCode == HttpStatusCode.Forbidden)
         {
             throw new CertificateAuthorityException(
-                $"The connector at {options.BaseAddress} refused this client certificate: "
+                $"The connector at {where} refused this client certificate: "
                 + problem + " Add its SHA-256 fingerprint to "
                 + "Connector:AllowedClientThumbprints on the CA server.");
         }
 
         throw new CertificateAuthorityException(
-            $"The connector at {options.BaseAddress} answered {(int)response.StatusCode}: "
+            $"The connector at {where} answered {(int)response.StatusCode}: "
             + problem);
     }
 
     private string Empty(HttpResponseMessage response) =>
-        $"The connector at {options.BaseAddress} answered {(int)response.StatusCode} with an "
+        $"The connector at {where} answered {(int)response.StatusCode} with an "
         + "empty or unreadable body. Something between here and the CA server answered instead "
         + "of the connector.";
 
