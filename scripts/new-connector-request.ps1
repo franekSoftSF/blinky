@@ -24,13 +24,31 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($PSCmdlet.ParameterSetName -eq 'Accept') {
+    # Windows PowerShell 5.1 is what a server has, so .NET Framework APIs only.
+    $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($Accept)
+
     # certreq -accept pairs the certificate with the pending key it was requested with,
     # in the store the request was made in.
     & certreq.exe -accept -machine -q $Accept | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "certreq -accept failed with $LASTEXITCODE." }
 
-    # Windows PowerShell 5.1 is what a server has, so .NET Framework APIs only.
-    $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($Accept)
+    if ($LASTEXITCODE -eq -2146762486) {
+        # CERT_E_CHAINING: certreq will not accept a certificate whose root this machine
+        # does not trust, and the agent CA should not be trusted here. Its key is on the
+        # Docker host, and a root in LocalMachine would make everything that key signs
+        # believable to the server holding the enrolment agent. The connector does not
+        # need the trust: it presents this certificate, the edge verifies it. So the
+        # certificate goes into the store as it is, and repairstore finds the key the
+        # request was made with by its public key. Seen on HZCS01.
+        & certutil.exe -f -addstore My $Accept | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "certutil -addstore failed with $LASTEXITCODE." }
+
+        & certutil.exe -repairstore My $certificate.Thumbprint | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "certutil -repairstore failed with $($LASTEXITCODE): the key this request was made with is not on this machine." }
+    }
+    elseif ($LASTEXITCODE -ne 0) {
+        throw "certreq -accept failed with $LASTEXITCODE."
+    }
+
     $installed = Get-Item "Cert:\LocalMachine\My\$($certificate.Thumbprint)"
 
     if (-not $installed.HasPrivateKey) { throw 'The certificate was installed without its key.' }
