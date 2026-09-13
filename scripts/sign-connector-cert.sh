@@ -41,8 +41,16 @@ done
 
 [[ -n "$CSR" ]] || { echo "usage: sign-connector-cert.sh --csr <file> [--days 365]" >&2; exit 2; }
 [[ -f "$CSR" ]] || { echo "No such request: $CSR" >&2; exit 2; }
-[[ -f "$CERTS/agent-ca.crt" && -f "$CERTS/agent-ca.key" ]] || {
+[[ -f "$CERTS/agent-ca.crt" ]] || {
     echo "No agent CA in $CERTS/ - this runs on the Docker host, beside the stack." >&2
+    exit 3
+}
+
+# install-server.sh leaves the key root:blinky 640. On BY-CACMS the first run as the
+# login user failed inside openssl with its error thrown away, and the script said
+# nothing but its exit code.
+[[ -r "$CERTS/agent-ca.key" ]] || {
+    echo "$CERTS/agent-ca.key is not readable as $(id -un). Run this with sudo." >&2
     exit 3
 }
 
@@ -58,9 +66,13 @@ grep -q "BEGIN NEW CERTIFICATE REQUEST\|BEGIN CERTIFICATE REQUEST" "$work/reques
     exit 4
 }
 
-# The request's own signature, before anything is signed on its behalf.
-openssl req -in "$work/request.pem" -noout -verify >/dev/null 2>&1 || {
-    echo "The request's own signature does not verify." >&2
+# The request's own signature, before anything is signed on its behalf. openssl's own
+# words on failure: on BY-CACMS a request mangled in copying read "does not verify"
+# while openssl was saying "bad end line", which is a different fix.
+openssl req -in "$work/request.pem" -noout -verify >/dev/null 2>"$work/verify.err" || {
+    echo "The request could not be read or its own signature does not verify:" >&2
+    sed 's/^/  /' "$work/verify.err" >&2
+    echo "Compare its SHA-256 with the file on the connector's server; a copy through a clipboard breaks it." >&2
     exit 4
 }
 
@@ -77,7 +89,11 @@ openssl req -in "$work/request.pem" -noout -verify >/dev/null 2>&1 || {
 
 openssl x509 -req -in "$work/request.pem" -days "$DAYS" \
     -CA "$CERTS/agent-ca.crt" -CAkey "$CERTS/agent-ca.key" -CAcreateserial -CAserial "$work/serial" \
-    -sha256 -out "$work/connector.crt" -extfile "$work/connector.ext" 2>/dev/null
+    -sha256 -out "$work/connector.crt" -extfile "$work/connector.ext" 2>"$work/sign.err" || {
+    echo "openssl could not sign the request:" >&2
+    sed 's/^/  /' "$work/sign.err" >&2
+    exit 5
+}
 
 openssl verify -CAfile "$CERTS/agent-ca.crt" "$work/connector.crt" >/dev/null 2>&1 || {
     echo "The signed certificate does not chain to $CERTS/agent-ca.crt." >&2
