@@ -30,6 +30,12 @@ services:
       args:
         PROJECT: src/Blinky.Api/Blinky.Api.csproj
         ASSEMBLY: Blinky.Api
+    # Exec form, no shell. The image's entrypoint is "/bin/sh -c exec dotnet ...", and
+    # sh drops every environment variable whose name is not a shell identifier - so
+    # Blinky__Adcs__Templates__smartcard-logon reached the container and never the
+    # process, and every ADCS enrolment on BY-CACMS was refused for a template that
+    # was configured. /proc/1/environ held no such variable.
+    entrypoint: ["dotnet", "Blinky.Api.dll"]
     environment:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Blinky: Host=postgres;Database=${POSTGRES_DB:-blinky};Username=${POSTGRES_USER:-blinky};Password=${POSTGRES_PASSWORD:-blinky}
@@ -210,6 +216,8 @@ services:
       args:
         PROJECT: src/Blinky.Worker/Blinky.Worker.csproj
         ASSEMBLY: Blinky.Worker
+    # Exec form, no shell - see api.
+    entrypoint: ["dotnet", "Blinky.Worker.dll"]
     environment:
       ConnectionStrings__Blinky: Host=postgres;Database=${POSTGRES_DB:-blinky};Username=${POSTGRES_USER:-blinky};Password=${POSTGRES_PASSWORD:-blinky}
 
