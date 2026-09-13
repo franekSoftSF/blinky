@@ -70,6 +70,21 @@ $overview = Call GET '/api/console/overview' $null $token
 $agentRow = $overview.agents | Where-Object { $_.hostname -eq $Agent.ToLowerInvariant() }
 if (-not $agentRow) { throw "No agent called $Agent. Known: $(($overview.agents.hostname) -join ', ')" }
 
+# The slot as the card has it now, not as the last job left the server's record. A
+# failed enrolment can leave a generated key behind; only an inventory turns that into
+# KeyPresent, which is the one state the server lets the agent generate over.
+$inventory = Call POST '/api/jobs/inventory' @{ agentId = $agentRow.id; reason = "lab-$(Get-Date -Format yyyyMMddHHmmss)" } $token
+Write-Host "inventory  $($inventory.id) $($inventory.state)"
+
+$inventoryDeadline = (Get-Date).AddMinutes(2)
+do {
+    Start-Sleep -Seconds 3
+    $overview = Call GET '/api/console/overview' $null $token
+    $inventoryJob = $overview.jobs | Where-Object { $_.id -eq $inventory.id }
+} while ($inventoryJob.state -notin 'Succeeded', 'Failed', 'Expired', 'Cancelled' -and (Get-Date) -lt $inventoryDeadline)
+
+Write-Host "           $($inventoryJob.state)"
+
 $tokenRow = $overview.tokens | Where-Object { $_.serial -eq $TokenSerial }
 if (-not $tokenRow) { throw "The server has not seen token $TokenSerial. Plug it into $Agent and wait for a heartbeat." }
 
