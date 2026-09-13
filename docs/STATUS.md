@@ -331,6 +331,20 @@ write it.
 0035 — writing to the directory — is deferred on purpose, with the reason in the
 roadmap.
 
+**A card enrolled through ADCS logs on to Windows AD - 2026-09-14.** The whole path ran
+on the lab: a cardholder read from `ad.digitalworkspace.pl`, an agent on the domain
+workstation VDF001 generating and attesting the key on a YubiKey 5.8.0, the API on
+BY-CACMS resolving `AD\\s.frankiewicz`, the connector on HZCS01 collecting the sign
+and submit calls over 9443, SUBCA issuing serial `470000000E66720890519367F500000000000E`
+with the subject taken from the directory, the certificate written to slot 9A, and a
+smart-card logon to VDF001 over RDP. Enrolled with a lab script, because the console
+has no enrolment page; suspension from the console has not been run. Six defects
+surfaced and were fixed on the way, each recorded where it belongs - the two firmware
+ones (the new Yubico attestation root, and a PIN verification the 5.8 key no longer
+honoured at signing) in the 5.8 row below. The unit tests for the last of them could
+not run on the development machine, which refuses the locally built
+`Blinky.Secrets.dll` under Smart App Control.
+
 **The connector now dials the API (0032a).** Decided on 2026-09-13 at the lab
 owner's request: the first version needed an inbound firewall rule into the network
 where the CA and the enrolment agent's key live, which a tiered estate refuses. The
@@ -598,7 +612,7 @@ exercised against the thing it is really for.
 
 | What | Why not yet | When it gets proved |
 |---|---|---|
-| YubiKey 5.8 | **The attestation-root assumption was wrong.** A 5.8.0 key (serial 39218739) on VDF001 in ad.digitalworkspace.pl was refused on the agent on 2026-09-14 with *UntrustedChain*: firmware 5.7.4 and later attests under *Yubico Attestation Root 1* through two intermediates the card does not carry, and only the old root was pinned. The new root and the five PIV intermediates from developers.yubico.com are now pinned by fingerprint and passed to the chain builder as untrusted material; written and built, not yet run against the card, and the unit tests could not run on the development machine, whose Smart App Control refuses the locally built `Blinky.Secrets.dll`. The form-factor enum and card-side PIN complexity are still assumptions | The same enrolment on VDF001, with the rebuilt agent and API |
+| YubiKey 5.8 | **Enrolled and used for logon on 2026-09-14.** **The attestation-root assumption was wrong.** A 5.8.0 key (serial 39218739) on VDF001 in ad.digitalworkspace.pl was refused on the agent on 2026-09-14 with *UntrustedChain*: firmware 5.7.4 and later attests under *Yubico Attestation Root 1* through two intermediates the card does not carry, and only the old root was pinned. The new root and the five PIV intermediates from developers.yubico.com are now pinned by fingerprint and passed to the chain builder as untrusted material; written and built, not yet run against the card, and the unit tests could not run on the development machine, whose Smart App Control refuses the locally built `Blinky.Secrets.dll`. The form-factor enum and card-side PIN complexity are still assumptions | The same enrolment on VDF001, with the rebuilt agent and API |
 | What a Crescendo V3 and a C4000 answer to the **standard** PIV instructions | Only the Yubico extensions have been measured on them, and those answer `6D00`. The rest is inferred from SP 800-73 | `tools/InsProbe`, extended from one instruction to the standard set |
 | `6Cxx` retry-with-length | Comes from T=0 readers; every reader here negotiated T=1 | Needs a T=0 reader, or stays covered by hand-built cases |
 | Attestation rejection paths | Forgeries, wrong roots and serial mismatches are synthetic — a real one would mean a counterfeit token | Stays synthetic; the genuine path is proved on hardware |
