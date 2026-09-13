@@ -186,6 +186,66 @@ public sealed class AttestationVerifierTests
     }
 
     [Fact]
+    public void A_5_7_4_or_later_chain_needs_the_published_intermediates_the_card_does_not_carry()
+    {
+        // A 5.8.0 key on VDF001 was refused as an untrusted chain: its F9 certificate is
+        // signed by "Yubico PIV Attestation B 1", which is signed by "Yubico Attestation
+        // Intermediate B 1", under "Yubico Attestation Root 1" - and only F9 is on the card.
+        var pki = SyntheticYubico.BuildNewHierarchy();
+
+        var withoutThem = new AttestationVerifier(pki.Roots)
+            .Verify(pki.Leaf, pki.Intermediate, PivSlot.Authentication, TokenSerial);
+
+        var withThem = new AttestationVerifier(pki.Roots, pki.Published)
+            .Verify(pki.Leaf, pki.Intermediate, PivSlot.Authentication, TokenSerial);
+
+        Assert.Equal(AttestationFailure.UntrustedChain, withoutThem.Failure);
+        Assert.True(withThem.IsTrusted, withThem.Explanation);
+    }
+
+    [Fact]
+    public void Published_intermediates_are_never_an_anchor_by_themselves()
+    {
+        // The same intermediates with somebody else's root pinned: a path runs through
+        // them and ends nowhere trusted.
+        var pki = SyntheticYubico.BuildNewHierarchy();
+        var stranger = SyntheticYubico.Build();
+
+        var result = new AttestationVerifier(stranger.Roots, pki.Published)
+            .Verify(pki.Leaf, pki.Intermediate, PivSlot.Authentication, TokenSerial);
+
+        Assert.Equal(AttestationFailure.UntrustedChain, result.Failure);
+    }
+
+    [Fact]
+    public void The_new_root_and_its_piv_intermediates_are_the_ones_yubico_publishes()
+    {
+        var root = YubicoRoots.AttestationRoot1;
+
+        Assert.Equal("CN=Yubico Attestation Root 1", root.Subject);
+        Assert.Equal(root.Subject, root.Issuer);
+        Assert.Equal(2, YubicoRoots.PivAttestation.Count);
+
+        var intermediates = YubicoRoots.PivAttestationIntermediates;
+        Assert.Equal(
+            YubicoRoots.PivIntermediateSha256.Keys.Order(StringComparer.Ordinal),
+            intermediates.Select(c => c.Subject).Order(StringComparer.Ordinal));
+
+        // Every one of them chains to Root 1 and none of them is a root.
+        foreach (var certificate in intermediates)
+        {
+            using var chain = new X509Chain();
+            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.CustomTrustStore.Add(root);
+            chain.ChainPolicy.ExtraStore.AddRange(intermediates);
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+
+            Assert.True(chain.Build(certificate), certificate.Subject);
+            Assert.NotEqual(certificate.Subject, certificate.Issuer);
+        }
+    }
+
+    [Fact]
     public void The_pinned_root_is_the_one_yubico_publishes()
     {
         // If the embedded file is ever replaced, this fails rather than the
@@ -244,6 +304,57 @@ internal static class SyntheticYubico
         var leaf = leafRequest.Create(intermediateWithKey, notBefore, notAfter, [0x02]);
 
         return new Pki(leaf, intermediate, [root]);
+    }
+
+    internal sealed record NewPki(
+        X509Certificate2 Leaf,
+        X509Certificate2 Intermediate,
+        X509Certificate2Collection Roots,
+        X509Certificate2Collection Published);
+
+    /// <summary>
+    /// Shaped like firmware 5.7.4 and later: root, attestation intermediate, PIV signing
+    /// CA, the card's own F9 certificate, the leaf. Only the last two come off the card.
+    /// </summary>
+    public static NewPki BuildNewHierarchy(uint serial = 29177301)
+    {
+        var notBefore = DateTimeOffset.UtcNow.AddDays(-1);
+        var notAfter = DateTimeOffset.UtcNow.AddYears(20);
+
+        static CertificateRequest Ca(string subject, ECDsa key)
+        {
+            var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256);
+            request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+            request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign, true));
+            return request;
+        }
+
+        using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var root = Ca("CN=Synthetic Attestation Root 1", rootKey).CreateSelfSigned(notBefore, notAfter);
+
+        using var middleKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var middle = Ca("CN=Synthetic Attestation Intermediate B 1", middleKey)
+            .Create(root, notBefore, notAfter, [0x11]).CopyWithPrivateKey(middleKey);
+
+        using var pivKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var piv = Ca("CN=Synthetic PIV Attestation B 1", pivKey)
+            .Create(middle, notBefore, notAfter, [0x12]).CopyWithPrivateKey(pivKey);
+
+        using var deviceKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var device = Ca("CN=Synthetic YubiKey PIV Attestation", deviceKey)
+            .Create(piv, notBefore, notAfter, [0x13]);
+        var deviceWithKey = device.CopyWithPrivateKey(deviceKey);
+
+        using var leafKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var leafRequest = new CertificateRequest("CN=YubiKey PIV Attestation 9a", leafKey, HashAlgorithmName.SHA256);
+        AddYubicoExtensions(leafRequest, serial, 0x03);
+        var leaf = leafRequest.Create(deviceWithKey, notBefore, notAfter, [0x14]);
+
+        return new NewPki(
+            leaf,
+            device,
+            [root],
+            [X509CertificateLoader.LoadCertificate(middle.RawData), X509CertificateLoader.LoadCertificate(piv.RawData)]);
     }
 
     /// <summary>All the right extensions, signed by nobody.</summary>

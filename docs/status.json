@@ -18,7 +18,7 @@
     ]
   },
   "status": {
-    "updated": "2026-09-13",
+    "updated": "2026-09-14",
     "phase": 2,
     "phaseTitle": "Issue something",
     "state": "gate-met",
@@ -1291,8 +1291,8 @@
     },
     {
       "what": "YubiKey 5.8",
-      "why": "Newer than anything measured here; the matrix stops at 5.4.3, 5.7.1 and 5.7.2. The version gates are open-ended so 5.8 inherits the 5.7 path, but three things are assumptions until a card is read: that its attestation intermediate chains to the one pinned root, that its form factor is inside the enum, and that it has no card-side PIN complexity of its own",
-      "when": "Next session at the bench - PivProbe, which writes nothing"
+      "why": "The attestation-root assumption was wrong: a 5.8.0 key (serial 39218739) on VDF001 was refused on the agent on 2026-09-14 with UntrustedChain, because firmware 5.7.4 and later attests under Yubico Attestation Root 1 through two intermediates the card does not carry and only the old root was pinned. The new root and the five PIV intermediates from developers.yubico.com are now pinned by fingerprint and given to the chain builder as untrusted material - written and built, not yet run against the card, and the unit tests could not run on the development machine, whose Smart App Control refuses the locally built Blinky.Secrets.dll. The form-factor enum and card-side PIN complexity are still assumptions.",
+      "when": "The same enrolment on VDF001 with the rebuilt agent and API"
     },
     {
       "what": "What an HID Crescendo V3 and a C4000 answer to the standard PIV instructions",

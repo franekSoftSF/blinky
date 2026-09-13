@@ -269,7 +269,7 @@ internal static class Program
             }
 
             var serial = session.GetSerialNumber();
-            var verifier = new AttestationVerifier(YubicoRoots.PivAttestation);
+            var verifier = AttestationVerifier.ForYubico();
             var result = verifier.Verify(leaf, intermediate, PivSlot.Authentication, serial);
 
             Console.WriteLine($"  attestation   {result}");

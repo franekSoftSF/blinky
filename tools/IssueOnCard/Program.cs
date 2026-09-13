@@ -125,7 +125,7 @@ int Issue(PivSession session, string reader)
         return 1;
     }
 
-    var verifier = new AttestationVerifier(YubicoRoots.PivAttestation);
+    var verifier = AttestationVerifier.ForYubico();
     var attestation = verifier.Verify(leaf, intermediate, slot, session.GetSerialNumber(),
         generated.SubjectPublicKeyInfo);
 
