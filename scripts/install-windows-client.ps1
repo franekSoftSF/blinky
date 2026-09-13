@@ -7,7 +7,7 @@
 
     The chain is downloaded; nothing has to be placed next to this script.
 
-    Three things, in an order that matters:
+    Five things, in an order that matters:
 
       1. The chain, from http://<cms>/pki/ - the same unauthenticated listener
          that serves the revocation list. Both halves go in, and to different
@@ -25,13 +25,24 @@
 
          They are checked against each other before either is trusted.
 
-      2. The MSI, with the backend, the realm and the bootstrap token as
+      2. Yubico's smart-card minidriver, when -Minidriver is given or a
+         YubiKey*Minidriver*.msi lies beside this script. The inbox PIV
+         minidriver produced no key container on BY-WIN-CLIENT01, so a
+         certificate written to the card never reached the user's store. The
+         MSI's Authenticode signature has to be valid and Yubico's before it
+         runs. Other smart-card middleware - HID ActivClient - claims the card
+         instead and is reported.
+
+      3. ECC certificates at the logon screen, with -EnableEccLogon. Runs
+         enable-ecc-smartcard-logon.ps1 from beside this script.
+
+      4. The MSI, with the backend, the realm and the bootstrap token as
          properties. The token is passed as an MSI property that is already
          listed in MSIHIDDENPROPERTIES. That covers the property dumps but
          not the command line msiexec echoes at the top of the log, so the
          log is scrubbed afterwards.
 
-      3. The tray, started for this session. It normally appears at the next
+      5. The tray, started for this session. It normally appears at the next
          logon, from HKLM\...\Run.
 
 .PARAMETER BootstrapToken
@@ -39,8 +50,21 @@
 
         ssh sysadmin@by-cacms.blinky.lab 'sudo grep ^BOOTSTRAP_TOKEN= ~/blinky/.env'
 
+.PARAMETER Minidriver
+    Yubico's minidriver MSI, from Yubico's "Smart Card Drivers and Tools" download
+    page. Defaults to the newest YubiKey*Minidriver*.msi beside this script; with
+    neither, the step is skipped and says so.
+
+.PARAMETER EnableEccLogon
+    Lets Windows offer ECC certificates at logon. Needed for a card enrolled with
+    ECCP256; RSA 2048 does not need it.
+
 .EXAMPLE
     .\install-windows-client.ps1 -BootstrapToken abc123
+
+.EXAMPLE
+    # A workstation in the AD domain behind ADCS: everything, in one run.
+    .\install-windows-client.ps1 -BootstrapToken abc123 -Domain ad.digitalworkspace.pl -EnableEccLogon
 #>
 
 [CmdletBinding()]
@@ -64,7 +88,12 @@ param(
 
     # For a workstation with no route to the CMS: a copy of root.crt taken
     # there by hand. issuing.crt is then expected beside it.
-    [string] $CaCertificate
+    [string] $CaCertificate,
+
+    [string] $Minidriver = (Get-ChildItem "$PSScriptRoot\YubiKey*Minidriver*.msi" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName,
+
+    [switch] $EnableEccLogon
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,7 +118,11 @@ function Prefer($given, $remembered, $fallback) {
 }
 
 $Backend = Prefer $Backend $existing.BackendUrl 'https://by-cacms.blinky.lab:9443'
-$Domain  = Prefer $Domain  $existing.Domain     'blinky.lab'
+# The domain this machine is joined to before the lab's default. Not the service
+# account's UserDomainName, which for LocalSystem is the machine name - that is
+# the guess install-agent.ps1 refuses - but the join itself, which is a fact.
+$joined = Get-CimInstance Win32_ComputerSystem
+$Domain  = Prefer $Domain  $existing.Domain $(if ($joined.PartOfDomain) { $joined.Domain.ToLowerInvariant() } else { 'blinky.lab' })
 
 # The token buys an identity and is useless afterwards. An agent that already
 # holds one - a certificate in the machine store, named for it - is upgrading
@@ -118,7 +151,14 @@ if ($CaCertificate -and -not (Test-Path $CaCertificate)) {
     throw "Not found: $CaCertificate"
 }
 
-Write-Host "`n1/3  trusting the lab CA"
+# Checked before anything is installed, so a missing file stops the run rather
+# than leaving a machine half set up.
+$eccScript = Join-Path $PSScriptRoot 'enable-ecc-smartcard-logon.ps1'
+if ($EnableEccLogon -and -not (Test-Path $eccScript)) {
+    throw "-EnableEccLogon needs enable-ecc-smartcard-logon.ps1 beside this script: $eccScript"
+}
+
+Write-Host "`n1/5  trusting the lab CA"
 
 # Fetched rather than carried. The chain used to have to be copied next to this
 # script by hand, and the file it looked for - dev-ca.crt - stopped being the
@@ -221,7 +261,68 @@ else {
     Write-Host "     issuing  not present - smart-card logon will fail on chain building"
 }
 
-Write-Host "`n2/3  installing the agent"
+Write-Host "`n2/5  Yubico minidriver"
+
+$uninstall = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+               'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*')
+$installedSoftware = Get-ItemProperty $uninstall -ErrorAction SilentlyContinue | Where-Object DisplayName
+
+# Reported, not removed: uninstalling somebody's middleware is not this script's
+# decision, and the symptom it causes - a certificate written to the card that never
+# appears in the user's store - is one nobody connects to it.
+$other = $installedSoftware | Where-Object DisplayName -match 'ActivClient|ActivIdentity|SafeNet Authentication Client'
+foreach ($o in $other) {
+    Write-Warning "$($o.DisplayName) is installed. It binds the YubiKey to its own minidriver, and certificates written to the card then do not reach the certificate store."
+}
+
+$present = $installedSoftware | Where-Object DisplayName -match 'YubiKey.*Minidriver' | Select-Object -First 1
+$restartOwed = $false
+
+if ($Minidriver) {
+    if (-not (Test-Path $Minidriver)) { throw "Not found: $Minidriver" }
+
+    # A driver that handles the card's keys goes on this machine only if Yubico signed
+    # it. A renamed download, a truncated one, or somebody else's MSI with the right
+    # name all stop here.
+    $signature = Get-AuthenticodeSignature -FilePath $Minidriver
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Yubico') {
+        throw "$Minidriver is not validly signed by Yubico: $($signature.Status), $($signature.SignerCertificate.Subject)"
+    }
+
+    Write-Host "     msi      $(Split-Path -Leaf $Minidriver)"
+    Write-Host "     signed   $($signature.SignerCertificate.Subject)"
+    if ($present) { Write-Host "     before   $($present.DisplayName) $($present.DisplayVersion)" }
+
+    $minidriverLog = "$env:TEMP\yubikey-minidriver-install.log"
+    $installed = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+        '/i', "`"$Minidriver`"", '/qn', '/norestart', '/l*v', "`"$minidriverLog`"")
+
+    # 3010 is success with a restart owed, which the end of this script says.
+    switch ($installed.ExitCode) {
+        0       { Write-Host "     installed" }
+        3010    { Write-Host "     installed; Windows wants a restart before the minidriver is used"; $restartOwed = $true }
+        default { throw "The minidriver's msiexec returned $($installed.ExitCode). The log is at $minidriverLog" }
+    }
+}
+elseif ($present) {
+    Write-Host "     already  $($present.DisplayName) $($present.DisplayVersion)"
+}
+else {
+    Write-Warning ("No YubiKey*Minidriver*.msi beside this script and none installed. Enrolment " +
+                   "works without it; a certificate reaching the user's store and smart-card " +
+                   "logon may not. Download it from Yubico and run this again with -Minidriver.")
+}
+
+Write-Host "`n3/5  ECC certificates at logon"
+
+if ($EnableEccLogon) {
+    & $eccScript
+}
+else {
+    Write-Host "     skipped  RSA cards need nothing; pass -EnableEccLogon for ECCP256"
+}
+
+Write-Host "`n4/5  installing the agent"
 Write-Host "     backend  $Backend"
 Write-Host "     domain   $Domain"
 Write-Host ("     token    " + $(
@@ -269,7 +370,7 @@ if ($BootstrapToken -and
     Write-Host "     installed; the token is not in the installer log"
 }
 
-Write-Host "`n3/3  starting the tray for this session"
+Write-Host "`n5/5  starting the tray for this session"
 
 $tray = "$env:ProgramFiles\Blinky\ui\Blinky.Agent.Ui.exe"
 if (Test-Path $tray) { Start-Process $tray }
@@ -288,3 +389,7 @@ If the log says the backend cannot be trusted, the CA above did not take. If it
 says the name does not resolve, this machine's DNS is not pointed at the domain
 controller.
 "@
+
+if ($restartOwed -or $EnableEccLogon) {
+    Write-Host "Restart before the first smart-card logon: the minidriver and the logon policy are read at startup."
+}
