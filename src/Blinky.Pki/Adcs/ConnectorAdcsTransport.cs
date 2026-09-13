@@ -39,6 +39,19 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
     private readonly X509Certificate2Collection anchors = [];
     private readonly string? pinned;
     private readonly string where;
+    private readonly TimeProvider time = TimeProvider.System;
+    private readonly Lock describing = new();
+    private Task<AdcsDescribeResponse>? describe;
+    private DateTimeOffset describedAt;
+
+    /// <summary>
+    /// How long a describe is reused. The console's status page asked several times a
+    /// second on BY-CACMS; every one reached the CA through a connector that makes one
+    /// call at a time, the answers stacked up past four seconds, and the console read
+    /// that as the API being down and asked harder. Thirty seconds is short against
+    /// anything a describe reports - a CA certificate, a grant, an agent - changing.
+    /// </summary>
+    internal static readonly TimeSpan DescribeReuse = TimeSpan.FromSeconds(30);
 
     public ConnectorAdcsTransport(ConnectorTransportOptions options)
     {
@@ -89,10 +102,12 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
     }
 
     /// <summary>For tests: the same client against a handler that is not a socket.</summary>
-    internal ConnectorAdcsTransport(ConnectorTransportOptions options, HttpMessageHandler handler)
+    internal ConnectorAdcsTransport(
+        ConnectorTransportOptions options, HttpMessageHandler handler, TimeProvider? clock = null)
     {
         this.options = options;
         where = options.BaseAddress.ToString();
+        time = clock ?? TimeProvider.System;
 
         client = new HttpClient(handler) { BaseAddress = options.BaseAddress };
         client.DefaultRequestHeaders.Add(
@@ -124,11 +139,42 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
 
     public string Description => $"connector at {where}";
 
-    public async Task<AdcsDescribeResponse> DescribeAsync(CancellationToken ct = default)
+    /// <summary>
+    /// What the connector is in front of, asked at most once per <see cref="DescribeReuse"/>.
+    /// </summary>
+    /// <remarks>
+    /// Callers arriving while a describe is on its way wait for that one rather than
+    /// sending another, and a failure is not kept: the next caller asks again, because
+    /// "the connector was down a moment ago" is not an answer worth repeating for thirty
+    /// seconds. The shared call is not cancelled by one caller leaving.
+    /// </remarks>
+    public Task<AdcsDescribeResponse> DescribeAsync(CancellationToken ct = default)
+    {
+        Task<AdcsDescribeResponse> shared;
+
+        lock (describing)
+        {
+            var fresh = describe is { IsCompletedSuccessfully: true }
+                        && time.GetUtcNow() - describedAt < DescribeReuse;
+
+            if (!fresh && describe is not { IsCompleted: false })
+            {
+                describe = FetchDescribeAsync();
+            }
+
+            shared = describe!;
+        }
+
+        return shared.WaitAsync(ct);
+    }
+
+    private async Task<AdcsDescribeResponse> FetchDescribeAsync()
     {
         var query = options.CaConfig is { Length: > 0 } config
             ? "/connector/describe?caConfig=" + Uri.EscapeDataString(config)
             : "/connector/describe";
+
+        var ct = CancellationToken.None;
 
         var described = await ReadAsync<AdcsDescribeResponse>(
             await Send(() => client.GetAsync(query, ct)), ct);
@@ -145,6 +191,8 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
                 + $"{AdcsTransport.MaximumSupportedVersion}. Its version is "
                 + $"{described.ConnectorVersion}.");
         }
+
+        describedAt = time.GetUtcNow();
 
         return described;
     }

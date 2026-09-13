@@ -112,6 +112,44 @@ public sealed class AdcsConnectorQueueTests
     }
 
     [Fact]
+    public async Task Describes_asked_together_reach_the_connector_once_and_are_reused_afterwards()
+    {
+        // BY-CACMS: the console's status page asked several times a second, every
+        // describe queued behind the last, and the answers took four seconds.
+        var queue = new ConnectorQueue();
+        using var transport = new ConnectorAdcsTransport(queue, caConfig: null);
+
+        var asked = Enumerable.Range(0, 8).Select(_ => transport.DescribeAsync()).ToArray();
+
+        var item = (await queue.NextAsync(TimeSpan.FromSeconds(5), default))!;
+        queue.Complete(new AdcsWorkResult(AdcsTransport.SchemaVersion, item.Id, 200, JsonSerializer.Serialize(
+            new AdcsDescribeResponse(AdcsTransport.SchemaVersion, "test", "CA", "CA", AdminAvailable: true), Json)));
+
+        await Task.WhenAll(asked);
+        await transport.DescribeAsync();
+
+        Assert.Null(await queue.NextAsync(TimeSpan.FromMilliseconds(100), default));
+    }
+
+    [Fact]
+    public async Task A_describe_that_failed_is_asked_again_rather_than_remembered()
+    {
+        var queue = new ConnectorQueue
+        {
+            PickupTimeout = TimeSpan.FromMilliseconds(50),
+            AnswerTimeout = TimeSpan.FromMilliseconds(50),
+        };
+        using var transport = new ConnectorAdcsTransport(queue, caConfig: null);
+
+        await Assert.ThrowsAsync<CertificateAuthorityException>(() => transport.DescribeAsync());
+
+        var again = transport.DescribeAsync();
+        Assert.NotNull(await queue.NextAsync(TimeSpan.FromSeconds(5), default));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => again);
+    }
+
+    [Fact]
     public void An_answer_for_a_call_that_was_never_handed_out_is_refused() =>
         Assert.False(new ConnectorQueue().Complete(
             new AdcsWorkResult(AdcsTransport.SchemaVersion, Guid.NewGuid(), 200, "{}")));
