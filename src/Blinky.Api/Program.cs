@@ -2092,42 +2092,32 @@ app.MapPost("/api/agents/{id:guid}/renew-certificate",
 //
 // The CRL is signed. That is what protects it, not the transport.
 
-app.MapGet("/pki/issuing.crt", (Blinky.Pki.ICertificateAuthority ca) =>
+app.MapGet("/pki/issuing.crt", (Blinky.Pki.ICertificateAuthority ca, IConfiguration configuration) =>
+    StackChain.Of(ca, configuration) is { } chain
+        // DER rather than PEM: this is what an authority information access
+        // fetch expects, and Windows will not read a PEM here.
+        ? Results.File(chain.Issuer.RawData, "application/pkix-cert", "issuing.crt")
+        : Results.NotFound());
+
+app.MapGet("/pki/root.crt", (Blinky.Pki.ICertificateAuthority ca, IConfiguration configuration) =>
+    StackChain.Of(ca, configuration) is { } chain
+        ? Results.File(chain.Anchor.RawData, "application/pkix-cert", "root.crt")
+        : Results.NotFound());
+
+app.MapGet("/pki/chain.pem", (Blinky.Pki.ICertificateAuthority ca, IConfiguration configuration) =>
 {
-    if (ca is not Blinky.Pki.BuiltIn.BuiltInCertificateAuthority built)
-    {
-        return Results.NotFound();
-    }
-
-    // DER rather than PEM: this is what an authority information access
-    // fetch expects, and Windows will not read a PEM here.
-    return Results.File(built.Issuer.RawData, "application/pkix-cert", "issuing.crt");
-});
-
-app.MapGet("/pki/root.crt", (Blinky.Pki.ICertificateAuthority ca) =>
-{
-    if (ca is not Blinky.Pki.BuiltIn.BuiltInCertificateAuthority built)
-    {
-        return Results.NotFound();
-    }
-
-    return Results.File(built.TrustAnchor.RawData, "application/pkix-cert", "root.crt");
-});
-
-app.MapGet("/pki/chain.pem", (Blinky.Pki.ICertificateAuthority ca) =>
-{
-    if (ca is not Blinky.Pki.BuiltIn.BuiltInCertificateAuthority built)
+    if (StackChain.Of(ca, configuration) is not { } chain)
     {
         return Results.NotFound();
     }
 
     // For the things that want the lot in one file - PKINIT anchors, an
     // openssl verify, a Linux client being set up by hand.
-    var chain = built.TrustAnchor.Thumbprint == built.Issuer.Thumbprint
-        ? built.TrustAnchor.ExportCertificatePem()
-        : built.Issuer.ExportCertificatePem() + "\n" + built.TrustAnchor.ExportCertificatePem();
+    var pem = chain.Anchor.Thumbprint == chain.Issuer.Thumbprint
+        ? chain.Anchor.ExportCertificatePem()
+        : chain.Issuer.ExportCertificatePem() + "\n" + chain.Anchor.ExportCertificatePem();
 
-    return Results.Text(chain, "application/x-pem-file");
+    return Results.Text(pem, "application/x-pem-file");
 });
 
 // The root's own list, which says whether the issuing CA was revoked. Served
@@ -2544,3 +2534,41 @@ internal sealed record HeartbeatRequest(
     string? Version,
     string[]? Readers,
     UnsupportedCardReport[]? Unsupported);
+
+/// <summary>
+/// The stack's own CA: the one that signed the edge's certificate, which is what a
+/// workstation has to trust before its agent will talk to anything.
+/// </summary>
+/// <remarks>
+/// With the built-in backend it is also the CA that issues cards, and it is read from
+/// the loaded authority. With ADCS the cards come from a Microsoft CA, but the edge
+/// certificate still comes from this one - and /pki/root.crt answered 404, so
+/// install-windows-client.ps1 had no anchor to give the agent, and the first
+/// workstation in ad.digitalworkspace.pl could not enrol: its TLS check refused the
+/// edge. Read from the files new-ca.sh left in Blinky:Ca:Directory instead; the key is
+/// not needed and not touched.
+/// </remarks>
+internal static class StackChain
+{
+    public static (System.Security.Cryptography.X509Certificates.X509Certificate2 Issuer,
+        System.Security.Cryptography.X509Certificates.X509Certificate2 Anchor)? Of(
+        Blinky.Pki.ICertificateAuthority ca, IConfiguration configuration)
+    {
+        if (ca is Blinky.Pki.BuiltIn.BuiltInCertificateAuthority built)
+        {
+            return (built.Issuer, built.TrustAnchor);
+        }
+
+        var directory = configuration["Blinky:Ca:Directory"] ?? "/etc/blinky/ca";
+        var issuer = Path.Combine(directory, "issuing.crt");
+        var anchor = Path.Combine(directory, "anchor.crt");
+
+        if (!File.Exists(issuer) || !File.Exists(anchor))
+        {
+            return null;
+        }
+
+        return (System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPemFile(issuer),
+            System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPemFile(anchor));
+    }
+}
