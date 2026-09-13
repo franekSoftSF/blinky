@@ -233,7 +233,31 @@ public sealed class CardEnrolment(
             new X500DistinguishedName($"CN={step_DisplayName(job)}"),
             generator.PublicKey, HashAlgorithmName.SHA256);
 
-        var csrPem = PemEncode("CERTIFICATE REQUEST", request.CreateSigningRequest(generator));
+        byte[] signed;
+
+        try
+        {
+            signed = request.CreateSigningRequest(generator);
+        }
+        catch (PivAuthenticationFailedException) when (userAlreadyVerified)
+        {
+            // A PIN verified while opening the card no longer satisfied the new key.
+            // Seen on a YubiKey 5.8.0 on VDF001: the factory PIN was replaced and
+            // verified, the card identity written, the PUK rotated, the key generated
+            // and attested - and GENERAL AUTHENTICATE answered 6982. Something in that
+            // sequence clears the verified state on this firmware, where 5.4 and 5.7
+            // kept it; which command it is has not been isolated. Asking once more
+            // costs a prompt, and leaves the slot holding a key the card will not use.
+            logger.LogWarning(
+                "Token {Serial}: slot {Slot} refused to sign although the PIN was verified "
+                + "earlier in this session; asking for it again", serial, slot);
+
+            await VerifyUserAsync(session, serial, job, backend, attempt, ct);
+
+            signed = request.CreateSigningRequest(generator);
+        }
+
+        var csrPem = PemEncode("CERTIFICATE REQUEST", signed);
 
         await Report(backend, job, attempt, "SubmitToCa", ct);
 
