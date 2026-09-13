@@ -16,7 +16,7 @@ namespace Blinky.Agent.Service;
 /// </remarks>
 public sealed class InventoryCollector(ILogger<InventoryCollector> logger)
 {
-    private readonly AttestationVerifier verifier = new(YubicoRoots.PivAttestation);
+    private readonly AttestationVerifier verifier = AttestationVerifier.ForYubico();
 
     /// <summary>
     /// Reads every reader that holds a card with a PIV applet. Readers with no

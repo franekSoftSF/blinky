@@ -13,6 +13,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Attestation\yubico-piv-attestation-root.pem" />
+    <EmbeddedResource Include="Attestation\yubico-attestation-root-1.pem" />
+    <EmbeddedResource Include="Attestation\yubico-piv-attestation-intermediates.pem" />
   </ItemGroup>
 
 </Project>

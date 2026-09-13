@@ -32,7 +32,7 @@ public sealed class CardEnrolment(
     CardGate gate,
     ILogger<CardEnrolment> logger) : ICardEnrolment
 {
-    private readonly AttestationVerifier verifier = new(YubicoRoots.PivAttestation);
+    private readonly AttestationVerifier verifier = AttestationVerifier.ForYubico();
 
     public async Task EnrolAsync(JobEnvelope job, JobStep step, BackendClient backend,
         int attempt, CancellationToken ct)

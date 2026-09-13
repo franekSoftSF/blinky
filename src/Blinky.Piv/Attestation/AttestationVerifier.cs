@@ -20,13 +20,25 @@ namespace Blinky.Piv.Attestation;
 /// is verified rather than assumed.
 /// </para>
 /// </remarks>
-public sealed class AttestationVerifier(X509Certificate2Collection trustedRoots)
+public sealed class AttestationVerifier(
+    X509Certificate2Collection trustedRoots, X509Certificate2Collection? publishedIntermediates = null)
 {
     private readonly X509Certificate2Collection roots = trustedRoots.Count > 0
         ? trustedRoots
         : throw new ArgumentException(
             "At least one trusted root is required; verifying against none would accept anything.",
             nameof(trustedRoots));
+
+    /// <summary>
+    /// The CAs between a 5.7.4-or-later token's own certificate and its root, which the
+    /// card does not carry. Material for building a path, never an anchor: the path
+    /// still has to end at one of <see cref="roots"/>.
+    /// </summary>
+    private readonly X509Certificate2Collection intermediates = publishedIntermediates ?? [];
+
+    /// <summary>The verifier every caller in Blinky uses: Yubico's two roots and their PIV intermediates.</summary>
+    public static AttestationVerifier ForYubico() =>
+        new(YubicoRoots.PivAttestation, YubicoRoots.PivAttestationIntermediates);
 
     /// <summary>
     /// Verifies an attestation. <paramref name="expectedSerial"/> is the serial
@@ -55,6 +67,7 @@ public sealed class AttestationVerifier(X509Certificate2Collection trustedRoots)
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
         chain.ChainPolicy.CustomTrustStore.AddRange(roots);
         chain.ChainPolicy.ExtraStore.Add(intermediate);
+        chain.ChainPolicy.ExtraStore.AddRange(intermediates);
 
         // Attestation certificates have no CRL or OCSP, and the agent may be
         // offline. Revocation checking here would fail for the wrong reason.

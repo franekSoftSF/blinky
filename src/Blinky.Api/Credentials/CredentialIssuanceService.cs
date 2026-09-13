@@ -27,7 +27,7 @@ public sealed class CredentialIssuanceService(
     LogonNames logonNames,
     ILogger<CredentialIssuanceService> logger)
 {
-    private readonly AttestationVerifier verifier = new(YubicoRoots.PivAttestation);
+    private readonly AttestationVerifier verifier = AttestationVerifier.ForYubico();
 
     public async Task<IssuedCredential> IssueAsync(IssueCredentialRequest request,
         CancellationToken ct)

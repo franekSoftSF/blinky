@@ -1,6 +1,6 @@
 # Project status — Blinky
 
-**Last updated:** 2026-09-13
+**Last updated:** 2026-09-14
 **Phase:** 2 — Issue something. **The gate is met**
 **Overall:** on 24 August 2026 a person logged into the lab domain with a card
 this system personalised and issued, against a Samba4 KDC, with no ADCS anywhere
@@ -598,7 +598,7 @@ exercised against the thing it is really for.
 
 | What | Why not yet | When it gets proved |
 |---|---|---|
-| YubiKey 5.8 | Newer than anything measured here. The version gates are open-ended, so it inherits the 5.7 path — but the pinned attestation root, the form-factor enum and the absence of card-side PIN complexity are assumptions until a card is read | `PivProbe`, which writes nothing |
+| YubiKey 5.8 | **The attestation-root assumption was wrong.** A 5.8.0 key (serial 39218739) on VDF001 in ad.digitalworkspace.pl was refused on the agent on 2026-09-14 with *UntrustedChain*: firmware 5.7.4 and later attests under *Yubico Attestation Root 1* through two intermediates the card does not carry, and only the old root was pinned. The new root and the five PIV intermediates from developers.yubico.com are now pinned by fingerprint and passed to the chain builder as untrusted material; written and built, not yet run against the card, and the unit tests could not run on the development machine, whose Smart App Control refuses the locally built `Blinky.Secrets.dll`. The form-factor enum and card-side PIN complexity are still assumptions | The same enrolment on VDF001, with the rebuilt agent and API |
 | What a Crescendo V3 and a C4000 answer to the **standard** PIV instructions | Only the Yubico extensions have been measured on them, and those answer `6D00`. The rest is inferred from SP 800-73 | `tools/InsProbe`, extended from one instruction to the standard set |
 | `6Cxx` retry-with-length | Comes from T=0 readers; every reader here negotiated T=1 | Needs a T=0 reader, or stays covered by hand-built cases |
 | Attestation rejection paths | Forgeries, wrong roots and serial mismatches are synthetic — a real one would mean a counterfeit token | Stays synthetic; the genuine path is proved on hardware |
