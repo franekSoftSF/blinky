@@ -87,6 +87,12 @@ Consequences worth stating plainly:
 Because the doorbell carries no state, swapping SignalR for MQTT or SSE later
 touches one class on each side.
 
+**The ADCS connector uses the same listener and the same direction.** It dials 9443
+with a certificate from the agent CA and long-polls `/api/adcs/connector/next` for
+calls to make against its CA, so nothing connects into the CA's network. The doorbell
+does not exist in the code yet - agents poll `/api/jobs/next` - and a long poll gives
+the connector the same immediacy without it. See [15](15-adcs-connector.md).
+
 ## The job engine is in the worker, not the API
 
 The API scales horizontally. The lifecycle scanner — "which credentials expire

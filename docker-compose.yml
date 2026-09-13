@@ -54,6 +54,8 @@ services:
       # slot for one in this file would invite the arrangement docs/15 moved
       # away from.
       Blinky__Ca__Backend: ${CA_BACKEND:-BuiltIn}
+      Blinky__Adcs__Transport: ${ADCS_TRANSPORT:-Connector}
+      Blinky__Adcs__Connector__ClientFingerprints__0: ${ADCS_CONNECTOR_CLIENT_FINGERPRINTS:-}
       Blinky__Adcs__Connector__Url: ${ADCS_CONNECTOR_URL:-}
       Blinky__Adcs__Connector__ServerFingerprint: ${ADCS_CONNECTOR_FINGERPRINT:-}
       Blinky__Adcs__Connector__ClientCertificatePath: ${ADCS_CLIENT_CERTIFICATE:-/etc/blinky/certs/adcs-client.p12}

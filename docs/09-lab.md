@@ -338,11 +338,11 @@ up a second stack elsewhere. The steps assume the first.
 
 | # | Who | Step | Checked by |
 |---|---|---|---|
-| 1 | owner | Confirm BY-CACMS (`172.16.5.11`) reaches HZCS01 (`172.16.2.40`) and ADC01 (`172.16.2.10`) across the two subnets, and resolves `ad.digitalworkspace.pl` names | `nc -vz 172.16.2.40 8444` after step 3, `nc -vz 172.16.2.10 636` now |
-| 2 | Claude | Generate the API's client certificate for the connector and print its SHA-256. It buys the agent's signature, so it goes into `certs/` on BY-CACMS with its password in a separate file, never into `.env` | The fingerprint, handed over in the session |
-| 3 | owner | On HZCS01: `Connector:ListenUrl` on the server's address instead of `127.0.0.1`, the fingerprint from step 2 added to `AllowedClientThumbprints`, and an inbound firewall rule for 8444 from `172.16.5.11` only. Restart the service | `AdcsProbe` from BY-CACMS with the new client certificate: describe answers, and a certificate not in the list gets 403 |
+| 1 | owner | **Revised: the connector dials the API** (docs/15). HZCS01 reaches `by-cacms.blinky.lab:9443`, resolves the name, and trusts the Blinky root; BY-CACMS reaches ADC01 on 636 for the directory | **Done 2026-09-13**: from HZCS01, TCP and TLS 1.3 to 9443 by name with no policy errors after the owner added the DNS record and the Blinky roots; the API answered 401 without a client certificate. ADC01:636 from BY-CACMS not yet checked |
+| 2 | owner, then Claude | On HZCS01, `scripts/new-connector-request.ps1 -Out ...csr`; on BY-CACMS, `scripts/sign-connector-cert.sh --csr ...`; back on HZCS01, `-Accept ...crt`, and read access to its key for `AD\svc_blinky` | The script prints the thumbprint for the connector and the SHA-256 for the API |
+| 3 | Claude | The connector's `appsettings.json` on HZCS01: `Connector:Api:Url=https://by-cacms.blinky.lab:9443` and the thumbprint from step 2. No firewall rule and no listener | The connector's log: `dialling https://by-cacms.blinky.lab:9443, no listener`, then no failed polls once step 5 is done |
 | 4 | owner | A read-only directory account in `ad.digitalworkspace.pl` for the API, and the password typed into BY-CACMS's `.env` by the owner. ADC01's LDAPS chain goes where `LDAPTLS_CACERT` points - today that is the built-in CA's chain, which will not verify ADC01 | `POST /api/directory/test`: bound, encrypted; `/api/directory/test-resolve` for `BlinkyUser` returns a UPN and a SID |
-| 5 | Claude | The ADCS keys in `.env`: `CA_BACKEND=Adcs`, `ADCS_CONNECTOR_URL=https://172.16.2.40:8444`, `ADCS_CONNECTOR_FINGERPRINT` (the listener's, as pinned for the probe), `ADCS_CLIENT_CERTIFICATE*`, `ADCS_TEMPLATE_SMARTCARD_LOGON=BlinkySmartCardLogon`, `ADCS_KEY_ALGORITHM` to match step 7. `docker compose config` first, because the compose keys for ADCS have never been parsed | API and worker start; `/api/system/status` shows the CA reachable and the agent; `GET /api/system/ca/checks` ends `Unverified` with only `template-publication-unknown` |
+| 5 | Claude | The ADCS keys in `.env`: `CA_BACKEND=Adcs`, `ADCS_TRANSPORT=ConnectorPolls`, `ADCS_CONNECTOR_CLIENT_FINGERPRINTS` from step 2, `ADCS_TEMPLATE_SMARTCARD_LOGON=BlinkySmartCardLogon`, `ADCS_KEY_ALGORITHM` to match step 7. `docker compose config` first, because the compose keys for ADCS have never been parsed | API and worker start; `/api/system/status` shows the CA reachable and the agent; `GET /api/system/ca/checks` ends `Unverified` with only `template-publication-unknown` |
 | 6 | owner | A Windows workstation joined to `ad.digitalworkspace.pl`, with Yubico's minidriver and no other smart-card middleware, the Blinky agent installed against BY-CACMS as for `win` above, and the YubiKey passed through. For ECC, `EnumerateECCCerts` set by policy; otherwise RSA 2048 | The agent enrols its machine certificate and the console lists the machine and the reader |
 | 7 | owner, from the console | Enrol `BlinkyUser` onto the YubiKey, profile `smartcard-logon`, one key algorithm chosen on purpose - RSA 2048 first, because it needs no workstation policy | The job ends installed; the certificate's subject, UPN and SID extension name `BlinkyUser`, not `svc_blinky`; the connector log has one `Signed as enrolment agent for AD\BlinkyUser` with the card's key hash |
 | 8 | owner | Smart-card logon to that workstation as `BlinkyUser` | A session. If not, `certutil -scinfo` on the workstation and the DC's System log for KDC events before anything else |
@@ -356,6 +356,27 @@ What has to be true on the domain side before step 8, which a Microsoft enterpri
 usually arranges and nobody here has checked: the issuing CA in `NTAuthCertificates`,
 a *Kerberos Authentication* certificate on ADC01, and a CRL both ADC01 and the
 workstation can fetch. `certutil -dcinfo verify` on ADC01 answers the first two.
+
+## The connector dialling a probe instead of the API
+
+Before an API with the queue is deployed anywhere, `AdcsProbe --queue` plays the API's
+half on the workstation running it, and the connector on HZCS01 reaches it through a
+reverse tunnel. Used on 2026-09-13 to run the polling transport against the lab CA.
+
+```bash
+ssh -N -R 19443:127.0.0.1:19443 administrator@172.16.2.40
+dotnet run --project tools/AdcsProbe -- --queue https://127.0.0.1:19443 --queue-certificate server.pfx --queue-password ... --connector-fingerprint <sha256 of the connector's client certificate> --check BlinkySmartCardLogon --remote-agent
+```
+
+- The connector's `appsettings.json` needs `Connector:Api:Url=https://127.0.0.1:19443`,
+  `Connector:Api:ServerFingerprint` of the probe's `server.pfx`, and a client
+  certificate; the lab used `listener.pfx`. Both configurations are kept beside it on
+  HZCS01, `appsettings.listen.json` and `appsettings.polls.json`, and the listening one is
+  in place.
+- Start the tunnel before the probe. A connector that failed a few polls waits at most
+  15 seconds before the next, under the queue's 20-second pickup deadline.
+- Each probe run is a new queue, so the connector logs a failed poll or two between runs.
+  That is the probe exiting, not a fault.
 
 ## Running the PKCS#11 tests
 

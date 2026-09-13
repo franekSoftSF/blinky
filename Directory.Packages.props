@@ -6,6 +6,7 @@
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.11" />
     <PackageVersion Include="NHibernate" Version="5.7.0" />
     <!-- Windows only, for the connector: ADSI is how a domain member reads the
          Configuration partition as the account it runs as, and the security

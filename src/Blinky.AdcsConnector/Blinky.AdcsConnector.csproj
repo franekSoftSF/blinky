@@ -29,6 +29,9 @@
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <!-- Template objects and their security descriptors, for 0033. -->
     <PackageReference Include="System.DirectoryServices" />
+    <!-- An IServer with no socket, for a connector that dials the API: the calls it
+         collects run through the same endpoints the listener serves. -->
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
 
   <ItemGroup>

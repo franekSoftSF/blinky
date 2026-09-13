@@ -331,6 +331,17 @@ write it.
 0035 — writing to the directory — is deferred on purpose, with the reason in the
 roadmap.
 
+**The connector now dials the API (0032a).** Decided on 2026-09-13 at the lab
+owner's request: the first version needed an inbound firewall rule into the network
+where the CA and the enrolment agent's key live, which a tiered estate refuses. The
+connector long-polls the agents' listener with a certificate from the agent CA, the API
+accepts it on its own routes by fingerprint, and calls travel as the same requests the
+direct transport sends - so the CMC, the refusals and the logs are shared, not copied.
+Run against the lab CA with the probe playing the API: describe, the registration check,
+an issuance for `BlinkyUser` and its revocation all went through the queue. It found
+one defect, every POST refused with an empty 400 inside the connector, which is fixed.
+Not yet run through the real API and edge on BY-CACMS.
+
 **Both ends of the ADCS wire now exist and talk to each other, and no Microsoft
 CA has answered a request.** `Blinky.AdcsConnector` is a working Windows service
 rather than a skeleton: mutual TLS, callers authorised by SHA-256 fingerprint,

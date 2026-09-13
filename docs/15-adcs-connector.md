@@ -71,6 +71,80 @@ Blinky.AdcsConnector                   (Windows, beside the CA)
     ADCS
 ```
 
+## Which side dials — decided 2026-09-13
+
+**The connector connects to the API, and the API never connects to the CA server.**
+The first version had it the other way: the connector listened on 8444 and the API
+called it. That needs an inbound firewall rule into the network where the CA and the
+enrolment agent's key live, and in any estate that separates tiers that is the rule
+the tier exists to refuse. Outbound from that server to one address is the rule that
+gets approved - and it is the direction the workstation agent already uses. The lab's
+owner asked for it after reading step 3 of the plan in [09](09-lab.md).
+
+```
+Blinky.Api  (Linux container)            Blinky.AdcsConnector  (Windows, beside the CA)
+    ConnectorAdcsTransport                   ApiPoller
+      └ ConnectorQueueHandler                  │  GET  /api/adcs/connector/next   (long poll, 25 s)
+          └ ConnectorQueue  ◄───── 9443, mTLS ──┤  POST /api/adcs/connector/result
+                                               └ the /connector/* endpoints, in memory
+```
+
+**What travels is the request the direct transport would have sent**: a method, a
+path under `/connector/` and its JSON body, answered with the status and body the
+connector's own endpoint produced. So nothing was rewritten on either side:
+
+- In the API, `ConnectorAdcsTransport` is the same class with a handler that puts the
+  request in a queue instead of on a socket. Schema checks, error sentences and the
+  CMC are shared with the direct transport.
+- In the connector, a collected call runs through the same endpoints the listener
+  serves, in memory, through ASP.NET Core's `TestServer` - an `IServer` with no socket,
+  whatever its name suggests. The refusals, the signature log and the CA's error text
+  exist once. Only paths under `/connector/` and only `GET` and `POST` are made on the
+  API's behalf.
+
+**Two deadlines in the queue.** A call no connector collects within 20 seconds fails
+with "no connector is asking", naming when one last did, because that is a connector
+that is down and should read as such within seconds. A collected call waits up to 90,
+because the connector serialises calls into the CA. A call abandoned before collection
+is never handed out afterwards - a PKIData whose caller gave up is not signed - and an
+answer that arrives after its caller gave up is refused with 410, which the connector
+logs as a possible certificate at the CA that Blinky does not hold.
+
+**Who may collect.** The connector's client certificate is issued by the agent CA,
+because that is the anchor the edge verifies on 9443
+(`scripts/new-connector-request.ps1` makes the key on the CA server, non-exportable;
+`scripts/sign-connector-cert.sh` signs it on the Docker host). The chain therefore says
+only "a machine this deployment issued to". `Blinky:Adcs:Connector:ClientFingerprints`
+says which one is the connector; every workstation certificate is refused on the
+connector routes, and the connector's certificate is refused on every agent route,
+because it has no agent row. The connector authenticates the API by its TLS certificate:
+a chain to a root the server trusts plus the host name, or a pinned SHA-256.
+
+**Not SignalR, for now.** [01](01-architecture.md) plans a SignalR doorbell for agents,
+and the edge has a `/hubs/` location for it, but no hub exists in the code. A long
+poll collects a call as soon as it is queued - the request is already open - through the
+proxy with no upgrade handling, and needs no second library in the connector. When the
+doorbell is built for agents, the connector can ring on it too.
+
+**Run against the lab CA, 2026-09-13**, with `AdcsProbe --queue` playing the API - the
+same `ConnectorQueue` and transport, behind a Kestrel listener with a fingerprint gate -
+and the connector service on HZCS01 dialling it through `ssh -R`:
+
+| Asked through the queue | Answered |
+|---|---|
+| describe | CA, chain, revocation available, agent non-exportable - as over the socket |
+| `--check BlinkySmartCardLogon --remote-agent` | `UNVERIFIED`, the same two findings as over the socket |
+| `--submit`, P-256, `AD\BlinkyUser` | **First run: every POST an empty 400.** `TestServer` decides whether a request may have a body before the body is set, and minimal APIs believe it; GETs went through. Fixed by declaring the body, with a test. **Second run: issued**, request 13, subject, UPN and SID from the directory |
+| `--revoke` of that certificate | Revoked |
+
+The connector's log records the signature and the revocation as asked by
+`API at https://127.0.0.1:19443`. The real API behind the real edge on BY-CACMS has not
+been run: that needs the connector's certificate from the agent CA and the fingerprint
+in the API's configuration.
+
+The direct transport stays, selected by `Blinky:Adcs:Transport=Connector`, and is
+what `AdcsProbe` without `--queue` uses through a tunnel. `ConnectorPolls` selects this one.
+
 ## The wire
 
 `Blinky.Contracts/AdcsTransportContracts.cs`, versioned by
@@ -244,6 +318,10 @@ second call into a CA that has not finished the first.
 | `Connector:EnrolmentAgent:Thumbprint` | SHA-1 or SHA-256 of the agent certificate. Unset means this connector signs nothing and `/connector/sign` answers 409 |
 | `Connector:EnrolmentAgent:StoreLocation` | `CurrentUser` by default — the integration account's store — or `LocalMachine`, where the key's ACL then has to name the account |
 | `Connector:EnrolmentAgent:Path` / `:Password` / `:AllowFileKey` | A PKCS#12 instead, refused without `AllowFileKey`. For a laboratory |
+| `Connector:Api:Url` | The API to dial, the agents' listener: `https://by-cacms.blinky.lab:9443`. **Set, the connector opens no listener**, and `ListenUrl`, `ServerCertificate` and `AllowedClientThumbprints` are not read |
+| `Connector:Api:ClientCertificate:Thumbprint` / `:Path` / `:Password` | The connector's certificate from the agent CA, in `LocalMachine\My` or a file |
+| `Connector:Api:ServerFingerprint` | SHA-256 of the API's TLS certificate, to pin it. Unset, the chain has to end at a root this machine trusts and name the host |
+| `Connector:Api:WaitSeconds` | How long a poll is held open, at most 25, under the edge's 60-second proxy timeout |
 
 An agent that is configured and unusable — expired, missing *Certificate Request
 Agent*, or with a key this account cannot reach — stops the service at start,
