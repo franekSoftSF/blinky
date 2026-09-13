@@ -50,3 +50,7 @@ artifacts/
 # Worktrees for parallel work. A worktree is not content: committed, it lands
 # as an embedded repository that no clone can resolve.
 .worktrees/
+
+# Written by scripts/set-directory.sh for one installation
+docker-compose.directory.yml
+.env.before-directory.*
