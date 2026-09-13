@@ -340,7 +340,10 @@ direct transport sends - so the CMC, the refusals and the logs are shared, not c
 Run against the lab CA with the probe playing the API: describe, the registration check,
 an issuance for `BlinkyUser` and its revocation all went through the queue. It found
 one defect, every POST refused with an empty 400 inside the connector, which is fixed.
-Not yet run through the real API and edge on BY-CACMS.
+Then through the real edge and API on BY-CACMS: the stack switched to ADCS, the
+connector on HZCS01 collects calls over 9443, and the console's status page answers
+through it. No card has been enrolled that way yet, and every status refresh runs a
+probe against the CA, which wants a cache.
 
 **Both ends of the ADCS wire now exist and talk to each other, and no Microsoft
 CA has answered a request.** `Blinky.AdcsConnector` is a working Windows service

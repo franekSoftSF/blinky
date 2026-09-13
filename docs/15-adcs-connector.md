@@ -138,9 +138,32 @@ and the connector service on HZCS01 dialling it through `ssh -R`:
 | `--revoke` of that certificate | Revoked |
 
 The connector's log records the signature and the revocation as asked by
-`API at https://127.0.0.1:19443`. The real API behind the real edge on BY-CACMS has not
-been run: that needs the connector's certificate from the agent CA and the fingerprint
-in the API's configuration.
+`API at https://127.0.0.1:19443`.
+
+**Then through the real edge and API on BY-CACMS**, the same evening. The connector's
+certificate came from the agent CA through the two scripts, and both found something:
+
+- A request copied to the Docker host through a clipboard arrived with a broken PEM end
+  line, and the signing script said only that the signature did not verify. It now
+  prints openssl's own words and says to compare the SHA-256 with the original.
+- The agent CA's key is `root:blinky 640`, and run as the login user the script ended
+  with exit code 1 and nothing else, openssl's error having gone to `/dev/null`. It now
+  checks the key is readable and says to use sudo.
+- `certreq -accept` refused with `CERT_E_CHAINING`: the agent CA is not a root on the CA
+  server, and it should not become one - its key is on the Docker host. The request
+  script now installs the certificate with `certutil -addstore` and joins it to its key
+  with `-repairstore`.
+
+| Checked | Seen |
+|---|---|
+| Connector on HZCS01, before the API had the fingerprint | TLS to `by-cacms.blinky.lab:9443` by name, chain trusted; 401 *not an ADCS connector's* - so the edge had verified the certificate against the agent CA and the API's own check was the one refusing |
+| After `CA_BACKEND=Adcs`, `ADCS_TRANSPORT=ConnectorPolls` and the fingerprint | `GET /api/adcs/connector/next responded 204 in 25408 ms`: the long poll held open through nginx and answered empty at 25 seconds, as designed |
+| The console's status page | `/api/system/status` 200 in about 40 ms, each one a describe collected and answered by the connector |
+
+**And one thing it showed that needs fixing:** the console asks for the status several
+times a second, and every request is a describe, which runs the revocation-permission
+probe against the CA. The connector's log fills with the probe and the CA takes a
+`RevokeCertificate` call per refresh. The describe wants a short cache in the API.
 
 The direct transport stays, selected by `Blinky:Adcs:Transport=Connector`, and is
 what `AdcsProbe` without `--queue` uses through a tunnel. `ConnectorPolls` selects this one.
