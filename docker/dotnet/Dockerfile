@@ -68,4 +68,8 @@ RUN mkdir -p /var/lib/blinky/tokens \
     && chown -R blinky /var/lib/blinky/tokens
 USER blinky
 ENV BLINKY_ASSEMBLY=${ASSEMBLY}
+# A shell, to expand the assembly name - and a shell drops environment variables whose
+# names are not identifiers, such as Blinky__Adcs__Templates__smartcard-logon.
+# docker-compose.yml overrides this with the exec form for both services; anything
+# else starting this image needs to do the same.
 ENTRYPOINT ["/bin/sh", "-c", "exec dotnet ${BLINKY_ASSEMBLY}.dll"]
