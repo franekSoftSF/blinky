@@ -47,7 +47,7 @@ common reason a self-built PKI fails at smart-card logon.
 
 | Field | Value |
 |---|---|
-| Key usage | `digitalSignature` (add `keyEncipherment` for the `9D` profile) |
+| Key usage | `digitalSignature` (for the `9D` profile add `keyEncipherment` on an RSA key and `keyAgreement` on an EC one — the code sets `keyEncipherment` by slot today, recorded in [16](16-smime-card-and-mobile.md#a-defect-this-found)) |
 | EKU | `1.3.6.1.5.5.7.3.2` Client Authentication |
 | EKU | `1.3.6.1.4.1.311.20.2.2` Smart Card Logon |
 | SAN | `otherName` `1.3.6.1.4.1.311.20.2.3` = the user's UPN |

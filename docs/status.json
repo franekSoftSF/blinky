@@ -79,6 +79,12 @@
       "title": "FIDO2 on the same key",
       "state": "open",
       "done": "An operator provisions a fresh YubiKey from the console for an Entra lab-tenant user and for an Okta lab-org user; each signs in at their own provider with that key; the provisional PIN must be changed on first use; revoking from the console removes the method at the provider; every step is in the audit trail; unit and contract tests green with no hardware, no tenant and no org."
+    },
+    {
+      "id": 9,
+      "title": "S/MIME on the card and on the phone",
+      "state": "open",
+      "done": "One person, one mailbox. Outlook on Windows signs and decrypts with the card; Boxer on a UEM-managed phone reads a message encrypted to that card before the phone existed and signs a reply the desktop accepts; a lost card is replaced from escrow and the old mail still opens on both; terminating the person revokes the card's certificates and the phone's together. Design in docs/16."
     }
   ],
   "components": [
@@ -1281,6 +1287,62 @@
       "state": "open",
       "owner": "cloud-ai",
       "proof": "Not started. Includes the Google gap and the federation alternative, stated plainly."
+    },
+    {
+      "id": "0091",
+      "phase": 9,
+      "title": "A cardholder has a mail address",
+      "state": "open",
+      "owner": "both",
+      "gap": "Cardholder has no mail field and the directory read does not ask for one. Needed by every S/MIME profile for the RFC 822 SAN; a missing address should fail onboarding, like a missing objectSid."
+    },
+    {
+      "id": "0092",
+      "phase": 9,
+      "title": "smime-signing onto 9C",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "No signing profile exists: the build knows smartcard-logon and client-auth, both on 9A. Key usage is derived from the slot, not the profile."
+    },
+    {
+      "id": "0093",
+      "phase": 9,
+      "title": "IMPORT ASYMMETRIC KEY in Blinky.Piv",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "Blinky.Piv generates keys and cannot import one. INS FE must be added to ApduRedaction before the first import is sent. Provable on the bench YubiKey 5.8."
+    },
+    {
+      "id": "0094",
+      "phase": 9,
+      "title": "smime-encryption onto 9D, from escrow",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "Needs 0045a and 0093. Makes attestation optional by a KeyOrigin flag on the profile, never by slot. Found while designing it: the built-in CA sets keyEncipherment on 9D for any key, which is wrong for EC keys; nothing issues to 9D yet."
+    },
+    {
+      "id": "0095",
+      "phase": 9,
+      "title": "Workspace ONE UEM as a configured integration",
+      "state": "open",
+      "owner": "both",
+      "gap": "Not blocked on a tenant - a UEM SaaS tenant exists. Configuration model, so full CRUD in the panel with the secret write-only."
+    },
+    {
+      "id": "0096",
+      "phase": 9,
+      "title": "The phone's own signing certificate",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "Credential requires a Token today; a certificate delivered to UEM has none, so the data model changes first."
+    },
+    {
+      "id": "0097",
+      "phase": 9,
+      "title": "S/MIME delivered to UEM",
+      "state": "open",
+      "owner": "cloud-ai",
+      "gap": "Waits on 0092-0096. The uploadsmimecerts behaviour - no read API, every upload replaces the set, archived parameter documented as ignored but said to work - is from Omnissa staff answers and untested here. Keys at rest in UEM SaaS is an owner decision. No iOS device is recorded for the iOS half."
     }
   ],
   "notVerified": [

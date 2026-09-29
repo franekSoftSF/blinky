@@ -245,6 +245,8 @@ Three things in that table are the design working rather than data:
 | Does operator authentication by certificate stay the target, with password and TOTP as the way in — or does it become optional? | Phases 5 and 8 (0053a, 0086, 0023a) | a decision |
 | Does the lab get an Entra tenant and an Okta org | Phase 7 (0076 onwards) | needs a decision and a subscription; contract tests need neither |
 | Google prepare-only mode, or federation and nothing else | Phase 7 (§ Later) | product decision, not a technical one |
+| May escrowed encryption keys rest in Workspace ONE UEM SaaS, or does delivery go through Credential Escrow Gateway? | Phase 9 (0097) | owner of the data; CEG needs Omnissa Professional Services |
+| How senders find the encryption certificate — `userCertificate` (0035) or Exchange Online directory sync | Phase 9 gate | depends on the lab's mail system |
 
 Full context in [07-roadmap.md § Open questions](07-roadmap.md#open-questions).
 
@@ -604,6 +606,35 @@ accepts a WebAuthn attestation on behalf of a user, so there is nothing to
 implement. The analysis, the prepare-only concept and the federation
 alternative are in brief §7 and in
 [07 — Roadmap § Google Workspace](07-roadmap.md#google-workspace--analysed-not-scheduled).
+
+### Phase 9 — S/MIME on the card and on the phone — **open**
+
+Nothing started. The design is [16](16-smime-card-and-mobile.md), the
+definitions of done are in [07 — Roadmap](07-roadmap.md#phase-9--smime-on-the-card-and-on-the-phone).
+
+**The block is not Workspace ONE** — a UEM SaaS tenant exists. The block is
+that Blinky cannot sign or decrypt a message yet: it issues `smartcard-logon`
+and `client-auth`, both onto `9A`, and has no key import and no mail address on
+a cardholder. Delivery to a phone is the last three patches.
+
+The shape in one paragraph: mail on a phone is readable only with **the card's
+own encryption key**, so `9D` is generated centrally and escrowed (0045a),
+imported onto the card, and the same key — every generation of it — is uploaded
+to UEM for Boxer. Signing is not shared: the card keeps an attested `9C` key,
+the phone gets its own certificate. PIV-D Manager is not the route: Blinky
+cannot be one of its providers, the YubiKey provider cannot hand a key to Boxer
+on Android, and the UEM provider issues a new key that cannot read mail sent to
+the card.
+
+| # | Owner | Patch | State | Proof |
+|---|---|---|---|---|
+| 0091 | both | A cardholder has a mail address | **open** | No mail field and no directory read of one. A missing address should fail onboarding, as a missing `objectSid` does |
+| 0092 | Cloud.AI | `smime-signing` onto `9C` | **open** | No signing profile exists. Key usage is derived from the slot today and becomes the profile's |
+| 0093 | Cloud.AI | `IMPORT ASYMMETRIC KEY` in `Blinky.Piv` | **open** | `INS FE` goes into `ApduRedaction` before the first import is sent. Provable on the bench 5.8 |
+| 0094 | Cloud.AI | `smime-encryption` onto `9D`, from escrow | **open** | Needs 0045a and 0093. Attestation becomes optional by a profile flag, never by slot. **Found while designing it:** `keyEncipherment` is set on `9D` for any key, which is wrong for EC; nothing issues to `9D` yet |
+| 0095 | both | Workspace ONE UEM as a configured integration | **open** | Full CRUD in the panel, secret write-only |
+| 0096 | Cloud.AI | The phone's own signing certificate | **open** | `Credential` requires a token today; this one has none |
+| 0097 | Cloud.AI | S/MIME delivered to UEM | **open** | **Gap:** what is known about `uploadsmimecerts` — no read API, each upload replaces the set, the archived parameter works though documented as ignored — comes from Omnissa staff answers and is untested here. Keys at rest in UEM SaaS is an owner decision. No iOS device is recorded |
 
 ## Implemented but not verified
 
