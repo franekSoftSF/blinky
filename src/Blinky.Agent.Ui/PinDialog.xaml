@@ -92,7 +92,7 @@
                 <TextBox x:Name="ChallengeText" IsReadOnly="True" BorderThickness="0"
                          Background="Transparent" FontFamily="Consolas" FontSize="20"
                          Margin="0,6,0,0" Padding="0"
-                         Foreground="{DynamicResource Accent}" />
+                         Foreground="{DynamicResource AccentText}" />
             </StackPanel>
         </Border>
 

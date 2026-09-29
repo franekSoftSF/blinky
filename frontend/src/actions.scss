@@ -1,14 +1,14 @@
 .row-action {
-  border: 1px solid #6a3946;
+  border: 1px solid var(--bl-danger-border);
   border-radius: 8px;
   padding: .42rem .68rem;
-  background: #281923;
-  color: #ff9aa5;
+  background: var(--bl-danger-soft);
+  color: var(--bl-danger);
   font-size: .7rem;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.row-action:hover { background: #3b202c; }
+.row-action:hover { background: color-mix(in srgb, var(--bl-danger-soft) 80%, var(--bl-danger)); }
 .row-action:disabled { cursor: wait; opacity: .55; }

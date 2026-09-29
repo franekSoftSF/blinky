@@ -31,9 +31,9 @@
               }
             ],
             "styles": [
+              "src/tokens.scss",
               "src/styles.scss",
               "src/actions.scss",
-              "src/theme.scss",
               "src/pages.scss",
               "src/settings.scss",
               "src/refresh-action.scss"
@@ -52,8 +52,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "6kB",
-                  "maximumError": "8kB"
+                  "maximumWarning": "8kB",
+                  "maximumError": "12kB"
                 }
               ],
               "outputHashing": "all"

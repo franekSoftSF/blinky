@@ -34,6 +34,7 @@
     <ProjectReference Include="..\..\src\Blinky.Secrets\Blinky.Secrets.csproj" />
     <ProjectReference Include="..\..\src\Blinky.Agent.Service\Blinky.Agent.Service.csproj" />
     <ProjectReference Include="..\..\src\Blinky.AdcsConnector\Blinky.AdcsConnector.csproj" />
+    <ProjectReference Include="..\..\tools\PaletteTool\PaletteTool.csproj" />
   </ItemGroup>
 
   <ItemGroup>

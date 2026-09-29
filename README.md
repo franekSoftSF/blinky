@@ -1,5 +1,7 @@
 # Blinky
 
+<img src="brand/blinkycms-logo.png" alt="Blinky CMS" width="640">
+
 **Your key blinks. Blinky is why.**
 
 An open-source **credential management system** for YubiKey 5 PIV, built on
