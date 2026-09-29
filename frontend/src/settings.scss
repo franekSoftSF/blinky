@@ -1,31 +1,9 @@
-.eyebrow,
-.table-link,
-.panel header a {
-  color: #53d88b !important;
-}
-.primary,
-.action-button {
-  background: linear-gradient(135deg, #45d483, #25b96b) !important;
-  color: #04150c !important;
-  box-shadow: 0 10px 30px #28c77428 !important;
-}
-.sidebar nav a.active {
-  background: #123326 !important;
-  color: #59df91 !important;
-}
-.operator > span,
-.metric-symbol,
-.service-symbol {
-  color: #58dc8f !important;
-}
-.metric-symbol,
-.service-symbol,
-.empty > span {
-  background: #123426 !important;
-}
-.metric-card:hover {
-  border-color: #2d6b4b !important;
-}
+/* The accent is the console's cyan, in one place: styles.scss, pages.scss and
+   app.scss. A block of `!important` overrides repainting it green sat at the
+   top of this file from 0051/0052 onwards - a page stylesheet quietly
+   recolouring every button, every active tab and every eyebrow in the
+   console, including the sign-in screen, where it fought the mark (0098). */
+
 .settings-hero {
   display: flex;
   align-items: flex-end;

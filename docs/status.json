@@ -18,7 +18,7 @@
     ]
   },
   "status": {
-    "updated": "2026-09-14",
+    "updated": "2026-09-29",
     "phase": 2,
     "phaseTitle": "Issue something",
     "state": "gate-met",
@@ -1089,6 +1089,15 @@
       "state": "open",
       "owner": "cloud-ai",
       "proof": "dev-certs.sh writes the agent CA unencrypted next to the certificates, which is right for a laptop and must never reach a customer. And a revocation list for it: an agent whose state is not Enrolled is already refused by AgentAuthenticationMiddleware - that is the defence and it works - but nothing checks a CRL at the TLS layer, so a withdrawn certificate still completes a handshake before being turned away."
+    },
+    {
+      "id": "0098",
+      "phase": 6,
+      "title": "One mark for the whole product",
+      "state": "done",
+      "owner": "cloud-ai",
+      "proof": "brand/ holds three SVGs and build-assets.mjs, the same arrangement as BlinkyLite's. The mark is BlinkyLite's key-in-an-arc in the console's cyan (#18C9DF) with a node at each end of the arc: two products, one family, differing in the accent and the nodes rather than in the drawing. The console sidebar, the sign-in screen, the favicon, the API, the agent service and the tray icon all resolve to it; the hexagon-and-eye artwork and its source PNGs are gone. scripts/build-icons.ps1 is deleted - it built the .ico files by downscaling the 256 px drawing, so the 16 px tray icon was a smudge; the generator renders the simplified mark at 48 px and below instead. Re-running the generator leaves git status clean. A block of !important overrides at the top of frontend/src/settings.scss had repainted every primary button, active tab and eyebrow green since 0051/0052, sign-in included; it is removed, and the console's own cyan shows. 20 console tests pass, the WPF client builds with the new icon.",
+      "gap": "The visual unification stops at the mark. The WPF tray UI still carries its own colours rather than the console's, and the console's own stylesheet is codex's - a pass over both is not in this patch."
     },
     {
       "id": "0080",

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Blinky CMS</title>
+  <!--
+    The Blinky CMS mark: BlinkyLite's key-in-an-arc, in this console's colours,
+    with the arc carrying a node at each of its four ends.
+
+    Two products, one family. The geometry is BlinkyLite's and is not redrawn
+    here - a second silhouette would mean somebody has to learn two marks for
+    the same key. What varies is the accent (#18C9DF, the console's, against
+    BlinkyLite's #1DB954) and the nodes, which are what the hexagon-and-eye
+    icon this replaces was about: a managed set of cards, not one card.
+
+    The touch sensor carries no vendor logo. That is Yubico's trademark and
+    this repository is public.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0D1A2E"/>
+      <stop offset="1" stop-color="#07101E"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17263B"/>
+      <stop offset="1" stop-color="#0A1322"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#F2C35B"/>
+      <stop offset="1" stop-color="#B8871F"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#tile)"/>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="none" stroke="#18C9DF" stroke-width="6" filter="url(#glow)"/>
+
+  <!-- The arc: open at the top and the bottom, where the key passes through it. -->
+  <g fill="none" stroke="#18C9DF" stroke-width="14" stroke-linecap="round" filter="url(#glow)">
+    <path d="M 97.8 164.8 A 182 182 0 0 0 164.8 413.6"/>
+    <path d="M 414.2 164.8 A 182 182 0 0 1 347.2 413.6"/>
+  </g>
+
+  <!-- A node at each end of the arc: the set of cards this thing manages. -->
+  <g fill="#5AE3F3" filter="url(#glow)">
+    <circle cx="97.8" cy="164.8" r="17"/>
+    <circle cx="164.8" cy="413.6" r="17"/>
+    <circle cx="414.2" cy="164.8" r="17"/>
+    <circle cx="347.2" cy="413.6" r="17"/>
+  </g>
+
+  <g transform="rotate(35 256 256)">
+    <!-- Connector first, so the body overlaps its top edge. -->
+    <rect x="221" y="336" width="70" height="92" rx="8" fill="#0A1524" stroke="#5AE3F3" stroke-width="5"/>
+    <rect x="232" y="352" width="13" height="60" rx="2" fill="url(#gold)"/>
+    <rect x="250" y="352" width="13" height="60" rx="2" fill="url(#gold)"/>
+    <rect x="268" y="352" width="13" height="60" rx="2" fill="url(#gold)"/>
+
+    <rect x="191" y="84" width="130" height="264" rx="30" fill="url(#body)" stroke="#5AE3F3" stroke-width="6" filter="url(#glow)"/>
+
+    <!-- Key-ring hole. -->
+    <circle cx="256" cy="132" r="22" fill="#07101E" stroke="#5AE3F3" stroke-width="6"/>
+    <circle cx="256" cy="132" r="11" fill="#18C9DF" filter="url(#glow)"/>
+
+    <!-- Touch sensor: a ring and a point, nobody's logo. -->
+    <circle cx="256" cy="244" r="42" fill="#0A1524" stroke="#18C9DF" stroke-width="7" filter="url(#glow)"/>
+    <circle cx="256" cy="244" r="13" fill="#5AE3F3"/>
+  </g>
+</svg>

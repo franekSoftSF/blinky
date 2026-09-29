@@ -22,7 +22,13 @@ import { toDataURL } from 'qrcode';
     <section class="sign-in">
       <header>
         <div class="sign-in-top">
-          <p class="eyebrow">BLINKY CMS</p>
+          <!-- The mark rather than the name in capitals: this is the first
+               screen of the product, and it is where the mark is worth the
+               space (brand/). -->
+          <p class="sign-in-brand">
+            <img class="mark" src="/brand/blinkycms-mark.svg" alt="" />
+            <span class="wordmark">Blinky<span class="cms">CMS</span></span>
+          </p>
 
           <!-- The shell's language switch lives behind the sign-in, which is
                exactly where somebody who cannot read this page cannot reach
@@ -183,9 +189,27 @@ import { toDataURL } from 'qrcode';
       }
       .sign-in-top {
         display: flex;
-        align-items: baseline;
+        align-items: center;
         justify-content: space-between;
         gap: 1rem;
+      }
+      .sign-in-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        margin: 0;
+      }
+      .sign-in-brand .mark {
+        width: 42px;
+        height: 42px;
+      }
+      .wordmark {
+        font-size: 1.35rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .wordmark .cms {
+        color: #23cee1;
       }
       .language {
         font: inherit;
@@ -216,8 +240,25 @@ import { toDataURL } from 'qrcode';
         display: grid;
         gap: 0.35rem;
       }
-      .sign-in-form input {
+      /* The fields the console draws everywhere else. Left to the browser they
+         came out light grey on navy, which is the one part of this screen a
+         person has to type into. */
+      .sign-in-form input,
+      details input {
         width: 100%;
+        padding: 0.7rem 0.85rem;
+        border: 1px solid #1c2c44;
+        border-radius: 10px;
+        background: #0b1626;
+        color: #eaf2ff;
+      }
+      .sign-in-form input:focus-visible,
+      details input:focus-visible {
+        outline: 2px solid #23cee1;
+        outline-offset: 1px;
+      }
+      .sign-in-form input[readonly] {
+        opacity: 0.6;
       }
       .qr {
         margin: 0;
@@ -251,11 +292,13 @@ import { toDataURL } from 'qrcode';
       .sign-in-hint {
         font-size: 0.85rem;
       }
+      /* #b3261e on this background is a dark red on a dark navy: the console's
+         failure colour is lighter for exactly that reason. */
       .sign-in-error {
         margin: 0;
         padding: 0.75rem 1rem;
         border-left: 3px solid currentColor;
-        color: #b3261e;
+        color: #ff8993;
       }
     `,
   ],

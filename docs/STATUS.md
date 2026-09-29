@@ -1,6 +1,6 @@
 # Project status — Blinky
 
-**Last updated:** 2026-09-14
+**Last updated:** 2026-09-29
 **Phase:** 2 — Issue something. **The gate is met**
 **Overall:** on 24 August 2026 a person logged into the lab domain with a card
 this system personalised and issued, against a Samba4 KDC, with no ADCS anywhere
@@ -529,6 +529,7 @@ in front of a person and the lifecycle jobs were not.
 | 0062 | Cloud.AI | Production compose profile | **open** | Real TLS, the PKCS#11 tier, no default credentials, health checks, and a documented backup of the HSM and the database |
 | 0063 | Cloud.AI | Documentation pass and screenshots | **open** | No pass and no screenshots yet. Three defects on the clone-to-logon path are fixed under this number, because they are what a stranger following the repository would have hit: `provision-dc.sh` orders `samba-ad-dc` after `network-online.target` and reloads it when it bound only to the loopback; `resign-issuing-ca.sh` is idempotent, having silently invalidated NTAuth, the workstation stores and the KDC chain three times in one day; `blinky-samba-setup.sh` rebuilds `kdc-chain.pem` around the certificate already on the controller when refreshed with `--from-url` alone |
 | 0064 | Cloud.AI | The agent CA belongs to the deployment, and revocation is enforced at the edge | **open** | `dev-certs.sh` writes the agent CA unencrypted beside the certificates, which is right for a laptop and must never reach a customer. And nothing checks a CRL at the TLS layer: a withdrawn agent certificate still completes a handshake before the middleware turns it away |
+| 0098 | Cloud.AI | One mark for the whole product | **done** | The console, its sign-in screen, the favicon, the API, the agent service and the tray icon all render one mark, generated from `brand/*.svg`. It is BlinkyLite's key-in-an-arc in this console's cyan, with a node at each end of the arc - two products, one family, and the difference is the accent and the nodes rather than a second silhouette. The hexagon-and-eye artwork is gone, and so is `scripts/build-icons.ps1`, which made the 16 px tray icon by downscaling the detailed drawing. One accent, too: a block of `!important` overrides at the top of `frontend/src/settings.scss` had been repainting every primary button, active tab and eyebrow in the console green since 0051/0052 - including the sign-in screen, where it fought the mark. Removed; the console's own cyan, which was underneath it all along, is what shows. |
 
 ### Phase 8 — The workstation app, and signing in — **open**
 

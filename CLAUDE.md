@@ -40,6 +40,7 @@ good outcome; silence is not.
 | `src/Blinky.Agent.Ui` | Tray and prompts, in the user's session |
 | `src/Blinky.AdcsConnector` | DCOM `ICertRequest3`, `net10.0-windows` — a transport and nothing more, spec in [docs/15](docs/15-adcs-connector.md) |
 | `frontend/` | Angular console, pnpm |
+| `brand/` | The mark, as three SVGs plus the script that renders every icon from them |
 | `tools/` | Probes and the schema generator, not shipped |
 | `tests/Blinky.UnitTests` | xunit, one project, fixtures under `Fixtures/`. `net10.0-windows`, so that the connector is testable at all |
 | `scripts/` | Lab, CA and installer shell scripts — part of the product |
@@ -64,6 +65,12 @@ dotnet run --project tools/PivProbe -- transcript.json   # read-only, real card
 
 - **Package versions are central.** `Directory.Packages.props` holds every
   version; a `PackageReference` carries no `Version` attribute.
+- **The icons are generated, never hand-edited.** `brand/*.svg` are the
+  sources; `node brand/build-assets.mjs` rewrites every favicon, `.ico` and
+  PNG from them, and the outputs are committed. One mark serves the console,
+  the API, the agent service and the tray. Blinky CMS and BlinkyLite are one
+  family on purpose: same key, same tile, different accent — see
+  [brand/README.md](brand/README.md).
 - **The schema is generated, never hand-edited.** Change a mapping, then run
   `tools/SchemaTool` to rewrite `docker/postgres/001-schema.sql`.
   `SchemaValidator` compares the two at service start, and PostgreSQL only runs

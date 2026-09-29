@@ -33,6 +33,11 @@
 .brand strong {
   font-size: 1.18rem;
 }
+/* "Blinky" in the text colour, "CMS" in the accent - the wordmark from
+   brand/blinkycms-logo.svg, with the same split as BlinkyLite's. */
+.brand .cms {
+  color: #23cee1;
+}
 .brand small,
 .sidebar-footer small,
 .operator small {

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1280 400" width="1280" height="400">
+  <title>Blinky CMS</title>
+  <!--
+    The horizontal logo for the README and anything wide, built like
+    BlinkyLite's: the mark, then the name, then the line under it. "Blinky" in
+    white and the product in the accent - "Lite" there, "CMS" here.
+
+    Text is text, not outlines: a renderer without DM Sans falls back to
+    another bold sans, which changes the letters, not the logo.
+    blinkycms-logo.png is this file rendered (brand/build-assets.mjs), for
+    places that cannot show SVG.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0D1A2E"/>
+      <stop offset="1" stop-color="#050B14"/>
+    </linearGradient>
+    <linearGradient id="cms" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5AE3F3"/>
+      <stop offset="1" stop-color="#18C9DF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="400" rx="32" fill="url(#bg)"/>
+
+  <image href="blinkycms-mark.svg" xlink:href="blinkycms-mark.svg" x="72" y="64" width="272" height="272"/>
+
+  <text x="392" y="232" font-family="DM Sans, Segoe UI, Montserrat, Arial, sans-serif" font-size="150" font-weight="700" letter-spacing="-3">
+    <tspan fill="#FFFFFF">Blinky</tspan><tspan fill="url(#cms)">CMS</tspan>
+  </text>
+
+  <text x="398" y="300" font-family="DM Sans, Segoe UI, Montserrat, Arial, sans-serif" font-size="30" letter-spacing="6.5">
+    <tspan fill="#D3DEEC">YOUR KEY BLINKS.</tspan><tspan fill="#5AE3F3" dx="20">BLINKY IS WHY.</tspan>
+  </text>
+</svg>
