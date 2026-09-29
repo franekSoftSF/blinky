@@ -132,7 +132,7 @@
         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="28,20,28,20">
             <StackPanel>
                 <TextBlock x:Name="HeaderText" FontSize="26" FontWeight="Light"
-                           Foreground="{DynamicResource Accent}" />
+                           Foreground="{DynamicResource AccentText}" />
                 <TextBlock x:Name="SubHeaderText" FontSize="12" Margin="0,2,0,16"
                            Foreground="{DynamicResource TextMuted}" TextWrapping="Wrap" />
 
@@ -170,7 +170,7 @@
                                                    FontWeight="SemiBold"
                                                    HorizontalAlignment="Center"
                                                    VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource Accent}" />
+                                                   Foreground="{DynamicResource AccentText}" />
                                     </Border>
 
                                     <StackPanel Grid.Column="1" Margin="4,0,12,0">

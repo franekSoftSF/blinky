@@ -209,7 +209,7 @@ import { toDataURL } from 'qrcode';
         letter-spacing: -0.02em;
       }
       .wordmark .cms {
-        color: #23cee1;
+        color: var(--bl-accent-text);
       }
       .language {
         font: inherit;
@@ -247,14 +247,14 @@ import { toDataURL } from 'qrcode';
       details input {
         width: 100%;
         padding: 0.7rem 0.85rem;
-        border: 1px solid #1c2c44;
+        border: 1px solid var(--bl-border);
         border-radius: 10px;
-        background: #0b1626;
-        color: #eaf2ff;
+        background: var(--bl-field);
+        color: var(--bl-text);
       }
       .sign-in-form input:focus-visible,
       details input:focus-visible {
-        outline: 2px solid #23cee1;
+        outline: 2px solid var(--bl-accent-text);
         outline-offset: 1px;
       }
       .sign-in-form input[readonly] {
@@ -298,7 +298,7 @@ import { toDataURL } from 'qrcode';
         margin: 0;
         padding: 0.75rem 1rem;
         border-left: 3px solid currentColor;
-        color: #ff8993;
+        color: var(--bl-danger);
       }
     `,
   ],

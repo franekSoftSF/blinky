@@ -9,8 +9,8 @@
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #081321;
-  border-right: 1px solid #17273c;
+  background: var(--bl-surface);
+  border-right: 1px solid var(--bl-border);
   padding: 1.15rem;
 }
 .brand {
@@ -24,7 +24,7 @@
   height: 38px;
   object-fit: contain;
 }
-.brand span,
+.brand > span,
 .sidebar-footer span,
 .operator div {
   display: flex;
@@ -32,16 +32,18 @@
 }
 .brand strong {
   font-size: 1.18rem;
+  /* One line: the wordmark is a name, and "Blinky" over "CMS" reads as two. */
+  white-space: nowrap;
 }
 /* "Blinky" in the text colour, "CMS" in the accent - the wordmark from
    brand/blinkycms-logo.svg, with the same split as BlinkyLite's. */
 .brand .cms {
-  color: #23cee1;
+  color: var(--bl-accent-text);
 }
 .brand small,
 .sidebar-footer small,
 .operator small {
-  color: #647791;
+  color: var(--bl-text-faint);
   font-size: 0.68rem;
 }
 .sidebar nav {
@@ -55,17 +57,17 @@
   gap: 0.8rem;
   padding: 0.68rem 0.75rem;
   border-radius: 9px;
-  color: #8799b2;
+  color: var(--bl-text-muted);
   font-size: 0.84rem;
   font-weight: 600;
 }
 .sidebar nav a:hover {
-  background: #0e1d30;
-  color: #dce8f7;
+  background: var(--bl-hover);
+  color: var(--bl-text);
 }
 .sidebar nav a.active {
-  background: #102c3b;
-  color: #27d1e4;
+  background: var(--bl-accent-soft);
+  color: var(--bl-accent-text);
 }
 .nav-icon {
   width: 23px;
@@ -78,18 +80,18 @@
   gap: 0.7rem;
   margin-top: auto;
   padding: 0.85rem 0.5rem;
-  border-top: 1px solid #17273c;
+  border-top: 1px solid var(--bl-border);
   font-size: 0.75rem;
 }
 .status-dot {
   width: 8px;
   height: 8px;
-  background: #36d99c;
+  background: var(--bl-ok);
   border-radius: 50%;
-  box-shadow: 0 0 10px #36d99c;
+  box-shadow: 0 0 10px var(--bl-ok);
 }
 .status-dot.offline {
-  background: #f16d78;
+  background: var(--bl-danger);
   box-shadow: none;
 }
 .workspace {
@@ -101,8 +103,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 2rem;
-  border-bottom: 1px solid #17273c;
-  background: #081321bb;
+  border-bottom: 1px solid var(--bl-border);
+  background: var(--bl-surface-veil);
   backdrop-filter: blur(15px);
   position: sticky;
   top: 0;
@@ -117,7 +119,7 @@
 }
 .page-title small {
   font-size: 0.68rem;
-  color: #71839b;
+  color: var(--bl-text-muted);
 }
 .top-actions {
   display: flex;
@@ -127,10 +129,10 @@
 .icon-button {
   width: 36px;
   height: 36px;
-  border: 1px solid #23344b;
+  border: 1px solid var(--bl-border);
   border-radius: 9px;
-  background: #0c192a;
-  color: #9dafc6;
+  background: var(--bl-surface);
+  color: var(--bl-text-body);
   cursor: pointer;
 }
 .menu {
@@ -147,8 +149,8 @@
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: #173349;
-  color: #28d0e2;
+  background: var(--bl-accent-soft);
+  color: var(--bl-accent-text);
   font-size: 0.7rem;
   font-weight: 700;
 }
@@ -176,15 +178,15 @@ main {
 .metric {
   display: flex;
   gap: 1rem;
-  background: linear-gradient(145deg, #0e1c30, #0b1728);
-  border: 1px solid #1d2e45;
+  background: linear-gradient(145deg, var(--bl-panel-raised), var(--bl-panel));
+  border: 1px solid var(--bl-border);
   border-radius: 15px;
   padding: 1.2rem;
   transition: 0.2s;
 }
 .metric:hover {
   transform: translateY(-2px);
-  border-color: #285069;
+  border-color: var(--bl-accent-border);
 }
 .metric-icon {
   display: grid;
@@ -192,8 +194,8 @@ main {
   width: 42px;
   height: 42px;
   border-radius: 12px;
-  background: #102f40;
-  color: #22cee1;
+  background: var(--bl-accent-soft);
+  color: var(--bl-accent-text);
   font-size: 1.35rem;
 }
 .metric div {
@@ -201,7 +203,7 @@ main {
   flex-direction: column;
 }
 .metric small {
-  color: #8294ac;
+  color: var(--bl-text-muted);
   font-size: 0.72rem;
 }
 .metric strong {
@@ -209,7 +211,7 @@ main {
   line-height: 1.2;
 }
 .metric em {
-  color: #6d819a;
+  color: var(--bl-text-faint);
   font-size: 0.68rem;
   font-style: normal;
 }
@@ -223,7 +225,7 @@ main {
   align-items: center;
   gap: 0.75rem;
   padding: 1rem 1.25rem;
-  border-top: 1px solid #18263a;
+  border-top: 1px solid var(--bl-border);
 }
 .health-row:first-of-type {
   border: 0;
@@ -238,7 +240,7 @@ main {
 }
 .health-row small {
   font-size: 0.68rem;
-  color: #71839b;
+  color: var(--bl-text-muted);
 }
 .service-icon {
   display: grid;
@@ -246,14 +248,14 @@ main {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: #13283e;
-  color: #25cadc;
+  background: var(--bl-accent-soft);
+  color: var(--bl-accent-text);
   font-size: 0.65rem;
   font-weight: 700;
 }
 .pill.muted {
-  color: #ff8993;
-  background: #441e2a;
+  color: var(--bl-danger);
+  background: var(--bl-danger-soft);
 }
 .list-actions {
   display: flex;
@@ -263,18 +265,18 @@ main {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  border: 1px solid #22344c;
+  border: 1px solid var(--bl-border);
   border-radius: 10px;
   padding: 0 0.75rem;
-  background: #0a1728;
-  color: #71839b;
+  background: var(--bl-field);
+  color: var(--bl-text-muted);
 }
 .search input {
   width: 190px;
   border: 0;
   outline: 0;
   background: transparent;
-  color: #dce7f5;
+  color: var(--bl-text-body);
 }
 .list-panel {
   min-height: 390px;
@@ -291,7 +293,7 @@ main {
   max-width: 560px;
 }
 .setting-copy p {
-  color: #8092aa;
+  color: var(--bl-text-muted);
   font-size: 0.82rem;
   margin: 0;
 }
@@ -304,15 +306,15 @@ main {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  color: #8496ae;
+  color: var(--bl-text-muted);
   font-size: 0.72rem;
 }
 .settings input {
   min-width: 260px;
-  border: 1px solid #273952;
+  border: 1px solid var(--bl-border-strong);
   border-radius: 9px;
-  background: #081522;
-  color: #e6eef9;
+  background: var(--bl-field);
+  color: var(--bl-text);
   padding: 0.68rem 0.8rem;
   outline: 0;
 }
@@ -373,7 +375,7 @@ main {
   gap: 0.2rem;
   margin-top: 0.85rem;
   padding-top: 0.8rem;
-  border-top: 1px solid #17273c;
+  border-top: 1px solid var(--bl-border);
 }
 .nav-group-toggle {
   display: flex;
@@ -384,14 +386,14 @@ main {
   border: 0;
   background: transparent;
   cursor: pointer;
-  color: #4f695e;
+  color: var(--bl-text-faint);
   font-size: 0.56rem;
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 .nav-group-toggle:hover {
-  color: #79a68f;
+  color: var(--bl-text-muted);
 }
 .group-chevron {
   font-size: 0.8rem;
@@ -417,11 +419,11 @@ main {
   left: -0.5rem;
   width: 1px;
   height: 100%;
-  background: #1b392d;
+  background: var(--bl-border);
 }
 .sidebar nav a.subnav-link.active::before {
   width: 2px;
-  background: #54dc8d;
+  background: var(--bl-accent-text);
 }
 .sidebar nav a.subnav-link .nav-icon {
   font-size: 0.85rem;

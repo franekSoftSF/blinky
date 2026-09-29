@@ -41,7 +41,7 @@ good outcome; silence is not.
 | `src/Blinky.AdcsConnector` | DCOM `ICertRequest3`, `net10.0-windows` — a transport and nothing more, spec in [docs/15](docs/15-adcs-connector.md) |
 | `frontend/` | Angular console, pnpm |
 | `brand/` | The mark, as three SVGs plus the script that renders every icon from them |
-| `tools/` | Probes and the schema generator, not shipped |
+| `tools/` | Probes, the schema generator and the palette generator, not shipped |
 | `tests/Blinky.UnitTests` | xunit, one project, fixtures under `Fixtures/`. `net10.0-windows`, so that the connector is testable at all |
 | `scripts/` | Lab, CA and installer shell scripts — part of the product |
 | `docs/` | Numbered design documents plus the two status files |
@@ -55,6 +55,7 @@ docker compose up -d --build      # api, worker, postgres, console, edge
 ./smoke-test.sh                   # 13 checks against a running stack
 BLINKY_HOST=blinky.lab ./smoke-test.sh
 dotnet run --project tools/SchemaTool -- docker/postgres/001-schema.sql
+dotnet run --project tools/PaletteTool                    # colours -> tokens.scss + Themes/*.xaml
 dotnet run --project tools/PivProbe -- transcript.json   # read-only, real card
 ```
 
@@ -71,6 +72,13 @@ dotnet run --project tools/PivProbe -- transcript.json   # read-only, real card
   the API, the agent service and the tray. Blinky CMS and BlinkyLite are one
   family on purpose: same key, same tile, different accent — see
   [brand/README.md](brand/README.md).
+- **The palette is generated, never hand-edited.** Every colour lives in
+  `tools/PaletteTool/Palette.cs` as a role in two themes;
+  `dotnet run --project tools/PaletteTool` rewrites `frontend/src/tokens.scss`
+  and both `Blinky.Agent.Ui/Themes/*.xaml`. A stylesheet or component that
+  carries a hex fails `PaletteTests`, and so does a generated file somebody
+  edited. The console had 269 colours before this rule and the tray UI a blue
+  of its own.
 - **The schema is generated, never hand-edited.** Change a mapping, then run
   `tools/SchemaTool` to rewrite `docker/postgres/001-schema.sql`.
   `SchemaValidator` compares the two at service start, and PostgreSQL only runs

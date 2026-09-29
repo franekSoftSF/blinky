@@ -33,6 +33,10 @@ What varies is what the products differ in:
 
 ## Rules
 
+- **The colours are not here.** The mark's accent is the console's, and the
+  console's colours are roles in `tools/PaletteTool/Palette.cs` (0099). If the
+  accent ever moves, it moves there first and the two SVGs follow.
+
 - **There is one mark for the whole product.** The console, the API, the
   workstation service and its tray UI all resolve to these two SVGs. Until
   0098 the service and the API had different artwork, which is how a person
