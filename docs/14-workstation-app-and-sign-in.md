@@ -236,6 +236,41 @@ shared token can be deleted rather than merely deprecated.
 
 0053a, the certificate, is the upgrade after that and is not in the way of it.
 
+### Where the session lives, since 0101
+
+**The paragraph above describes what was.** `0086`, `0053b` and `0053e` are
+done: accounts exist, a session can be ended, and the shared token is gone from
+the console and from the API. What `0101` changed is where that session is
+kept.
+
+It was a token in `sessionStorage`, sent as `Authorization: Bearer`. Any script
+on the page could read it — and in an administrative console that can revoke a
+credential and disclose a PUK, an injected script is then a stolen session
+rather than a defaced page. This repository has already seen the softer version
+of that failure: a form without `FormsModule` submitted natively and put a
+password in the address bar, from where it reached nginx's log and the
+browser's history.
+
+The session is now a cookie: `blinky_session`, `HttpOnly`, `Secure`,
+`SameSite=Strict`, `Path=/`, expiring with the session row it names. No script
+can read it, and the console does not attach it — the browser does.
+
+The cost taken on knowingly is CSRF, because a cookie the browser attaches by
+itself is a cookie another site can make it attach. Two defences answer it.
+`SameSite=Strict` is the first, and is enforced only by the browser.
+Double-submit is the second: `blinky_csrf` is set alongside, deliberately
+readable, and every state-changing operator request has to echo it in
+`X-Blinky-Csrf`. A foreign page can cause our cookies to be sent; it cannot
+read them, so it cannot produce that header. The check lives in
+`AgentAuthenticationMiddleware` — one place — and exempts only the three routes
+of the sign-in ceremony itself, which run before a session exists.
+
+The shape is [Winch](https://github.com/franekSoftSF/Winch)'s, from its ADR
+0009, which reached the same decision first and wrote down the reasoning. Two
+sibling products answering this question differently would mean two sets of
+mistakes to make; a machine-to-machine credential gets added here when there is
+a machine consumer, and not before.
+
 ## Enrol on behalf of
 
 Patch **0023a** is already in the roadmap and already marked *essential*: an

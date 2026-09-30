@@ -76,6 +76,11 @@ export class App {
         void this.store.load(true);
       }
     });
+
+    // Who the cookie belongs to. The name and the role are not in the browser
+    // any more (0101), so a refreshed page has to ask - and asking is also how
+    // a session ended from another machine turns into a sign-in screen here.
+    void this.auth.restore();
   }
   protected refresh(): void {
     void this.store.load(true);

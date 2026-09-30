@@ -120,9 +120,13 @@ dotnet run --project tools/PivProbe -- transcript.json   # read-only, real card
 - **Untracked and irreplaceable:** `.env` (holds the management-key master and
   `PUK_KEK`), `ca/`, `certs/`, `.lab/`. They are gitignored on purpose. Do not
   commit them, and do not assume a fresh clone has them.
-- The console still authenticates with one shared `X-Blinky-Operator` token.
-  It is a known hole with a plan (0053a–e); do not build new things that depend
-  on it lasting.
+- **The console's session is a cookie, and never a token in JavaScript.**
+  `blinky_session` is `HttpOnly`, `Secure`, `SameSite=Strict`; `blinky_csrf` is
+  readable on purpose and every state-changing operator request echoes it in
+  `X-Blinky-Csrf`. The shared `X-Blinky-Operator` token is gone (0053e) and so
+  is the bearer token in `sessionStorage` (0101) — do not reintroduce either
+  for a script's convenience. `AuthRouteTests` and `SessionCookieTests` guard
+  it.
 
 ## Documentation is part of the change, not a follow-up
 
