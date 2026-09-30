@@ -1,0 +1,17 @@
+# The console's build context is this directory, so the repository root's
+# .dockerignore never applied to it - Docker only reads the one next to the
+# context. Without this file `COPY . .` copied the developer's own
+# node_modules over the one pnpm had just installed in the image, and the
+# build died on `Cannot find module '/src/node_modules/@angular/cli/bin/ng.js'`:
+# pnpm's tree is full of symlinks into a store that does not exist in the
+# container, and on Windows they are not even the same kind of link.
+#
+# It failed on every machine that had ever run `pnpm install` here and nowhere
+# else, which is why CI - a clean checkout - never saw it (0100).
+node_modules
+dist
+.angular
+
+# Nothing the build needs, and every byte here is one copied into the daemon.
+.vscode
+*.log
