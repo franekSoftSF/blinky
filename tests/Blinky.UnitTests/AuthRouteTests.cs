@@ -148,12 +148,51 @@ public class AuthRouteTests
     /// <summary>
     /// And the console has no second way in either.
     /// </summary>
+    /// <remarks>
+    /// Since 0101 it has no way in that it writes itself: the session is a
+    /// cookie the browser attaches, and the one header the console adds is the
+    /// anti-CSRF token, in the interceptor and nowhere else.
+    /// </remarks>
     [Fact]
     public void The_console_presents_only_its_session()
     {
         var store = SourceOf("frontend", "src", "app", "core", "console.store.ts");
 
         Assert.DoesNotContain("X-Blinky-Operator", store, StringComparison.Ordinal);
-        Assert.Contains("this.auth.authorization()", store, StringComparison.Ordinal);
+        Assert.DoesNotContain("Authorization", store, StringComparison.Ordinal);
+        Assert.DoesNotContain("headers:", store, StringComparison.Ordinal);
+
+        var interceptor = SourceOf("frontend", "src", "app", "core", "credentials.interceptor.ts");
+
+        Assert.Contains("withCredentials: true", interceptor, StringComparison.Ordinal);
+        Assert.Contains("X-Blinky-Csrf", interceptor, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The session is not anywhere a script can read it.
+    /// </summary>
+    /// <remarks>
+    /// The store used to keep it in <c>sessionStorage</c> and send it as a
+    /// bearer token. Both are checked in the source rather than by behaviour,
+    /// because either one coming back would work perfectly and silently undo
+    /// 0101.
+    /// </remarks>
+    [Fact]
+    public void The_session_token_never_reaches_javascript()
+    {
+        var store = SourceOf("frontend", "src", "app", "core", "auth.store.ts");
+
+        Assert.DoesNotContain("sessionStorage.setItem", store, StringComparison.Ordinal);
+        Assert.DoesNotContain("sessionStorage.getItem", store, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bearer ${", store, StringComparison.Ordinal);
+
+        var program = SourceOf("src", "Blinky.Api", "Program.cs");
+
+        // The sign-in response carries who you are, never the token itself.
+        // Matched against the response object rather than the word, which also
+        // appears where the token is put into the cookie.
+        Assert.False(
+            Regex.IsMatch(program, "outcome = \"signed-in\",\\s+token,"),
+            "the sign-in response is handing the session token back to JavaScript");
     }
 }

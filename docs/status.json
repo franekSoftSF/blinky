@@ -18,7 +18,7 @@
     ]
   },
   "status": {
-    "updated": "2026-09-29",
+    "updated": "2026-09-30",
     "phase": 2,
     "phaseTitle": "Issue something",
     "state": "gate-met",
@@ -1116,6 +1116,15 @@
       "owner": "cloud-ai",
       "proof": "Not started. docker compose build console fails in pnpm build with Cannot find module '/src/node_modules/@angular/cli/bin/ng.js'. The same build fails on main without 0099, so it is not that patch; pnpm-workspace.yaml carries minimumReleaseAgeExclude entries, which is the first place to look.",
       "gap": "Nothing can be brought up with docker compose until this is fixed, which also blocks ./smoke-test.sh."
+    },
+    {
+      "id": "0101",
+      "phase": 5,
+      "title": "The console's session leaves JavaScript",
+      "state": "done-unverified",
+      "owner": "cloud-ai",
+      "proof": "The session token was kept in sessionStorage and sent as Authorization: Bearer, so any script on the page could read the one secret that can revoke a credential or disclose a PUK - and this console has already put a password in the address bar once, through a form that submitted natively. It is now the blinky_session cookie: HttpOnly, Secure, SameSite=Strict, Path=/, expiring with the session row. The sign-in response carries who you are and not the token. CSRF is answered by double-submit - a deliberately readable blinky_csrf cookie echoed in X-Blinky-Csrf, compared in AgentAuthenticationMiddleware, 403 when absent, exempting only sign-in, totp/enrol and password, which run before a session exists. The API reads no session header any more. Shape taken from Winch's ADR 0009. Eleven new tests over the cookie flags, the comparison and the source paths that must stay closed; 683 .NET tests and 20 console tests pass, the console builds.",
+      "gap": "No request has been through it: Docker Desktop was not running, so neither the stack nor a local API against a database could be started, and 0100 blocks the container path anyway. The claim to prove, in a browser: signing in sets both cookies with those flags and no token in the body, the console survives a refresh, document.cookie does not contain the session, a POST with X-Blinky-Csrf stripped comes back 403, and signing out removes both cookies. Everyone signed in at the moment of deployment is signed out once, because their old token is no longer read."
     },
     {
       "id": "0080",

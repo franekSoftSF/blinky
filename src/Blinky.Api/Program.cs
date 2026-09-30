@@ -557,11 +557,18 @@ app.MapPost("/api/auth/sign-in",
         second.Save(issued);
         finishing.Commit();
 
-        // The token exists in this response and nowhere else afterwards.
+        // The token leaves this process once, into a cookie no script can
+        // read, and is never in the body (0101). What the console gets back is
+        // who it is - enough to draw the shell, useless to anybody who steals it.
+        SessionCookie.Issue(
+            context.Response,
+            token,
+            SessionCookie.NewCsrfToken(),
+            issued.AbsoluteExpiresAt);
+
         return Results.Ok(new
         {
             outcome = "signed-in",
-            token,
             expires = issued.AbsoluteExpiresAt,
             operatorName = confirming.DisplayName,
             role = confirming.Role.ToString(),
@@ -665,6 +672,11 @@ app.MapPost("/api/auth/sign-out",
 
         transaction.Commit();
 
+        // Revoked in the database and gone from the browser. Leaving the cookie
+        // behind would mean every later request carried a session the server
+        // has already refused, and the console would read that as an outage.
+        SessionCookie.Clear(context.Response);
+
         return Results.Ok(new { outcome = "signed-out" });
     });
 
@@ -720,7 +732,9 @@ app.MapPost("/api/auth/sessions/revoke-all",
 
         // Including the one that asked. "Everywhere" that quietly means
         // "everywhere else" is the wrong answer when somebody believes their
-        // session has been taken.
+        // session has been taken - so this browser loses its cookies too.
+        SessionCookie.Clear(context.Response);
+
         return Results.Ok(new { outcome = "signed-out-everywhere", sessionsEnded = ended });
     });
 
@@ -2321,32 +2335,17 @@ static string ActorFor(HttpContext context) =>
         : "unknown";
 
 /// <summary>
-/// The bearer token a signed-in console presents, from either header.
+/// The session token this request carries, from the cookie.
 /// </summary>
 /// <remarks>
-/// <c>Authorization: Bearer</c> is what anything generic will send. The second
-/// name exists because the console is served from the same origin as the API
-/// behind one proxy, and a deployment that already strips or rewrites
-/// Authorization for something else should not take the console down with it.
+/// One place, and one source. Until 0101 this read two headers, which meant
+/// the token had to live somewhere a script could reach - and an XSS in an
+/// administrative console is then a stolen session rather than a defaced page.
+/// A machine client gets its own credential when there is a machine client;
+/// two ways in from the first day is two ways to get it wrong.
 /// </remarks>
-static string? SessionTokenFrom(HttpContext context)
-{
-    var authorization = context.Request.Headers.Authorization.ToString();
-
-    if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-    {
-        var value = authorization["Bearer ".Length..].Trim();
-
-        if (value.Length > 0)
-        {
-            return value;
-        }
-    }
-
-    var header = context.Request.Headers["X-Blinky-Session"].ToString();
-
-    return string.IsNullOrWhiteSpace(header) ? null : header.Trim();
-}
+static string? SessionTokenFrom(HttpContext context) =>
+    SessionCookie.TokenFrom(context.Request);
 
 /// <summary>
 /// The account behind a presented session token, or null.

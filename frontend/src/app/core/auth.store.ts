@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { readCookie } from './credentials.interceptor';
 import { firstValueFrom } from 'rxjs';
 
 /**
@@ -16,9 +17,10 @@ export type SignInStage =
   | 'totp-required'
   | 'signed-in';
 
+const CSRF_COOKIE = 'blinky_csrf';
+
 interface SignInResponse {
   outcome: string;
-  token?: string;
   expires?: string;
   operatorName?: string;
   role?: string;
@@ -30,27 +32,28 @@ interface EnrolResponse {
 }
 
 /**
- * The session token lives in `sessionStorage`, which is a change of stance from
- * the shared operator token and deserves its reason.
+ * There is no token in here any more (0101).
  *
- * That token was kept in memory only, because it was one secret shared by
- * everybody, it never expired and nothing could withdraw it - anything that
- * outlived the tab was a liability. A session token is the opposite on all
- * three counts: it belongs to one person, it dies of idleness and of age, and
- * an administrator can end it from the server in the second they decide to.
- * Those are exactly the properties that make surviving a page refresh
- * acceptable, and being logged out by F5 is how an administrative console
- * teaches people to leave themselves signed in somewhere else.
+ * It used to live in `sessionStorage` and travel as `Authorization: Bearer`,
+ * which meant every script on the page could read the one thing that lets
+ * somebody revoke credentials and disclose PUKs. It is now a cookie the
+ * browser will not show JavaScript, attached by the browser itself; what this
+ * store keeps is who the person is, which is only enough to draw the shell.
+ *
+ * `blinky_csrf` is the readable half of double-submit and has the same
+ * lifetime as the session, so its presence is what lets a refreshed page show
+ * the console rather than the sign-in screen for as long as it takes to ask
+ * the server. A stale one costs one 401 and a redirect, which is what
+ * `forget()` is for.
  */
-const STORAGE_KEY = 'blinky.session';
-
 @Injectable({ providedIn: 'root' })
 export class AuthStore {
   private readonly http = inject(HttpClient);
 
-  private readonly token = signal<string>(readStoredToken());
+  private readonly session = signal<boolean>(readCookie(CSRF_COOKIE) !== null);
 
-  readonly stage = signal<SignInStage>(readStoredToken() ? 'signed-in' : 'credentials');
+  readonly stage = signal<SignInStage>(
+    readCookie(CSRF_COOKIE) !== null ? 'signed-in' : 'credentials');
   readonly operatorName = signal<string | null>(null);
   readonly role = signal<string | null>(null);
   readonly busy = signal(false);
@@ -59,12 +62,29 @@ export class AuthStore {
   /** The secret and URI, shown once while a second factor is being enrolled. */
   readonly enrolment = signal<EnrolResponse | null>(null);
 
-  readonly signedIn = computed(() => this.token().length > 0);
+  readonly signedIn = computed(() => this.session());
 
-  /** For every other request the console makes. */
-  authorization(): HttpHeaders | undefined {
-    const token = this.token();
-    return token ? new HttpHeaders({ Authorization: `Bearer ${token}` }) : undefined;
+  /**
+   * Asks the server who this browser is, once, at startup.
+   *
+   * The cookie says a session existed when the page was last loaded; only the
+   * server knows whether it still does, and whether it has been ended from
+   * somewhere else in the meantime.
+   */
+  async restore(): Promise<void> {
+    if (!this.session()) {
+      return;
+    }
+
+    try {
+      const me = await firstValueFrom(
+        this.http.get<{ operatorName?: string; displayName?: string; role?: string }>('/api/auth/me'));
+
+      this.operatorName.set(me.displayName ?? me.operatorName ?? null);
+      this.role.set(me.role ?? null);
+    } catch {
+      this.forget();
+    }
   }
 
   /**
@@ -125,14 +145,10 @@ export class AuthStore {
   }
 
   async signOut(): Promise<void> {
-    const headers = this.authorization();
-
-    if (headers) {
-      try {
-        await firstValueFrom(this.http.post('/api/auth/sign-out', {}, { headers }));
-      } catch {
-        // The server may have ended it already, which is the same outcome.
-      }
+    try {
+      await firstValueFrom(this.http.post('/api/auth/sign-out', {}));
+    } catch {
+      // The server may have ended it already, which is the same outcome.
     }
 
     this.forget();
@@ -140,42 +156,27 @@ export class AuthStore {
 
   /** Ends every session for this account, this one included. */
   async signOutEverywhere(): Promise<void> {
-    const headers = this.authorization();
-
-    if (headers) {
-      await firstValueFrom(this.http.post('/api/auth/sessions/revoke-all', {}, { headers }));
-    }
-
+    await firstValueFrom(this.http.post('/api/auth/sessions/revoke-all', {}));
     this.forget();
   }
 
   /** Called when any request comes back 401, so a withdrawn session shows. */
   forget(): void {
-    this.token.set('');
+    this.session.set(false);
     this.operatorName.set(null);
     this.role.set(null);
     this.enrolment.set(null);
     this.stage.set('credentials');
-
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // A browser with storage disabled simply keeps nothing.
-    }
   }
 
   private accept(response: SignInResponse): void {
-    this.token.set(response.token ?? '');
+    // The session arrived as a cookie with this response; there is nothing to
+    // store, and the readable half tells a later page load it was here.
+    this.session.set(true);
     this.operatorName.set(response.operatorName ?? null);
     this.role.set(response.role ?? null);
     this.enrolment.set(null);
     this.stage.set('signed-in');
-
-    try {
-      sessionStorage.setItem(STORAGE_KEY, response.token ?? '');
-    } catch {
-      // Not fatal: the session simply does not survive a refresh.
-    }
   }
 
   private async run(work: () => Promise<void>): Promise<void> {
@@ -192,13 +193,7 @@ export class AuthStore {
   }
 }
 
-function readStoredToken(): string {
-  try {
-    return sessionStorage.getItem(STORAGE_KEY) ?? '';
-  } catch {
-    return '';
-  }
-}
+
 
 /**
  * The server's own sentence where it sent one.

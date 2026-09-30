@@ -7,10 +7,11 @@ import { provideRouter } from '@angular/router';
 
 describe('App', () => {
   beforeEach(async () => {
-    // Nothing signed in unless a test says so: sessionStorage survives between
-    // cases in the same environment, and a leftover token would make the shell
-    // appear in the test that exists to prove it does not.
-    sessionStorage.clear();
+    // Nothing signed in unless a test says so. The session is a cookie now
+    // (0101) and cookies survive between cases in the same environment, so a
+    // leftover one would make the shell appear in the test that exists to
+    // prove it does not.
+    document.cookie = 'blinky_csrf=; Max-Age=0; path=/';
 
     await TestBed.configureTestingModule({
       imports: [App],
@@ -43,8 +44,7 @@ describe('App', () => {
 
   it('should render the product name once signed in', async () => {
     const auth = TestBed.inject(AuthStore);
-    sessionStorage.setItem('blinky.session', 'a-session-token');
-    (auth as unknown as { token: { set(value: string): void } }).token.set('a-session-token');
+    (auth as unknown as { session: { set(value: boolean): void } }).session.set(true);
 
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();

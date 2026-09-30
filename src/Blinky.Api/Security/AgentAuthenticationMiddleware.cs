@@ -41,6 +41,23 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
     /// here. Whoever adds an operator endpoint adds it here too; the tests in
     /// OperatorRouteTests hold that.
     /// </remarks>
+    /// <summary>
+    /// The operator routes that change something without a session behind them
+    /// yet, and so cannot be asked for an anti-CSRF token.
+    /// </summary>
+    /// <remarks>
+    /// Signing in is the obvious one: there is no session cookie to double
+    /// submit, and requiring one would mean a stale cookie from a previous day
+    /// could stop somebody signing in. The other two are steps of the same
+    /// ceremony and carry a password of their own.
+    /// </remarks>
+    public static readonly string[] CsrfExemptPaths =
+    [
+        "/api/auth/sign-in",
+        "/api/auth/totp/enrol",
+        "/api/auth/password",
+    ];
+
     public static readonly string[] OperatorPaths =
     [
         "/api/console/overview",
@@ -105,10 +122,9 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
     /// </remarks>
     private void ResolveSession(HttpContext context, Database database)
     {
-        var authorization = context.Request.Headers.Authorization.ToString();
-        var presented = authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
-            ? authorization["Bearer ".Length..].Trim()
-            : context.Request.Headers["X-Blinky-Session"].ToString().Trim();
+        // The cookie and nothing else since 0101. A header meant the token had
+        // to be somewhere a script could read it, which is the whole defect.
+        var presented = SessionCookie.TokenFrom(context.Request);
 
         if (string.IsNullOrEmpty(presented))
         {
@@ -177,6 +193,20 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
             // token, which is what still carries the scripts until 0053e.
             ResolveSession(context, database);
 
+            if (RequiresCsrf(context, IsOperatorRoute()) && !SessionCookie.HasCsrf(context.Request))
+            {
+                // 403 rather than 401: the session is fine, the request is not.
+                // Answering 401 would send the console to the sign-in screen
+                // for a header it simply failed to attach.
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(new
+                {
+                    error = $"{SessionCookie.CsrfHeader} is required on this request",
+                });
+
+                return;
+            }
+
             await next(context);
             return;
         }
@@ -233,6 +263,35 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
 
         context.Items["agent"] = agent;
         await next(context);
+    }
+
+    /// <summary>
+    /// Whether this request has to prove it came from our own page.
+    /// </summary>
+    /// <remarks>
+    /// Only when a session cookie is actually present: without one the request
+    /// is unauthenticated anyway and the handler refuses it for that reason,
+    /// which is a better answer than one about a header. Safe methods are left
+    /// alone - a cross-site GET cannot change anything, and every operator GET
+    /// here only reads.
+    /// </remarks>
+    private static bool RequiresCsrf(HttpContext context, bool isOperatorRoute)
+    {
+        if (!isOperatorRoute || SessionCookie.TokenFrom(context.Request) is null)
+        {
+            return false;
+        }
+
+        if (HttpMethods.IsGet(context.Request.Method)
+            || HttpMethods.IsHead(context.Request.Method)
+            || HttpMethods.IsOptions(context.Request.Method))
+        {
+            return false;
+        }
+
+        var path = context.Request.Path;
+
+        return !CsrfExemptPaths.Any(p => path.Equals(p, StringComparison.OrdinalIgnoreCase));
     }
 
     private static Task Deny(HttpContext context, string reason)

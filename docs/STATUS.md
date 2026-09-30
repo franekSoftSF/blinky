@@ -1,6 +1,6 @@
 # Project status — Blinky
 
-**Last updated:** 2026-09-29
+**Last updated:** 2026-09-30
 **Phase:** 2 — Issue something. **The gate is met**
 **Overall:** on 24 August 2026 a person logged into the lab domain with a card
 this system personalised and issued, against a Samba4 KDC, with no ADCS anywhere
@@ -532,6 +532,7 @@ in front of a person and the lifecycle jobs were not.
 | 0098 | Cloud.AI | One mark for the whole product | **done** | The console, its sign-in screen, the favicon, the API, the agent service and the tray icon all render one mark, generated from `brand/*.svg`. It is BlinkyLite's key-in-an-arc in this console's cyan, with a node at each end of the arc - two products, one family, and the difference is the accent and the nodes rather than a second silhouette. The hexagon-and-eye artwork is gone, and so is `scripts/build-icons.ps1`, which made the 16 px tray icon by downscaling the detailed drawing. One accent, too: a block of `!important` overrides at the top of `frontend/src/settings.scss` had been repainting every primary button, active tab and eyebrow in the console green since 0051/0052 - including the sign-in screen, where it fought the mark. Removed; the console's own cyan, which was underneath it all along, is what shows. |
 | 0099 | Cloud.AI | One palette, generated into the console and the tray | **done** | The console carried 269 distinct colours - forty of them the same green a digit apart - and the WPF tray UI a blue of its own. Both now come out of `tools/PaletteTool`: 29 roles, two themes, written into `frontend/src/tokens.scss` and both theme dictionaries. Eight tests hold it: contrast of every text pair, both themes defining the same roles, the committed files matching the generator, every brush a view asks for existing, and no stylesheet carrying a colour of its own. Seen in a browser in both themes: sign-in, overview and settings. The light theme now reaches the settings and deployment pages, which had no light rules at all |
 | 0100 | Cloud.AI | The console's container image builds again | **open** | `docker compose build console` dies in `pnpm build` - `Cannot find module '/src/node_modules/@angular/cli/bin/ng.js'`. It fails the same way on `main` without 0099, so it predates it; found because the stack was the way to look at every page at once, and the dev server had to do instead |
+| 0101 | Cloud.AI | The console's session leaves JavaScript | **done-unverified** | The session token lived in `sessionStorage` and travelled as `Authorization: Bearer`, so every script on the page could read the one secret that revokes credentials and discloses PUKs. It is now `blinky_session` - `HttpOnly`, `Secure`, `SameSite=Strict` - set by the API and attached by the browser; the sign-in response no longer carries the token at all. CSRF is answered by double-submit: a readable `blinky_csrf` cookie echoed in `X-Blinky-Csrf`, checked in the middleware, exempting only the three routes of the sign-in ceremony. The shape is Winch's ADR 0009, which decided the same question first. Eleven tests, 683 .NET and 20 console tests pass |
 
 ### Phase 8 — The workstation app, and signing in — **open**
 

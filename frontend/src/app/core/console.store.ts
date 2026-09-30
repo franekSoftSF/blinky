@@ -1,4 +1,4 @@
-import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 import { AuthStore } from './auth.store';
 import { firstValueFrom } from 'rxjs';
@@ -217,15 +217,8 @@ export class ConsoleStore {
     jobs: [],
   });
   readonly deployment = signal<SystemStatus | null>(null);
-  /**
-   * One way in, as of 0053e. The shared operator header is gone from here and
-   * from the API; what is left is the session this browser signed in with.
-   */
-  private headers(): HttpHeaders | undefined {
-    return this.auth.authorization();
-  }
   private async post<T>(url: string, body: unknown = {}): Promise<T> {
-    return firstValueFrom(this.http.post<T>(url, body, { headers: this.headers() }));
+    return firstValueFrom(this.http.post<T>(url, body));
   }
   async load(force = false): Promise<void> {
     if (this.loading() && !force) return;
@@ -234,7 +227,7 @@ export class ConsoleStore {
     try {
       this.snapshot.set(
         await firstValueFrom(
-          this.http.get<ConsoleSnapshot>('/api/console/overview', { headers: this.headers() }),
+          this.http.get<ConsoleSnapshot>('/api/console/overview'),
         ),
       );
       this.online.set(true);
@@ -261,7 +254,7 @@ export class ConsoleStore {
   }
   helpdesk(serial: number): Promise<HelpdeskView> {
     return firstValueFrom(
-      this.http.get<HelpdeskView>(`/api/tokens/${serial}/helpdesk`, { headers: this.headers() }),
+      this.http.get<HelpdeskView>(`/api/tokens/${serial}/helpdesk`),
     );
   }
   suspendCredential(id: string): Promise<MutationResult> {
@@ -287,7 +280,7 @@ export class ConsoleStore {
   }
   async systemStatus(): Promise<SystemStatus> {
     const status = await firstValueFrom(
-      this.http.get<SystemStatus>('/api/system/status', { headers: this.headers() }),
+      this.http.get<SystemStatus>('/api/system/status'),
     );
     this.deployment.set(status);
     return status;
