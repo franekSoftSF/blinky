@@ -260,6 +260,24 @@ in advance.
 | The token vanishes from Windows | It is attached to WSL2 |
 | Smart-card logon fails but the certificate looks perfect | The issuing CA is not in `NTAuthCertificates`, or the KDC has no PKINIT certificate — see [04](04-pki-backends.md#strong-certificate-mapping) |
 
+## The edge certificate from the domain's own CA
+
+A browser or agent in the domain trusts the domain's root already, so the edge is
+best given a certificate from it rather than Blinky's own: a *Web Server* template,
+the console's name in the SAN, exported as a PFX with the whole chain. Copy it to
+the server and:
+
+```
+cd ~/blinky && sudo bash scripts/install-edge-pfx.sh --pfx /tmp/blinky-cms.pfx
+```
+
+It checks the password (including a Windows export in RC2/3DES), that the key
+matches, the name, the dates, the server-authentication usage and the chain;
+keeps the old pair; restarts the edge; and confirms 8443 serves the new one. Done
+on BY-CACMS on 2026-10-08 with `blinky-cms.ad.digitalworkspace.pl` from
+*DigitalWorkspace Issuing CA - homelab*; Windows trusted 8443 and 9443 with no
+exception. Shred the PFX afterwards: it carries the key.
+
 ## The ADCS connector on a Windows member server, through a tunnel
 
 HZCS01 (`172.16.2.40`), Windows Server 2022, joined to `ad.digitalworkspace.pl`.
