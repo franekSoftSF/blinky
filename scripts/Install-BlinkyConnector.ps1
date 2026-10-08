@@ -31,6 +31,10 @@
 .PARAMETER EnrolmentAgentThumbprint
     An enrolment agent certificate already in LocalMachine\My.
 
+.PARAMETER KeyAlreadyGranted
+    The service account was given Read on the agent key by hand (certlm.msc, Manage
+    Private Keys), for a key with no file to grant - in a TPM, for one.
+
 .PARAMETER EnrolmentAgentTemplate
     With no thumbprint: the template to request a computer-bound enrolment agent
     certificate from, e.g. MachineEnrollmentAgent. MS-CONN01$ needs Enroll on it.
@@ -47,7 +51,8 @@ param(
     [string] $EnrolmentAgentThumbprint,
     [string] $EnrolmentAgentTemplate,
     [string] $CaConfig,
-    [string] $Msi
+    [string] $Msi,
+    [switch] $KeyAlreadyGranted
 )
 
 $ErrorActionPreference = 'Stop'
@@ -145,18 +150,56 @@ if ($agent.EnhancedKeyUsageList.ObjectId -notcontains '1.3.6.1.4.1.311.20.2.1') 
 Ok "$($agent.Subject), $($agent.Thumbprint), until $($agent.NotAfter.ToString('yyyy-MM-dd'))"
 
 # The key is the computer's; the service account needs to use it, not own it.
-$rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($agent)
-$keyFile = $null
-if ($rsa -is [System.Security.Cryptography.RSACng]) {
-    $keyFile = Join-Path $env:ProgramData "Microsoft\Crypto\Keys\$($rsa.Key.UniqueName)"
-} elseif ($rsa.PSObject.Properties['CspKeyContainerInfo']) {
-    $keyFile = Join-Path $env:ProgramData "Microsoft\Crypto\RSA\MachineKeys\$($rsa.CspKeyContainerInfo.UniqueKeyContainerName)"
+#
+# Found by its unique container name, searched for under every provider's folder
+# rather than assumed to be in one: the first version looked only in Crypto\Keys and
+# RSA\MachineKeys, and MS-CONN01's agent key was in neither. The name comes from .NET
+# where it can say, and from certutil otherwise - matched by shape, because certutil
+# prints its labels in the language of the server.
+function Get-KeyContainerNames($certificate) {
+    $names = New-Object System.Collections.Generic.List[string]
+    try {
+        $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($certificate)
+        if ($rsa -is [System.Security.Cryptography.RSACng]) { $names.Add($rsa.Key.UniqueName) }
+        elseif ($null -ne $rsa -and $rsa.PSObject.Properties['CspKeyContainerInfo']) {
+            $names.Add($rsa.CspKeyContainerInfo.UniqueKeyContainerName)
+        }
+    } catch { }
+    try {
+        $ec = [System.Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPrivateKey($certificate)
+        if ($ec -is [System.Security.Cryptography.ECDsaCng]) { $names.Add($ec.Key.UniqueName) }
+    } catch { }
+    $dump = & certutil.exe -store My $certificate.Thumbprint 2>$null
+    foreach ($match in [regex]::Matches(($dump -join "`n"), '[0-9a-fA-F]{32}_[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}')) {
+        $names.Add($match.Value)
+    }
+    $names | Where-Object { $_ } | Select-Object -Unique
 }
-if (-not $keyFile -or -not (Test-Path $keyFile)) { Fail "The private key file of $($agent.Thumbprint) could not be found to grant it." }
 
-& icacls.exe $keyFile /grant "${ServiceAccount}:R" | Out-Null
-if ($LASTEXITCODE -ne 0) { Fail "Could not grant $ServiceAccount read on the agent key." }
-Ok "$ServiceAccount may use its key"
+$crypto = Join-Path $env:ProgramData 'Microsoft\Crypto'
+$keyFile = $null
+$containers = @(Get-KeyContainerNames $agent)
+foreach ($name in $containers) {
+    $keyFile = Get-ChildItem $crypto -Recurse -File -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq $name -or $_.BaseName -eq $name } |
+        Select-Object -First 1 -ExpandProperty FullName
+    if ($keyFile) { break }
+}
+
+if ($keyFile) {
+    & icacls.exe $keyFile /grant "${ServiceAccount}:R" | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail "Could not grant $ServiceAccount read on $keyFile." }
+    Ok "$ServiceAccount may use its key ($keyFile)"
+} elseif ($KeyAlreadyGranted) {
+    Ok "key access for $ServiceAccount granted by hand (-KeyAlreadyGranted)"
+} else {
+    $provider = (& certutil.exe -store My $agent.Thumbprint 2>$null | Select-String -Pattern 'Provider|Dostawca' | Select-Object -First 1)
+    Fail ("No file for the private key of $($agent.Thumbprint) under $crypto (container: " +
+          "$(if ($containers) { $containers -join ', ' } else { 'not reported' }); $provider). " +
+          "A key in a TPM or a smart card has no file. Grant it by hand - certlm.msc, Personal, the " +
+          "certificate, All Tasks, Manage Private Keys, add $ServiceAccount with Read - then run this " +
+          'again with -KeyAlreadyGranted.')
+}
 
 # ------------------------------------------------------------------ 4. the MSI
 Step '4/5  installing'
