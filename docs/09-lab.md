@@ -280,23 +280,35 @@ exception. Shred the PFX afterwards: it carries the key.
 
 ## The connector from the console's downloads (0105)
 
-```
-bash scripts/build-downloads.sh 0.5.0 --publish sysadmin@172.16.5.11
-```
-
-Builds both MSIs on a Windows machine with `wix`, writes `downloads.json`, and
-copies the lot to `~/blinky/downloads`, which the API serves under *Pobieranie*.
-On the CA's neighbour, from a folder holding the MSI, `Install-BlinkyConnector.ps1`
-and `downloads.json`, elevated:
+From Git Bash - PowerShell's `bash` is WSL, which has no copy of the SSH key and
+asks for a password nobody has:
 
 ```
-.\Install-BlinkyConnector.ps1 -ApiUrl https://blinky-cms.ad.digitalworkspace.pl:9443 `
-    -ServiceAccount AD\svc_blinky -EnrolmentAgentTemplate <the enrolment agent template>
+bash scripts/build-downloads.sh 0.5.1 --server blinky-cms.ad.digitalworkspace.pl \
+    --publish sysadmin@172.16.5.11
+```
+
+Builds both MSIs on a Windows machine with `wix` and writes two packages,
+`blinky-connector-<v>.zip` and `blinky-workstation-<v>.zip`, each with its MSI, its
+scripts, `downloads.json` and `blinky-server.json` naming `--server`; then copies
+the lot to `~/blinky/downloads`, which the API serves under *Pobieranie*. No install
+script names a server: the first workstation in ad.digitalworkspace.pl enrolled
+against `by-cacms.blinky.lab`, written into `install-windows-client.ps1`.
+
+On the CA's neighbour, in the unpacked connector package, elevated:
+
+```
+.\Install-BlinkyConnector.ps1 -ServiceAccount AD\svc_blinky -EnrolmentAgentThumbprint <thumbprint>
 ```
 
 It asks for a connector token (console, *Zetony*, purpose *Konektor ADCS*) and the
 account's password. With `DIRECTORY_VIA=Connector` on the server the same
 connector reads Active Directory too (0104), and the server holds no LDAP password.
+Done on MS-CONN01 on 2026-10-09: it enrolled itself and polls.
+
+On a workstation, in the unpacked workstation package, elevated:
+`.\install-windows-client.ps1` - it asks for an agent token and takes the server
+from the package, which wins over an address remembered from an earlier install.
 
 ## The ADCS connector on a Windows member server, through a tunnel
 

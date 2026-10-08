@@ -3,8 +3,9 @@
     Installs the Blinky ADCS connector on a domain member beside a Microsoft CA (0105).
 
 .DESCRIPTION
-    Run elevated, from the folder holding the MSI downloaded from the Blinky console
-    (Pobieranie). In order:
+    Run elevated, from the unpacked blinky-connector-*.zip downloaded from the Blinky
+    console (Pobieranie), which carries the MSI, this script and the server's address.
+    In order:
 
       1. checks this is a domain member and the MSI is the one the console listed
          (SHA-256 against downloads.json, when it is beside the MSI);
@@ -19,7 +20,8 @@
     account, so the server needs DIRECTORY_VIA=Connector and no LDAP password.
 
 .PARAMETER ApiUrl
-    The Blinky server's agents' address, https://<name>:9443.
+    The Blinky server's agents' address, https://<name>:9443. Read from
+    blinky-server.json in the package when not given.
 
 .PARAMETER JoinToken
     A connector enrolment token from the console, Administracja / Zetony, purpose
@@ -40,12 +42,15 @@
     certificate from, e.g. MachineEnrollmentAgent. MS-CONN01$ needs Enroll on it.
 
 .EXAMPLE
+    .\Install-BlinkyConnector.ps1 -ServiceAccount AD\svc_blinky -EnrolmentAgentThumbprint E820DDB9...
+
+.EXAMPLE
     .\Install-BlinkyConnector.ps1 -ApiUrl https://blinky-cms.ad.digitalworkspace.pl:9443 `
         -ServiceAccount AD\svc_blinky -EnrolmentAgentTemplate MachineEnrollmentAgent
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)] [string] $ApiUrl,
+    [string] $ApiUrl,
     [string] $JoinToken,
     [Parameter(Mandatory)] [string] $ServiceAccount,
     [string] $EnrolmentAgentThumbprint,
@@ -105,6 +110,14 @@ if (Test-Path $manifest) {
 }
 
 # ------------------------------------------------------------------ 2. the server
+# The server from the package when not given: blinky-server.json beside this
+# script names the server the package was downloaded from.
+if (-not $ApiUrl) {
+    $package = Join-Path $here 'blinky-server.json'
+    if (Test-Path $package) { $ApiUrl = (Get-Content $package -Raw | ConvertFrom-Json).agentsUrl }
+}
+if (-not $ApiUrl) { Fail 'No server: run this from the unpacked blinky-connector-*.zip, or pass -ApiUrl https://<server>:9443.' }
+
 Step "2/5  the Blinky server at $ApiUrl"
 
 $uri = [Uri]$ApiUrl

@@ -79,7 +79,7 @@ const messages = {
     downloadsLede: 'Instalatory i skrypty dla serwera konektora i stacji, każdy z sumą SHA-256 do sprawdzenia.',
     connectorInstall: 'Konektor ADCS na serwerze w domenie',
     connectorInstallLede:
-      'Pobierz MSI, skrypt instalacji i downloads.json do jednego folderu, utwórz żeton konektora, potem uruchom jako administrator:',
+      'Pobierz paczkę blinky-connector, rozpakuj ją na serwerze w domenie, utwórz żeton konektora i uruchom jako administrator (adres serwera jest w paczce). Stacja: paczka blinky-workstation i install-windows-client.ps1.',
     downloadFiles: 'Pliki',
     downloadFile: 'Plik',
     downloadVersion: 'Wersja',
@@ -258,7 +258,7 @@ const messages = {
     downloadsLede: 'Installers and scripts for the connector server and workstations, each with a SHA-256 to check.',
     connectorInstall: 'The ADCS connector on a domain member',
     connectorInstallLede:
-      'Download the MSI, the install script and downloads.json into one folder, make a connector token, then run elevated:',
+      'Download the blinky-connector package, unpack it on a domain member, make a connector token and run elevated (the server address is in the package). Workstation: the blinky-workstation package and install-windows-client.ps1.',
     downloadFiles: 'Files',
     downloadFile: 'File',
     downloadVersion: 'Version',

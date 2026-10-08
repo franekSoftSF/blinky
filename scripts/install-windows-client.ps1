@@ -3,7 +3,15 @@
     Installs the Blinky agent on a domain-joined Windows client in the lab.
 
 .DESCRIPTION
-    Run elevated, from the folder holding blinky-agent-*.msi.
+    Run elevated, from the unpacked blinky-workstation-*.zip downloaded from the
+    console (Pobieranie). The package carries the MSI, this script and
+    blinky-server.json, which names the server it came from - so a run needs no
+    address and, after the first, no arguments at all (0105).
+
+    No server is written into this script any more. It said by-cacms.blinky.lab,
+    and a workstation in ad.digitalworkspace.pl installed from it enrolled against
+    a name that no longer resolved; worse, the address was then remembered in the
+    registry and preferred over anything given later.
 
     The chain is downloaded; nothing has to be placed next to this script.
 
@@ -60,6 +68,15 @@
     Lets Windows offer ECC certificates at logon. Needed for a card enrolled with
     ECCP256; RSA 2048 does not need it.
 
+.PARAMETER Server
+    The Blinky server's name, for a run without blinky-server.json beside it:
+    the agents' address is https://<Server>:9443 and the chain comes from
+    http://<Server>/pki/.
+
+.EXAMPLE
+    # From the unpacked package: asks for the token, everything else is in it.
+    .\install-windows-client.ps1
+
 .EXAMPLE
     .\install-windows-client.ps1 -BootstrapToken abc123
 
@@ -71,6 +88,7 @@
 [CmdletBinding()]
 param(
     [string] $BootstrapToken,
+    [string] $Server,
     [string] $Backend,
     [string] $Domain,
     # The newest one beside this script, rather than a version written here.
@@ -85,7 +103,7 @@ param(
     # certificates it needs in order to trust anything cannot be asked to
     # validate a certificate first. What protects these is that they are
     # checked after they arrive, not how they travelled.
-    [string] $PkiUrl = 'http://by-cacms.blinky.lab',
+    [string] $PkiUrl,
 
     # For a workstation with no route to the CMS: a copy of root.crt taken
     # there by hand. issuing.crt is then expected beside it.
@@ -118,12 +136,42 @@ function Prefer($given, $remembered, $fallback) {
     return $fallback
 }
 
-$Backend = Prefer $Backend $existing.BackendUrl 'https://by-cacms.blinky.lab:9443'
+# The server: given here, else the package's blinky-server.json, else what this
+# machine was told last time. The package wins over the registry on purpose - a
+# package downloaded from a server is that server's word about itself, and the
+# remembered value is how a dead address survived a reinstall.
+$package = Join-Path $PSScriptRoot 'blinky-server.json'
+$fromPackage = if (Test-Path $package) { Get-Content $package -Raw | ConvertFrom-Json } else { $null }
+
+if ($Server) {
+    if (-not $Backend) { $Backend = "https://${Server}:9443" }
+    if (-not $PkiUrl) { $PkiUrl = "http://$Server" }
+}
+if ($fromPackage) {
+    if (-not $Backend) { $Backend = $fromPackage.agentsUrl }
+    if (-not $PkiUrl) { $PkiUrl = $fromPackage.pkiUrl }
+}
+if (-not $Backend) { $Backend = $existing.BackendUrl }
+
+if (-not $Backend) {
+    throw @'
+No Blinky server to install against.
+
+Run this from the unpacked blinky-workstation-*.zip downloaded from the console
+(Pobieranie): blinky-server.json in it names the server. Or pass -Server.
+'@
+}
+
+# The chain comes from the same host over plain HTTP, unless said otherwise.
+if (-not $PkiUrl -and -not $CaCertificate) { $PkiUrl = 'http://' + ([Uri]$Backend).Host }
+
+Write-Host "Blinky server: $Backend" -ForegroundColor Cyan
 # The domain this machine is joined to before the lab's default. Not the service
 # account's UserDomainName, which for LocalSystem is the machine name - that is
 # the guess install-agent.ps1 refuses - but the join itself, which is a fact.
 $joined = Get-CimInstance Win32_ComputerSystem
-$Domain  = Prefer $Domain  $existing.Domain $(if ($joined.PartOfDomain) { $joined.Domain.ToLowerInvariant() } else { 'blinky.lab' })
+$Domain  = Prefer $Domain  $existing.Domain $(if ($joined.PartOfDomain) { $joined.Domain.ToLowerInvariant() } else { $null })
+if (-not $Domain) { throw 'This machine is not joined to a domain and no -Domain was given.' }
 
 # The token buys an identity and is useless afterwards. An agent that already
 # holds one - a certificate in the machine store, named for it - is upgrading
@@ -135,19 +183,33 @@ if (-not $BootstrapToken) {
     $BootstrapToken = $existing.BootstrapToken
 
     if (-not $BootstrapToken -and -not $enrolled) {
-        throw @'
-This machine has no agent identity and no enrolment token to get one with.
+        # Asked rather than refused: a token typed at a prompt stays out of shell
+        # history, which a -BootstrapToken on the command line does not.
+        $secure = Read-Host 'Agent enrolment token (console: Administracja / Zetony, purpose agent)' -AsSecureString
+        $BootstrapToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR(
+            [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
 
-Pass -BootstrapToken on the first install. It is remembered afterwards, and an
-upgrade then needs no arguments at all.
-
-Make the token in the console: Administracja / Zetony, "Nowy zeton". Give it a
-term and the number of machines it may enrol; the value is shown once.
-'@
+        if (-not $BootstrapToken) {
+            throw 'This machine has no agent identity, and no enrolment token was given to get one.'
+        }
     }
 }
 
-if (-not (Test-Path $Msi)) { throw "Not found: $Msi" }
+if (-not $Msi -or -not (Test-Path $Msi)) { throw "No blinky-agent-*.msi beside this script: $Msi" }
+
+# Against the package's own list, when it is there: the same check the connector's
+# installer makes, so a file that changed on the way is not installed as an agent.
+$manifest = Join-Path (Split-Path -Parent $Msi) 'downloads.json'
+if (Test-Path $manifest) {
+    $listed = (Get-Content $manifest -Raw | ConvertFrom-Json).files |
+        Where-Object { $_.file -eq (Split-Path -Leaf $Msi) }
+    $hash = (Get-FileHash $Msi -Algorithm SHA256).Hash
+    if (-not $listed) { throw "$(Split-Path -Leaf $Msi) is not in downloads.json." }
+    if ($listed.sha256 -ne $hash) {
+        throw "SHA-256 of $(Split-Path -Leaf $Msi) is $hash, and the package lists $($listed.sha256)."
+    }
+    Write-Host "$(Split-Path -Leaf $Msi): SHA-256 matches the package" -ForegroundColor Cyan
+}
 
 if ($CaCertificate -and -not (Test-Path $CaCertificate)) {
     throw "Not found: $CaCertificate"

@@ -425,6 +425,17 @@ public sealed partial class BackendClient : IDisposable
             return false;
         }
 
+        // A server certificate this machine already trusts, for this name, is
+        // accepted as it would be without a pin. The pin is an extra anchor for a
+        // deployment whose edge is signed by Blinky's own CA, not the only one: the
+        // edge of blinky-cms.ad.digitalworkspace.pl carries a certificate from the
+        // domain's CA, which every member trusts and which the pinned Blinky root
+        // knows nothing about, and an exclusive pin refused it.
+        if (errors == SslPolicyErrors.None)
+        {
+            return true;
+        }
+
         using var pinned = new X509Chain();
         pinned.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
         pinned.ChainPolicy.CustomTrustStore.AddRange(pinnedRoots);

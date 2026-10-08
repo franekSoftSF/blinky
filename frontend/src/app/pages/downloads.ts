@@ -113,13 +113,18 @@ export class Downloads {
 
   protected readonly manifest = signal<DownloadManifest | null>(null);
   protected readonly error = signal<string | null>(null);
-  protected readonly files = computed(() => this.manifest()?.files ?? []);
+  /** The two packages first: they are what somebody installing should take. */
+  protected readonly files = computed(() =>
+    [...(this.manifest()?.files ?? [])].sort(
+      (a, b) => Number(b.kind === 'package') - Number(a.kind === 'package'),
+    ),
+  );
 
-  /** The agents' listener of this same server, which is where a connector dials. */
+  /** No address: the package carries the server it was downloaded from. */
   protected readonly connectorCommand = computed(
     () =>
-      `.\\Install-BlinkyConnector.ps1 -ApiUrl https://${location.hostname}:9443 ` +
-      `-ServiceAccount AD\\svc_blinky -EnrolmentAgentTemplate <szablon agenta enrolmentu>`,
+      `.\\Install-BlinkyConnector.ps1 -ServiceAccount AD\\svc_blinky ` +
+      `-EnrolmentAgentThumbprint <odcisk certyfikatu agenta enrolmentu>`,
   );
 
   constructor() {
