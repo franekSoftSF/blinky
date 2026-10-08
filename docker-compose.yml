@@ -277,7 +277,12 @@ services:
     restart: unless-stopped
 
   edge:
-    image: owasp/modsecurity-crs:nginx
+    # Pinned, tag and digest, to the image the smoke test last passed against
+    # (CRS 4.30.0, BY-CACMS, 2026-10-09). A floating :nginx tag means a rule set
+    # that changes under a running deployment with no commit here to blame - the
+    # whoami check went from 401 to 403 that way. Moving it is a change with a
+    # smoke test run, like any other.
+    image: owasp/modsecurity-crs:4.30.0-nginx-202610051210@sha256:133267aa811e1a57a23b52ef04b3c30e802bcbe5454588f6d6af1f69f4b2b667
     ports:
       # Plain HTTP, for the CRL and the CA certificate only. See the pki
       # server block in docker/edge: a client fetching revocation cannot be
