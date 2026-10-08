@@ -40,10 +40,14 @@ interface Draft {
   orgUrl: string;
   keyId: string;
   challengeMinutes: string;
+  secretValue: string;
+  secretId: string;
+  secretExpires: string;
 }
 
 const EMPTY: Draft = {
   name: '', kind: 'Entra', isEnabled: true, tenantId: '', clientId: '', orgUrl: '', keyId: '', challengeMinutes: '10',
+  secretValue: '', secretId: '', secretExpires: '',
 };
 
 /**
@@ -110,7 +114,9 @@ const EMPTY: Draft = {
               @if (p.credentialSet) {
                 {{ credentialLabel(p.credentialKind) }} ·
                 @if (p.credentialHint === 'set') { {{ i18n.t('ppSecretSet') }} } @else { <span class="mono">{{ p.credentialHint }}</span> }
-                @if (p.credentialExpiresAt) { · {{ i18n.t('ppExpires') }} {{ p.credentialExpiresAt | date: 'mediumDate' }} }
+                @if (p.credentialExpiresAt) {
+                  · <span [class.warning-text]="expiresSoon(p)">{{ i18n.t('ppExpires') }} {{ p.credentialExpiresAt | date: 'mediumDate' }}</span>
+                }
                 <small class="block muted">{{ p.credentialSetBy }}, {{ p.credentialSetAt | date: 'short' }}</small>
               } @else {
                 <span class="warning-text">{{ i18n.t('ppNoCredential') }}</span>
@@ -217,6 +223,23 @@ const EMPTY: Draft = {
               {{ i18n.t('ppClient') }}
               <input name="client" [value]="draft().clientId" (input)="set('clientId', value($event))" />
             </label>
+            <!-- The three fields Entra shows under Certificates & secrets. The
+                 value is sent once and sealed; leaving it blank on an edit keeps
+                 the secret that is there. -->
+            <label>
+              {{ i18n.t('ppSecretValue') }}
+              <input name="secretValue" type="password" autocomplete="off" [value]="draft().secretValue"
+                     [placeholder]="editing() ? i18n.t('ppSecretKeep') : ''" (input)="set('secretValue', value($event))" />
+            </label>
+            <label>
+              {{ i18n.t('ppSecretId') }}
+              <input name="secretId" autocomplete="off" [value]="draft().secretId" (input)="set('secretId', value($event))" />
+            </label>
+            <label>
+              {{ i18n.t('ppSecretExpires') }}
+              <input name="secretExpires" type="date" [value]="draft().secretExpires"
+                     (input)="set('secretExpires', value($event))" />
+            </label>
           } @else {
             <label>
               {{ i18n.t('ppOrg') }}
@@ -242,11 +265,37 @@ const EMPTY: Draft = {
             <button type="button" (click)="cancel()">{{ i18n.t('ppCancel') }}</button>
           }
         </form>
+        @if (draft().kind === 'Entra') {
+          <div class="setting-body pp-help">
+            <h3>{{ i18n.t('ppEntraHelp') }}</h3>
+            <ol>
+              <li>{{ i18n.t('ppEntraStep1') }}</li>
+              <li>{{ i18n.t('ppEntraStep2') }} <code>UserAuthenticationMethod.ReadWrite.All</code>, <code>User.Read.All</code> — {{ i18n.t('ppEntraStep2b') }}</li>
+              <li>{{ i18n.t('ppEntraStep3') }}</li>
+              <li>{{ i18n.t('ppEntraStep4') }}</li>
+            </ol>
+          </div>
+        }
       </article>
     }
   `,
   styles: [
     `
+      .pp-help {
+        border-top: 1px solid var(--bl-border);
+      }
+      .pp-help ol {
+        margin: 0.5rem 0 0;
+        padding-left: 1.2rem;
+        display: grid;
+        gap: 6px;
+        color: var(--bl-text-body);
+        font-size: 13px;
+      }
+      .pp-help code {
+        font-family: Consolas, 'Cascadia Mono', monospace;
+        color: var(--bl-accent-text);
+      }
       .pp-message {
         margin: 0 0 1rem;
         color: var(--bl-ok);
@@ -390,6 +439,11 @@ export class PasskeyProviders {
     this.draft.update((d) => ({ ...d, isEnabled: enabled }));
   }
 
+  /** Thirty days out: long enough to make a new secret in the portal before this one stops. */
+  protected expiresSoon(p: Provider): boolean {
+    return !!p.credentialExpiresAt && new Date(p.credentialExpiresAt).getTime() - Date.now() < 30 * 86_400_000;
+  }
+
   protected credentialLabel(kind: CredentialKind | null): string {
     switch (kind) {
       case 'Certificate': return this.i18n.t('ppCertificate');
@@ -412,6 +466,7 @@ export class PasskeyProviders {
     this.draft.set({
       name: p.name, kind: p.kind, isEnabled: p.isEnabled, tenantId: p.tenantId ?? '', clientId: p.clientId ?? '',
       orgUrl: p.orgUrl ?? '', keyId: p.keyId ?? '', challengeMinutes: String(p.challengeMinutes),
+      secretValue: '', secretId: '', secretExpires: '',
     });
   }
 
@@ -436,11 +491,21 @@ export class PasskeyProviders {
     const id = this.editing();
 
     await this.run(async () => {
-      if (id) {
-        await firstValueFrom(this.http.put(`/api/passkeys/providers/${id}`, body));
-      } else {
-        await firstValueFrom(this.http.post('/api/passkeys/providers', body));
+      const saved = id
+        ? await firstValueFrom(this.http.put<Provider>(`/api/passkeys/providers/${id}`, body))
+        : await firstValueFrom(this.http.post<Provider>('/api/passkeys/providers', body));
+
+      // The secret goes in its own request, to the route that seals it, and the
+      // field is emptied as soon as that has answered.
+      if (d.kind === 'Entra' && d.secretValue.trim()) {
+        await firstValueFrom(this.http.post(`/api/passkeys/providers/${saved.id}/credential`, {
+          kind: 'ClientSecret',
+          value: d.secretValue,
+          label: d.secretId.trim() || null,
+          expiresAt: d.secretExpires ? `${d.secretExpires}T00:00:00Z` : null,
+        }));
       }
+
       this.cancel();
       return this.i18n.t('ppSaved');
     });

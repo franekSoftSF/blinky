@@ -88,7 +88,21 @@ public sealed record PasskeyProviderRequest(
     int ChallengeMinutes = 10);
 
 /// <summary>A credential the administrator brought, to be sealed and forgotten by the request.</summary>
-public sealed record PasskeyCredentialImport(PasskeyProviderCredential Kind, string Value, string? Password = null);
+/// <param name="Password">A PFX's password; used to open it and not kept.</param>
+/// <param name="Label">
+/// For a shared secret: what identifies it where it was made - Entra's "Secret ID" from
+/// Certificates &amp; secrets - so the row can be matched to the portal without the value.
+/// </param>
+/// <param name="ExpiresAt">
+/// For a shared secret: when the portal says it expires. Entra caps a client secret at
+/// two years and gives no API to ask, so this is the only way the console can warn.
+/// </param>
+public sealed record PasskeyCredentialImport(
+    PasskeyProviderCredential Kind,
+    string Value,
+    string? Password = null,
+    string? Label = null,
+    DateTime? ExpiresAt = null);
 
 /// <summary>A provider as the console sees it: everything except the credential itself.</summary>
 public sealed record PasskeyProviderView(
@@ -227,8 +241,29 @@ public sealed partial class PasskeyProviders
 
         try
         {
-            return SetCredential(id, ProviderMaterial.Import(row.Kind, import.Kind, import.Value, import.Password),
-                actor, generated: false);
+            var prepared = ProviderMaterial.Import(row.Kind, import.Kind, import.Value, import.Password);
+
+            // A shared secret has no thumbprint of its own; the portal's id and expiry
+            // are what an administrator has to go on, so they are kept when given.
+            if (import.Kind is PasskeyProviderCredential.ClientSecret or PasskeyProviderCredential.ApiToken)
+            {
+                var label = import.Label?.Trim();
+
+                if (label is { Length: > 100 })
+                {
+                    throw new ArgumentException("The secret's id is at most 100 characters.");
+                }
+
+                prepared = prepared with
+                {
+                    Hint = string.IsNullOrEmpty(label) ? prepared.Hint : label,
+                    ExpiresAt = import.ExpiresAt is { } expires
+                        ? DateTime.SpecifyKind(expires, DateTimeKind.Utc)
+                        : prepared.ExpiresAt,
+                };
+            }
+
+            return SetCredential(id, prepared, actor, generated: false);
         }
         catch (Exception e) when (e is ArgumentException or FormatException or System.Security.Cryptography.CryptographicException)
         {

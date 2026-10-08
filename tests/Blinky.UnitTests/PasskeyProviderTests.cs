@@ -120,6 +120,23 @@ public sealed class PasskeyProviderTests : IDisposable
     }
 
     [Fact]
+    public void An_entra_client_secret_keeps_its_portal_id_and_expiry_but_not_its_value()
+    {
+        var created = providers.Create(Entra(), "admin");
+        var expires = new DateTime(2027, 4, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var view = providers.ImportCredential(created.Id, new PasskeyCredentialImport(
+            PasskeyProviderCredential.ClientSecret, "Q~abc.secret-value", Label: "8f1c2d3e-secret-id", ExpiresAt: expires),
+            "admin");
+
+        Assert.Equal("8f1c2d3e-secret-id", view.CredentialHint);
+        Assert.Equal(expires, view.CredentialExpiresAt);
+        Assert.DoesNotContain("Q~abc", JsonSerializer.Serialize(view));
+        Assert.Equal("Q~abc.secret-value", new ProviderSecrets(keys, 2).Open(store.Rows.Single()));
+        Assert.Equal("entra", Assert.Single(providers.Directories.All).Name);
+    }
+
+    [Fact]
     public void A_credential_the_provider_would_refuse_is_refused_on_save()
     {
         using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
