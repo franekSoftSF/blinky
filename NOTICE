@@ -45,6 +45,12 @@ Bouncy Castle (BouncyCastle.Cryptography) is licensed under the MIT licence.
 PCSC-sharp is licensed under the BSD 3-Clause licence. Both are consumed as
 unmodified NuGet packages.
 
+Blinky.Passkeys ports, in semantics rather than in code, the identity-provider
+calls of KeyEnroll (https://github.com/inowakowski/KeyEnroll), Copyright (c)
+2026 Ignacy Nowakowski, licensed under the MIT licence: the Graph and Okta
+endpoints and payload shapes, the normalisation of their binary values, and the
+handling of a pending Okta factor.
+
 The Yubico PIV attestation root certificate is redistributed for the purpose of
 verifying attestation chains. It is Yubico's certificate, not part of this
 project's licensed work.

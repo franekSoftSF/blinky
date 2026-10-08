@@ -174,6 +174,13 @@ the result to a provider that accepts it, which makes the phase per-provider by
 construction: Entra proves nothing about Okta, and both prove nothing about
 Google, which today accepts no such handover at all (§ Later).
 
+**There is a working reference.** KeyEnroll (`github.com/inowakowski/KeyEnroll`,
+MIT) does on-behalf enrolment from a desktop for Entra, Okta and PingOne, on
+`python-fido2`. 0073/0073a port its provider half; its enrolment engine is the
+reference for 0072 and 0076, and its software CTAP 2.1 authenticator is the
+model for testing the ceremony without a key. It has run on hardware for Okta
+only — the rest of it is evidence of shape, not of behaviour.
+
 0070–0072 need no identity provider at all and are worth having on their own:
 they answer *is this returned key actually empty*, which a CMS that manages
 only PIV answers wrongly.

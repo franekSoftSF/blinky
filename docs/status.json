@@ -18,7 +18,7 @@
     ]
   },
   "status": {
-    "updated": "2026-09-30",
+    "updated": "2026-10-08",
     "phase": 2,
     "phaseTitle": "Issue something",
     "state": "gate-met",
@@ -230,7 +230,7 @@
       "name": "Blinky.Passkeys",
       "type": "library",
       "phase": 7,
-      "state": "not-started"
+      "state": "partial"
     }
   ],
   "decisions": [
@@ -1247,17 +1247,19 @@
       "id": "0073",
       "phase": 7,
       "title": "Blinky.Passkeys: IPasskeyDirectory, PasskeyCreationOptions, Capabilities, EntraPasskeyDirectory",
-      "state": "open",
+      "state": "done-unverified",
       "owner": "cloud-ai",
-      "proof": "Not started, and buildable today: fixtures and contract tests need neither hardware nor a tenant."
+      "proof": "IPasskeyDirectory (find, begin, complete, cancel, list, delete) and EntraPasskeyDirectory on Graph v1.0, ported in semantics from KeyEnroll. Graph's answer normalises into PasskeyCreationOptions with rpId and origin taken from it; a test moves rp.id and the origin follows, another fails on a login.microsoft.com literal in src/ outside the Entra class. Client credentials by certificate or secret via one RFC 7523 assertion shared with Okta, no MSAL. 401 refreshed once, 429 waited out within 30 s, Graph's error text and status surfaced. 44 tests across 0073 and 0073a.",
+      "gap": "Fixtures are synthesised from Graph's documentation and KeyEnroll's tests, not recorded; no tenant reached, so v1.0 versus beta, challengeTimeoutInMinutes, the x5t certificate assertion and the application permissions are unproved"
     },
     {
       "id": "0073a",
       "phase": 7,
       "title": "OktaPasskeyDirectory, Factors route",
-      "state": "open",
+      "state": "done-unverified",
       "owner": "cloud-ai",
-      "proof": "Not started. Second implementation of the same interface; a pending factor left by a failed ceremony must be deleted in cleanup."
+      "proof": "OktaPasskeyDirectory on the Factors route. Activation in standard base64 under Okta's names; rpId defaults to the org host and an rp.id in the answer wins, custom domain included; user handle decoded as Okta's sign-in page does. A ceremony failed on purpose deletes the pending factor, as does a factor whose options cannot be read; a factor not ACTIVE after activation is a failure. SSWS token or private_key_jwt (RS256/ES256, kid).",
+      "gap": "No Okta org reached from here; KeyEnroll's hardware run on Okta is evidence for the shapes, not for this code. That 0077 always cancels an incomplete begin is 0077's to prove"
     },
     {
       "id": "0073b",

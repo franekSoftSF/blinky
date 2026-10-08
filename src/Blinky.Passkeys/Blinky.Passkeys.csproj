@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    No MSAL, no Okta SDK. Both providers are reached with the same two things -
+    an RFC 7523 client assertion and a handful of JSON calls - and one
+    implementation of each is less to audit than two vendor stacks that do the
+    same thing differently. Ported in semantics from KeyEnroll (MIT), see NOTICE.
+  -->
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Blinky.UnitTests" />
+  </ItemGroup>
+
+</Project>

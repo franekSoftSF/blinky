@@ -1,6 +1,6 @@
 # Project status — Blinky
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-10-08
 **Phase:** 2 — Issue something. **The gate is met**
 **Overall:** on 24 August 2026 a person logged into the lab domain with a card
 this system personalised and issued, against a Samba4 KDC, with no ADCS anywhere
@@ -584,18 +584,24 @@ certificate path becomes the upgrade rather than the front door.
 
 ### Phase 7 — FIDO2 — **open**
 
-Nothing started. The brief is [12](12-passkey-provisioning-brief.md), the
-definitions of done are in [07 — Roadmap](07-roadmap.md#phase-7--fido2-on-the-same-key).
-0070–0072 stand alone and answer "is this returned key empty"; 0073 onwards
-needs a tenant and an org that do not exist yet.
+Started on 2026-10-08 with the provider half: `Blinky.Passkeys`, Entra and
+Okta behind one interface, ported in semantics from KeyEnroll
+(`github.com/inowakowski/KeyEnroll`, MIT) and with no tenant or org behind
+it. The brief is [12](12-passkey-provisioning-brief.md), corrected in three
+places by what KeyEnroll does — Graph v1.0 rather than beta, Okta's activation
+in standard base64, and `forceChangePin` set after the registration rather than
+before the ceremony, where it would have stopped the ceremony. The definitions
+of done are in [07 — Roadmap](07-roadmap.md#phase-7--fido2-on-the-same-key).
+0070–0072 stand alone and answer "is this returned key empty"; proving 0073
+onwards needs a tenant and an org that do not exist yet.
 
 | # | Owner | Patch | State | Proof |
 |---|---|---|---|---|
 | 0070 | Cloud.AI | `Blinky.Fido`: CTAP2 over HID, `AuthenticatorInfo`, joined to the token by serial | **open** | Foundation for everything below. HID is not PC/SC: none of `Blinky.Piv` carries over |
 | 0071 | both | The FIDO application in the inventory and on the token page | **open** | The API half is Cloud.AI's, the page is Codex's |
 | 0072 | Cloud.AI | FIDO PIN set and change, FIDO reset | **open** | The half most likely to be wanted first, and it needs no identity provider |
-| 0073 | Cloud.AI | `Blinky.Passkeys`: interface, normalisation, `Capabilities`, `EntraPasskeyDirectory` | **open** | Buildable today: fixtures and contract tests need neither hardware nor a tenant. The first thing to start |
-| 0073a | Cloud.AI | `OktaPasskeyDirectory`, Factors route | **open** | Second implementation of the same interface |
+| 0073 | Cloud.AI | `Blinky.Passkeys`: interface, normalisation, `Capabilities`, `EntraPasskeyDirectory` | **done-unverified** | `IPasskeyDirectory` with find, begin, complete, cancel, list and delete; Graph's answer normalised into `PasskeyCreationOptions` with rpId and origin taken from it (a test moves `rp.id` and the origin follows; another fails on a `login.microsoft.com` literal anywhere in `src/` outside the Entra class). Client credentials by certificate or secret through one RFC 7523 assertion shared with Okta, no MSAL. 401 refreshed once, 429 waited out within 30 s, Graph's own error text and status surfaced, a 403 on lookup not reported as "no such user". 44 tests across 0073 and 0073a. **Gap:** the Graph fixtures are synthesised from Graph's documentation and KeyEnroll's tests, not recorded — no tenant has been reached, so v1.0 versus beta, the `challengeTimeoutInMinutes` parameter, the `x5t` form of the certificate assertion and the application permissions are all unproved |
+| 0073a | Cloud.AI | `OktaPasskeyDirectory`, Factors route | **done-unverified** | Same interface. Activation under Okta's names in standard base64; rpId defaults to the org host and an `rp.id` in the answer wins over configuration, including a custom domain; the user handle decoded the way Okta's sign-in page decodes it. A ceremony failed on purpose deletes the pending factor; so does a factor whose options cannot be read, before the error surfaces; a factor left anything but `ACTIVE` after activation is a failure. SSWS token or `private_key_jwt` (RS256 or ES256, `kid`); a DPoP refusal says what to switch off. **Gap:** no Okta org reached from here. KeyEnroll's author has proved the same calls with a USB key on Windows ARM64, which is evidence for the shapes and none for this code; the guarantee that 0077 always cancels a begin that did not complete is 0077's to prove |
 | 0073b | Cloud.AI | Okta Preregistration API behind `OKTA__USEPREREGISTRATIONAPI` | **deferred** | Optional. May need an Early Access flag on the org; not default before it has run against a live one |
 | 0074 | Cloud.AI | Contracts: `ProvisionFido2Credential` envelopes, protocol version bump | **open** | Breaking the protocol immobilises deployed agents; the bump is the point |
 | 0075 | Cloud.AI | `PasskeyCredential`: entity, mapping, generated schema | **open** | Fourth state machine. No column may hold the provisional PIN |
@@ -682,7 +688,7 @@ exercised against the thing it is really for.
 | Angular console | **partial** | Shell, inventory and recycle are up and served by the edge; enrolment waits on the API gaps in [11](11-console-enrolment.md) |
 | `blinky-samba-setup` | **done** | Publishes the chain into the directory and issues the KDC's PKINIT certificate. Verified on BY-DC01 |
 | `Blinky.Fido` | open | 0070. CTAP2 over HID — a second transport beside PC/SC, sharing nothing with it below the token |
-| `Blinky.Passkeys` | open | 0073. One interface, Entra and Okta behind it, mirroring the shape of `Blinky.Pki` |
+| `Blinky.Passkeys` | **partial** | 0073, 0073a. One interface, Entra and Okta behind it, mirroring the shape of `Blinky.Pki`. Unit-tested against synthesised answers; never against a tenant or an org |
 | `tools/PivProbe` | **done** | Read-only, drives `Blinky.Piv` against hardware |
 | `tools/InsProbe` | **done** | Asks a card whether it knows an instruction, with a control |
 | `tools/SchemaTool` | **done** | Generates the schema; `--roundtrip` proves it can be written to |
@@ -706,7 +712,7 @@ exercised against the thing it is really for.
 | Token can never be unblocked — no PUK | A blocked PIN costs every key on the token | Detected at inventory. `NotApplicable` on a Bio (accepted, console shows it as unrecoverable); `Disabled` elsewhere (refused by default, patch 0025) |
 | Biometric verification path is exercised only on one device | The Bio flow is the least-travelled corner of the applet | Patch 0016 reads it, 0027 uses it; the temporary-PIN encoding is explicitly marked unverified in doc 03 |
 | Touch-policy jobs reaped by the watchdog while waiting for a finger | Every enrolment on a touch profile fails | `AwaitingUser` is a distinct state with its own, longer deadline |
-| Microsoft Graph's `fido2Methods` endpoints are beta | The registration call changes shape and Phase 7 stops working against a live tenant | Isolated behind `IPasskeyDirectory`; recorded fixtures make the change visible as a failing contract test rather than as a broken deployment |
+| Microsoft Graph's `fido2Methods` endpoints change shape | Phase 7 stops working against a live tenant | 0073 calls v1.0, as KeyEnroll does, where the brief assumed beta; unconfirmed until a tenant answers. Isolated behind `IPasskeyDirectory`; the synthesised fixtures in `EntraPasskeyDirectoryTests` are to be replaced by a recorded answer, which turns a change into a failing test rather than a broken deployment |
 | A FIDO reset destroys every discoverable credential, and there is no PUK equivalent | An operator recycling a key wipes credentials nobody knew were on it | 0070 makes them visible before 0072 can destroy them, and the reset needs a confirmation that names the count |
 | The challenge TTL bounds the whole ceremony | A person fumbling an unfamiliar PIN runs the job past the deadline and the credential is never registered | Options are fetched only after the key answers; expiry is a retryable code with a fresh challenge, and for Okta the pending factor is deleted first |
 | The provisional PIN is shown once and stored nowhere | An operator who loses it before the key reaches its holder has no way to recover it | Deliberate, and the reason Okta's `ProviderDelivers` mode is worth having: the PIN goes to the user by email and never through a person |

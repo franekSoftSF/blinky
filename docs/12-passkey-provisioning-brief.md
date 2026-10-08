@@ -48,12 +48,14 @@ Everything provider-specific lives behind one interface; everything ceremony-spe
 
 ### 4.1 New class lib: `Blinky.Passkeys` (mirrors the `Blinky.Pki` pattern: one interface, multiple backends)
 
-- `IPasskeyDirectory`:
-  - `GetCreationOptionsAsync(userRef, TimeSpan timeout) → PasskeyCreationOptions` (normalized: challenge, rpId, origin, user handle/name/display, pubKeyCredParams, excludeCredentials, authenticatorSelection, attestation preference, deadline)
-  - `RegisterAsync(userRef, RegistrationPayload) → RegisteredPasskey` (provider method id, created timestamp)
-  - `ListAsync(userRef)`, `DeleteAsync(userRef, providerMethodId)`
-  - `Capabilities` (flags: PinDeliveryByProvider, SupportsDriftList, …) so the UI can adapt per provider.
-- `EntraPasskeyDirectory` — Microsoft Graph beta implementation (§5).
+- `IPasskeyDirectory` — as built in 0073, which renamed the first two calls once it was clear that "get options" is not side-effect free on Okta:
+  - `FindUserAsync(identifier) → PasskeyUser?` (UPN, login, e-mail or provider id; a permission error is thrown, never reported as "no such user")
+  - `BeginRegistrationAsync(user) → PendingRegistration` — the normalised `PasskeyCreationOptions` (challenge, rpId, origin, user handle/name/display, algorithms, excludeCredentials, resident key, UV, attachment, attestation, the credProtect and hmac-secret extensions, deadline) plus an opaque provider reference (Okta's factor id)
+  - `CompleteRegistrationAsync(pending, AttestationResponse, displayName) → RegisteredPasskey` (provider method id, created timestamp)
+  - `CancelRegistrationAsync(pending)` — deletes Okta's pending factor; a no-op on Entra
+  - `ListAsync(user)`, `DeleteAsync(user, providerMethodId)`
+  - `Capabilities`: `SupportsRegistration`, `PrepareOnly`, `PinDeliveryByProvider`, `AcceptsDisplayName`, `MaxDisplayNameLength`.
+- `EntraPasskeyDirectory` — Microsoft Graph implementation (§5). **v1.0, not beta**: KeyEnroll calls v1.0 for all four operations, and so does 0073.
 - `OktaPasskeyDirectory` — Okta management API implementation (§6).
 - Shared: token acquisition + caching, retry with backoff on 429/5xx, defensive JSON parsing (log + surface raw payload on failure), clean error mapping.
 - User mapping resolver per provider: Blinky cardholders (AD/Samba4) → Entra objectId (default: UPN match, cache objectId) and → Okta userId (default: login/email match, cache id).
@@ -79,7 +81,8 @@ Idempotency: `excludeCredentials` prevents duplicate registration of the same ke
 - Use `Fido2Session`:
   - read applet info (`AuthenticatorInfo`): AAGUID, options, minPinLength, remaining resident credential slots, PIN retries;
   - if no PIN set and policy requires one: `SetPin` (operator-entered via Agent.Ui prompt, or generated provisional PIN);
-  - CTAP2.1 when supported: `SetMinPinLength`, `forceChangePin` after setting the provisional PIN;
+  - CTAP2.1 when supported: `SetMinPinLength` before the ceremony; **`forceChangePin` only after the provider has accepted the registration.** This line used to say "after setting the provisional PIN", which is wrong: a key with a pending forced change issues no PIN token, so `makeCredential` would fail on the PIN the agent just set. KeyEnroll sets it last, and reports a failure to set it as a warning on a credential that is already registered rather than as a failed job;
+  - a FIDO reset is accepted only within a few seconds of the key being powered up. KeyEnroll tries once and then asks for the key to be pulled and reinserted, up to three times — 0072 needs the same loop, drawn by `Agent.Ui`;
   - `MakeCredential` with: `clientDataHash` (agent-built, §3), rp, user, algorithms from `pubKeyCredParams` (ES256 first), `excludeCredentials`, resident key per `authenticatorSelection` (both providers use discoverable credentials — expect rk true), UV per options.
   - Touch prompt: fire the existing named-pipe notification to `Agent.Ui` ("touch your key") when the SDK signals user presence is pending; PIN entry likewise reuses the existing PIN prompt with a clear label that this is the **FIDO2 PIN, distinct from the PIV PIN**.
 - Serialize `attestationObject` exactly as produced (CBOR, base64url) — do not re-encode.
@@ -107,16 +110,17 @@ Idempotency: `excludeCredentials` prevents duplicate registration of the same ke
 
 ## 5. Provider: Microsoft Entra ID (Phase A)
 
-Microsoft Graph **beta** endpoints (public preview — isolate behind the interface, expect churn):
+Microsoft Graph endpoints. This section first said **beta**; KeyEnroll uses **v1.0** for the same four calls and 0073 follows it. Neither has been run against a tenant from here, so the version is still the first thing to confirm on one:
 
 ```
-GET  https://graph.microsoft.com/beta/users/{id|upn}/authentication/fido2Methods/creationOptions(challengeTimeoutInMinutes={n})
-POST https://graph.microsoft.com/beta/users/{id|upn}/authentication/fido2Methods
-GET  https://graph.microsoft.com/beta/users/{id|upn}/authentication/fido2Methods
-DELETE https://graph.microsoft.com/beta/users/{id|upn}/authentication/fido2Methods/{methodId}
+GET  https://graph.microsoft.com/v1.0/users/{id|upn}/authentication/fido2Methods/creationOptions(challengeTimeoutInMinutes={n})
+POST https://graph.microsoft.com/v1.0/users/{id|upn}/authentication/fido2Methods
+GET  https://graph.microsoft.com/v1.0/users/{id|upn}/authentication/fido2Methods
+DELETE https://graph.microsoft.com/v1.0/users/{id|upn}/authentication/fido2Methods/{methodId}
 ```
 
-- Auth: **client credentials** (application permission `UserAuthenticationMethod.ReadWrite.All`, admin-consented). Prefer certificate credential (`Azure.Identity` / MSAL confidential client); support secret for labs.
+- Auth: **client credentials** (application permissions `UserAuthenticationMethod.ReadWrite.All`, and `User.Read.All` for the user lookup, admin-consented). Certificate credential preferred, secret for labs. Built without MSAL or `Azure.Identity`: Entra's certificate credential and Okta's `private_key_jwt` are the same RFC 7523 client assertion, and one implementation of it in `Blinky.Passkeys` is less to audit than two vendor stacks. KeyEnroll signs the operator in with PKCE instead; that suits a desktop tool and not a container with nobody at it.
+- Display names longer than 30 characters are refused by Graph. `PasskeyDisplayName.Compose` shortens the base name and never the serial.
 - `creationOptions` returns a `publicKey` object shaped like WebAuthn `PublicKeyCredentialCreationOptions`; rp.id is `login.microsoft.com`, origin for clientDataJSON is `https://login.microsoft.com`.
 - The **challenge TTL** equals `challengeTimeoutInMinutes` requested — fetch options only after `Fido2Ready`.
 - Registration POST body:
@@ -134,7 +138,7 @@ DELETE https://graph.microsoft.com/beta/users/{id|upn}/authentication/fido2Metho
 }
 ```
 
-- Reference implementations of this exact flow: YubicoLabs `entraId-register-passkeys-on-behalf-of-users` (Python) and `DSInternals.Passkeys` / `DSInternals.Win32.WebAuthn` (C#). Mirror their semantics, not their architecture.
+- Reference implementations of this exact flow: YubicoLabs `entraId-register-passkeys-on-behalf-of-users` (Python), `DSInternals.Passkeys` / `DSInternals.Win32.WebAuthn` (C#), and **KeyEnroll** (`github.com/inowakowski/KeyEnroll`, Python, MIT) — a GUI that does on-behalf enrolment for Entra, Okta and two PingOne flavours, which 0073/0073a port in semantics. Its author has proved Okta with a USB key on Windows ARM64; Entra and PingOne in it are tested only against a software authenticator and simulated providers. Mirror their semantics, not their architecture.
 
 **Tenant prerequisites** (document + pre-flight-check where possible): FIDO2 method enabled for the target user (group scoping); AAGUID allow-list must include the key model; attestation enforcement tolerated (YubiKey packed attestation chains to the Yubico FIDO CA — pass `attestationObject` through untouched); not available for B2B guests; UPN change invalidates the method (detect via drift check).
 
@@ -145,7 +149,7 @@ Okta supports on-behalf enrollment natively (the Admin Console has a manual "Enr
 ### 6.1 Common Okta facts
 
 - **rpId / origin**: the org's Okta domain (`https://<org>.okta.com` or the org's custom domain). Derive from `OKTA__ORGURL`; always prefer the rp values returned by the API itself over configuration when present.
-- Auth: SSWS API token (simple, labs) or **OAuth2 service app with `private_key_jwt`** and the relevant Okta management scopes for user/factor administration (verify exact scope names against current Okta docs at implementation time — they evolve). Prefer OAuth2 for production; token never logged, stored via secrets-at-rest.
+- Auth: SSWS API token (simple, labs) or **OAuth2 service app with `private_key_jwt`** and the relevant Okta management scopes for user/factor administration (verify exact scope names against current Okta docs at implementation time — they evolve). Prefer OAuth2 for production; token never logged, stored via secrets-at-rest. Scopes used by 0073a: `okta.users.read okta.users.manage`, the pair KeyEnroll asks for. Okta can require DPoP on a service app; Blinky does not send it, and a token refusal that mentions DPoP says to turn the requirement off for this app.
 - Okta Identity Engine assumed. Document that Classic Engine orgs are out of scope.
 - Per-user WebAuthn enrollment cap exists (order of ~10); surface a friendly error when hit.
 
@@ -155,7 +159,9 @@ Same three-step shape as Graph:
 
 1. `POST /api/v1/users/{userId}/factors` with `{"factorType":"webauthn","provider":"FIDO"}` → response contains the factor id (status `PENDING_ACTIVATION`) and embedded **activation** object = WebAuthn creation options (challenge, rp, user, pubKeyCredParams, excludeCredentials…). Normalize into `PasskeyCreationOptions`.
 2. Agent ceremony (§4.3) with origin = org URL.
-3. `POST /api/v1/users/{userId}/factors/{factorId}/lifecycle/activate` with the base64url `attestation` (attestationObject) and `clientData` (clientDataJSON). Success → factor `ACTIVE`; store factor id as the provider method id.
+3. `POST /api/v1/users/{userId}/factors/{factorId}/lifecycle/activate` with `attestation` (attestationObject) and `clientData` (clientDataJSON) in **standard, padded base64** — this said base64url, and KeyEnroll's hardware-proved run sends standard base64. Success → factor `ACTIVE`; store factor id as the provider method id. Anything else after activation is a failure, not a success with a note.
+
+Two further details from KeyEnroll. Okta usually leaves `rp.id` out of the activation, so the rpId is the org's host. And `user.id` arrives as base64url text which Okta's own sign-in page decodes before handing it to the key; the user handle is the decoded bytes, so a key enrolled by Blinky is indistinguishable from one the user enrolled themselves. Okta's challenge is twenty base64url characters — fifteen bytes, one short of what WebAuthn asks a relying party for — so the normaliser does not enforce a minimum.
 
 List/delete for lifecycle + drift: `GET /api/v1/users/{userId}/factors`, `DELETE /api/v1/users/{userId}/factors/{factorId}`.
 
@@ -230,7 +236,7 @@ Timing rule: elapsed time between fetching options and registering must fit the 
 ## 9. Security requirements
 
 - Provider credentials (Graph app cert/secret, Okta token/private key) live in the existing secrets-at-rest store; never in logs. Prefer certificate/private-key-JWT over shared secrets.
-- Provisional PIN: generated agent-side (CSPRNG, length ≥ policy min); with `ProvisionalRandom` shown to the operator exactly once in the UI, never persisted, never logged; with Okta `ProviderDelivers` it goes into the preregistration payload and is emailed by Okta — Blinky still never stores it. `forceChangePin` set whenever firmware supports it; if firmware lacks CTAP2.1, fall back to operator-set PIN and say so in the UI.
+- Provisional PIN: generated agent-side (CSPRNG, length ≥ the larger of policy min and the key's own `minPINLength`, and never a PIN a key with complexity enforcement refuses — fewer than four distinct digits, or a run like 123456 or 654321, the rule KeyEnroll's generator applies; a `PIN_POLICY_VIOLATION` from the key means generate again, not fail); with `ProvisionalRandom` shown to the operator exactly once in the UI, never persisted, never logged; with Okta `ProviderDelivers` it goes into the preregistration payload and is emailed by Okta — Blinky still never stores it. `forceChangePin` set whenever firmware supports it; if firmware lacks CTAP2.1, fall back to operator-set PIN and say so in the UI.
 - Audit every step (job created, options issued, ceremony completed, registered at provider, revoked) with operator identity — reuse the existing audit trail; include `directoryProvider`.
 - Treat a provisioned key as a live credential in transit; extend `docs/06-security.md` with shipping/chain-of-custody notes, mirroring the PUK-escrow threat notes.
 - The FIDO2 PIN retry counter is independent of the PIV PIN — surface both distinctly everywhere (UI, inventory, error messages).
