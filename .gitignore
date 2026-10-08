@@ -58,3 +58,9 @@ downloads/
 # Written by scripts/set-directory.sh for one installation
 docker-compose.directory.yml
 .env.before-directory.*
+
+# The other CA backend's settings, kept beside .env on a lab server so it can
+# be swapped in. It holds the same secrets .env does, and was the one file
+# `git clean` on BY-CACMS would have deleted.
+.env.*
+!.env.example
