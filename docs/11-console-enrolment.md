@@ -154,8 +154,13 @@ thousand, and nobody had to do it at either scale.
 
 ## Console — the page
 
-Frontend work, against the endpoints above. **This is the whole of what is
-left of 0052.** Every endpoint the page needs now exists.
+Frontend work, against the endpoints above. **Written on 2026-10-09** as
+`frontend/src/app/enrol/enrol-dialog.ts`, opened from the token's help-desk
+screen rather than from the inventory row, because that screen already lists the
+slots; not yet clicked against the running stack. One addition the plan below
+did not have: the overview and the help desk now carry `lastSeenAgentId`, so the
+dialog asks the agent that last saw the token instead of leaving the job to
+whichever agent polls first.
 
 **Where.** The token row in `inventory.ts` already shows slots and their
 management state. Enrolment belongs on an empty or unmanaged slot of a token

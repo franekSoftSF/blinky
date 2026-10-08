@@ -20,6 +20,7 @@ export interface TokenRow {
   pinState: string;
   pukState: string;
   lastSeenAt?: string;
+  lastSeenAgentId?: string | null;
 }
 export interface SlotRow {
   tokenSerial: number;
@@ -93,6 +94,7 @@ export interface HelpdeskView {
     formFactor?: string;
     attestationThumbprint?: string;
     lastSeenAt?: string;
+    lastSeenAgentId?: string | null;
     managementKeyState: string;
     manageable: boolean;
   };
@@ -108,6 +110,46 @@ export interface HelpdeskView {
     credentialId?: string | null;
   }>;
   credentials: HelpdeskCredential[];
+}
+/** A certificate profile as GET /api/profiles describes it (0052). */
+export interface ProfileRow {
+  name: string;
+  requiresUpn: boolean;
+  requiresObjectSid: boolean;
+  keyAlgorithm: string;
+  days: number;
+  extendedKeyUsage: string[];
+}
+/** A person on file, from GET or POST /api/cardholders. */
+export interface CardholderRow {
+  id: string;
+  displayName: string;
+  upn?: string | null;
+  objectSid?: string | null;
+  distinguishedName?: string | null;
+  source: string;
+  state?: string;
+  issuable: boolean;
+}
+/** A person in the directory, from GET /api/directory/users - not yet on file. */
+export interface DirectoryPerson {
+  displayName: string;
+  samAccountName?: string | null;
+  upn?: string | null;
+  objectSid?: string | null;
+  distinguishedName?: string | null;
+  enabled: boolean;
+  issuable: boolean;
+}
+export interface EnrolmentRequest {
+  agentId: string | null;
+  tokenSerial: number;
+  slotId: string;
+  profileName: string;
+  displayName: string;
+  cardholderId: string;
+  keyAlgorithm: string | null;
+  reason: string;
 }
 export interface MutationResult {
   reversible?: boolean;
@@ -277,6 +319,27 @@ export class ConsoleStore {
   }
   testDirectoryAccess(account: string): Promise<DirectoryAccessResult> {
     return this.post('/api/directory/test-write-access', { account });
+  }
+  profiles(): Promise<ProfileRow[]> {
+    return firstValueFrom(this.http.get<ProfileRow[]>('/api/profiles'));
+  }
+  cardholders(query: string): Promise<CardholderRow[]> {
+    return firstValueFrom(
+      this.http.get<CardholderRow[]>('/api/cardholders', { params: { q: query } }),
+    );
+  }
+  async directoryPeople(query: string): Promise<DirectoryPerson[]> {
+    const found = await firstValueFrom(
+      this.http.get<{ users: DirectoryPerson[] }>('/api/directory/users', { params: { q: query } }),
+    );
+    return found.users ?? [];
+  }
+  /** Read from the directory by the server - the UPN and SID are never typed here. */
+  addCardholder(directoryAccount: string): Promise<CardholderRow> {
+    return this.post('/api/cardholders', { directoryAccount });
+  }
+  enrol(request: EnrolmentRequest): Promise<{ id: string; created: boolean; state: string }> {
+    return this.post('/api/jobs/enrol', request);
   }
   async systemStatus(): Promise<SystemStatus> {
     const status = await firstValueFrom(

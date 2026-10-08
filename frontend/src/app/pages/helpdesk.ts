@@ -1,13 +1,14 @@
 import { DatePipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ConsoleStore, HelpdeskView } from '../core/console.store';
 import { displayFormFactor } from '../core/console-presentation';
 import { I18n } from '../core/i18n';
+import { EnrolDialog } from '../enrol/enrol-dialog';
 
 @Component({
   selector: 'app-helpdesk',
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, EnrolDialog],
   template: ` <section class="list-head">
       <div>
         <a class="back-link" routerLink="/tokens">← Tokens</a>
@@ -15,8 +16,22 @@ import { I18n } from '../core/i18n';
         <h1>Token {{ serial }}</h1>
         <p>User, device and card applications from one live help-desk response.</p>
       </div>
-      <button class="secondary-action" (click)="load()">↻ Refresh</button>
+      <div class="list-actions">
+        <button
+          class="primary"
+          [disabled]="!data()?.device?.manageable"
+          (click)="openEnrol('9A')"
+        >
+          {{ i18n.t('enrolOpen') }}</button
+        ><button class="secondary-action" (click)="load()">↻ Refresh</button>
+      </div>
     </section>
+    <app-enrol-dialog
+      [serial]="serial"
+      [initialSlot]="enrolSlot()"
+      [lastSeenAgentId]="data()?.device?.lastSeenAgentId"
+      (closed)="enrolClosed($event)"
+    />
     @if (error()) {
       <div class="notice">
         <strong>{{ error() }}</strong>
@@ -120,6 +135,7 @@ import { I18n } from '../core/i18n';
                 <th>Algorithm</th>
                 <th>PIN policy</th>
                 <th>Touch policy</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -138,6 +154,16 @@ import { I18n } from '../core/i18n';
                   <td>{{ slot.keyAlgorithm ?? '—' }}</td>
                   <td>{{ slot.pinPolicy ?? '—' }}</td>
                   <td>{{ slot.touchPolicy ?? '—' }}</td>
+                  <td class="row-actions">
+                    @if (
+                      view.device.manageable &&
+                      ['Empty', 'KeyPresent'].includes(slotState(view, slot.credentialId, slot.state))
+                    ) {
+                      <button class="row-action" (click)="openEnrol(slot.slotId)">
+                        {{ i18n.t('enrolOpen') }}
+                      </button>
+                    }
+                  </td>
                 </tr>
               }
             </tbody>
@@ -240,6 +266,8 @@ export class Helpdesk {
   protected readonly data = signal<HelpdeskView | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly busy = signal<string | null>(null);
+  protected readonly enrolSlot = signal('9A');
+  private readonly enrolDialog = viewChild.required(EnrolDialog);
   constructor() {
     void this.load();
   }
@@ -255,6 +283,13 @@ export class Helpdesk {
       view.credentials.some((c) => c.id === credentialId && c.state === 'Revoked')
       ? 'Empty'
       : state;
+  }
+  protected openEnrol(slot: string): void {
+    this.enrolSlot.set(slot);
+    void this.enrolDialog().open(slot);
+  }
+  protected async enrolClosed(issued: boolean): Promise<void> {
+    if (issued) await this.load();
   }
   protected async load(): Promise<void> {
     this.error.set(null);

@@ -2058,6 +2058,7 @@ app.MapGet("/api/tokens/{serial:long}/helpdesk",
                 formFactor = token.FormFactor,
                 token.AttestationThumbprint,
                 token.LastSeenAt,
+                token.LastSeenAgentId,
 
                 // What can and cannot be done to it, and why - so the console
                 // greys out an action rather than offering one that fails.
@@ -2585,6 +2586,10 @@ app.MapGet("/api/console/overview", (HttpContext context, Database database) =>
     {
         t.Id, t.Serial, t.FirmwareVersion, t.FormFactor, state = t.State.ToString(),
         pinState = t.PinState.ToString(), pukState = t.PukState.ToString(), t.LastSeenAt,
+
+        // Which agent last saw it, so the console's enrolment dialog asks that one
+        // rather than leaving the job to whichever agent polls first (0052).
+        t.LastSeenAgentId,
     }).ToList();
     var credentials = session.Query<Credential>().ToList().Select(c => new
     {
