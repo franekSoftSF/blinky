@@ -2,10 +2,14 @@
  * What every page inherits. Colours come from tokens.scss, which is generated
  * from tools/PaletteTool - there are no colours of its own here, and a hex in
  * this file fails PaletteTests.
+ *
+ * The type, the radii and the flatness are BlinkyLite's web console's: the two
+ * are one family, drawn the same way and told apart by the accent and the name.
  */
 
 :root {
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 15px;
   background: var(--bl-background);
   color: var(--bl-text);
 }
@@ -18,14 +22,45 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 75% -10%, var(--bl-background-glow) 0, transparent 37%),
-    var(--bl-background);
+  background: var(--bl-background);
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
+  color: inherit;
+}
+
+/* Low specificity on purpose: a page that styles its own field or button wins. */
+:where(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+  background: var(--bl-field);
+  border: 1px solid var(--bl-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+:where(button) {
+  cursor: pointer;
+  border: 1px solid var(--bl-border);
+  background: var(--bl-surface);
+  border-radius: 8px;
+  padding: 8px 14px;
+}
+
+:where(button:disabled) {
+  cursor: default;
+  color: var(--bl-text-muted);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--bl-accent);
+  outline-offset: 2px;
 }
 
 a {
@@ -40,42 +75,49 @@ p {
 }
 
 h1 {
-  font-size: clamp(1.8rem, 4vw, 2.6rem);
-  margin-bottom: 0.45rem;
-  letter-spacing: -0.04em;
+  font-size: 1.6rem;
+  margin-bottom: 0.4rem;
+  letter-spacing: -0.01em;
 }
 
 h2 {
-  font-size: 1rem;
+  font-size: 1.2rem;
   margin-bottom: 0.25rem;
+}
+
+.muted {
+  color: var(--bl-text-muted);
 }
 
 .eyebrow {
   color: var(--bl-accent-text);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  margin-bottom: 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
 }
 
-/* The accent carries near-black text on the dark theme and white on the light
-   one - the accent as text on its own fill reads in neither. */
+/* The accent carries near-black text in both themes: the one pairing of the
+   cyan that reads, as #1DB954 does for BlinkyLite (its D-20). */
 .primary {
-  border: 0;
-  border-radius: 10px;
-  padding: 0.72rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 11px 18px;
   background: var(--bl-accent);
   color: var(--bl-on-accent);
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 8px 28px var(--bl-accent-glow);
+}
+
+.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+  color: var(--bl-on-accent);
 }
 
 .panel {
-  background: var(--bl-panel-veil);
+  background: var(--bl-panel);
   border: 1px solid var(--bl-border);
-  border-radius: 16px;
-  box-shadow: 0 15px 40px var(--bl-shadow);
+  border-radius: 12px;
   overflow: hidden;
 }
 
@@ -83,7 +125,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1.25rem 1.35rem;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--bl-border);
 }
 
@@ -91,13 +133,13 @@ h2 {
 .welcome p,
 .list-head p {
   color: var(--bl-text-muted);
-  font-size: 0.84rem;
+  font-size: 0.9rem;
   margin-bottom: 0;
 }
 
 .panel header a {
   color: var(--bl-accent-text);
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   font-weight: 600;
 }
 
@@ -113,37 +155,43 @@ table {
 
 th {
   color: var(--bl-text-muted);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
+  font-size: 13px;
+  font-weight: 600;
   text-align: left;
-  text-transform: uppercase;
-  padding: 0.8rem 1.25rem;
-  background: var(--bl-surface);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--bl-border);
 }
 
 td {
-  padding: 0.9rem 1.25rem;
-  border-top: 1px solid var(--bl-border);
-  font-size: 0.82rem;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--bl-border);
+  font-size: 0.93rem;
   color: var(--bl-text-body);
+  vertical-align: top;
+}
+
+tbody tr:hover {
+  background: var(--bl-hover);
 }
 
 td strong {
   color: var(--bl-text);
 }
 
-/* A state is a word first; the colour behind it only repeats what it says. */
-.state,
-.pill {
+/* A state is a word first; the marker before it only repeats it, by shape as
+   well as by colour - BlinkyLite's convention. */
+.state {
   display: inline-flex;
-  border-radius: 99px;
-  padding: 0.25rem 0.55rem;
-  color: var(--bl-ok);
-  background: var(--bl-ok-soft);
-  font-size: 0.7rem;
+  align-items: baseline;
+  color: var(--bl-text);
   font-style: normal;
-  font-weight: 700;
   white-space: nowrap;
+}
+
+.state::before {
+  content: '✓';
+  margin-right: 6px;
+  color: var(--bl-ok);
 }
 
 .state[data-state='Failed'],
@@ -151,14 +199,40 @@ td strong {
 .state[data-state='Rejected'],
 .state[data-state='Suspended'] {
   color: var(--bl-danger);
-  background: var(--bl-danger-soft);
+}
+
+.state[data-state='Failed']::before,
+.state[data-state='Blocked']::before,
+.state[data-state='Rejected']::before,
+.state[data-state='Suspended']::before {
+  content: '✗';
+  color: var(--bl-danger);
 }
 
 .state[data-state='Pending'],
 .state[data-state='AwaitingUser'],
 .state[data-state='Expiring'] {
   color: var(--bl-warning);
-  background: var(--bl-warning-soft);
+}
+
+.state[data-state='Pending']::before,
+.state[data-state='AwaitingUser']::before,
+.state[data-state='Expiring']::before {
+  content: '…';
+  color: var(--bl-warning);
+}
+
+.pill {
+  display: inline-flex;
+  border: 1px solid var(--bl-ok-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  color: var(--bl-ok);
+  background: var(--bl-ok-soft);
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .empty {
@@ -172,23 +246,17 @@ td strong {
 }
 
 .empty > span {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: var(--bl-accent-soft);
-  color: var(--bl-accent-text);
-  font-size: 1.5rem;
-  margin-bottom: 0.9rem;
+  font-size: 28px;
+  color: var(--bl-text-muted);
+  margin-bottom: 0.5rem;
 }
 
 .empty strong {
-  color: var(--bl-text-body);
+  color: var(--bl-text);
 }
 
 .empty p {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
 }
 
 .notice {
@@ -199,7 +267,7 @@ td strong {
   padding: 0.9rem 1rem;
   border: 1px solid var(--bl-warning-border);
   background: var(--bl-warning-soft);
-  border-radius: 12px;
+  border-radius: 8px;
   color: var(--bl-warning);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
 }

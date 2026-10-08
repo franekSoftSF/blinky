@@ -11,21 +11,21 @@
          error that only appears after somebody switches theme, which is the
          worst time to find it. -->
 
-    <Color x:Key="BackgroundColour">#EEF3F8</Color>
+    <Color x:Key="BackgroundColour">#FFFFFF</Color>
     <SolidColorBrush x:Key="Background" Color="{StaticResource BackgroundColour}" />
-    <SolidColorBrush x:Key="Panel" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="PanelRaised" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="Divider" Color="#D8E1EB" />
-    <SolidColorBrush x:Key="Text" Color="#142238" />
-    <SolidColorBrush x:Key="TextMuted" Color="#566A80" />
-    <SolidColorBrush x:Key="TextFaint" Color="#5A6D82" />
-    <SolidColorBrush x:Key="Accent" Color="#087D8C" />
+    <SolidColorBrush x:Key="Panel" Color="#F3F3F3" />
+    <SolidColorBrush x:Key="PanelRaised" Color="#F7F7F7" />
+    <SolidColorBrush x:Key="Divider" Color="#C8C8C8" />
+    <SolidColorBrush x:Key="Text" Color="#1A1A1A" />
+    <SolidColorBrush x:Key="TextMuted" Color="#595959" />
+    <SolidColorBrush x:Key="TextFaint" Color="#5C5C5C" />
+    <SolidColorBrush x:Key="Accent" Color="#18C9DF" />
     <SolidColorBrush x:Key="AccentText" Color="#05606C" />
     <SolidColorBrush x:Key="AccentSoft" Color="#DDF2F5" />
-    <SolidColorBrush x:Key="OnAccent" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="Warning" Color="#6C4B00" />
+    <SolidColorBrush x:Key="OnAccent" Color="#03131B" />
+    <SolidColorBrush x:Key="Warning" Color="#7A4A00" />
     <SolidColorBrush x:Key="WarningSoft" Color="#FFF0C7" />
-    <SolidColorBrush x:Key="Danger" Color="#A32036" />
+    <SolidColorBrush x:Key="Danger" Color="#A4262C" />
     <SolidColorBrush x:Key="Managed" Color="#0F6B48" />
     <SolidColorBrush x:Key="ManagedSoft" Color="#D9F6E7" />
     <SolidColorBrush x:Key="FieldBackground" Color="#FFFFFF" />

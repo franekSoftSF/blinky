@@ -66,11 +66,22 @@
       >
         ☰
       </button>
-      <div class="page-title">
-        <span>{{ section() }}</span
-        ><small>{{ i18n.t('subtitle') }}</small>
+      <!-- Who is signed in, on the left, as in BlinkyLite: the one fact on this
+           bar that changes what the person is allowed to do. -->
+      <div class="operator">
+        <strong>{{ auth.operatorName() ?? i18n.t('operator') }}</strong
+        ><small>{{ auth.role() ?? i18n.t('administrator') }} · {{ section() }}</small>
       </div>
       <div class="top-actions">
+        <select
+          class="language"
+          [value]="i18n.language()"
+          (change)="i18n.use($any($event.target).value)"
+          [attr.aria-label]="i18n.t('language')"
+        >
+          <option value="pl" [selected]="i18n.language() === 'pl'">polski</option>
+          <option value="en" [selected]="i18n.language() === 'en'">English</option>
+        </select>
         <button
           class="icon-button"
           type="button"
@@ -82,14 +93,6 @@
           {{ theme.current() === 'dark' ? '☀' : '☾' }}
         </button>
         <button
-          class="icon-button language"
-          type="button"
-          (click)="i18n.toggle()"
-          [attr.aria-label]="i18n.t('language')"
-        >
-          {{ i18n.language() === 'pl' ? 'EN' : 'PL' }}
-        </button>
-        <button
           class="icon-button"
           type="button"
           [attr.aria-label]="i18n.t('refresh')"
@@ -97,20 +100,13 @@
         >
           ↻
         </button>
-        <div class="operator">
-          <span>OP</span>
-          <div>
-            <strong>{{ auth.operatorName() ?? i18n.t('operator') }}</strong
-            ><small>{{ auth.role() ?? i18n.t('administrator') }}</small>
-          </div>
-        </div>
 
         <!-- In the header rather than only on the settings page. Signing out is
              the one thing somebody wants within reach from wherever they are,
              and hiding it three clicks away is how people leave a console
              signed in on a machine they walked away from. -->
-        <button class="icon-button" type="button" [title]="i18n.t('signOut')" (click)="signOut()">
-          ⏻
+        <button class="icon-button" type="button" (click)="signOut()">
+          {{ i18n.t('signOut') }}
         </button>
       </div>
     </header>

@@ -19,23 +19,32 @@ import { toDataURL } from 'qrcode';
 @Component({
   selector: 'app-sign-in',
   template: `
+    <!-- A card in the middle of the page, as BlinkyLite's sign-in is: the two
+         consoles are one family and the first screen is where that shows. -->
     <section class="sign-in">
-      <header>
-        <div class="sign-in-top">
-          <!-- The mark rather than the name in capitals: this is the first
-               screen of the product, and it is where the mark is worth the
-               space (brand/). -->
-          <p class="sign-in-brand">
-            <img class="mark" src="/brand/blinkycms-mark.svg" alt="" />
-            <span class="wordmark">Blinky<span class="cms">CMS</span></span>
-          </p>
+     <div class="sign-in-card">
+      <!-- The shell's language switch lives behind the sign-in, which is
+           exactly where somebody who cannot read this page cannot reach it. -->
+      <select
+        class="sign-in-language"
+        [value]="i18n.language()"
+        (change)="i18n.use($any($event.target).value)"
+        [attr.aria-label]="i18n.t('language')"
+      >
+        <option value="pl" [selected]="i18n.language() === 'pl'">polski</option>
+        <option value="en" [selected]="i18n.language() === 'en'">English</option>
+      </select>
 
-          <!-- The shell's language switch lives behind the sign-in, which is
-               exactly where somebody who cannot read this page cannot reach
-               it. -->
-          <button class="language" type="button" (click)="i18n.toggle()">
-            {{ i18n.language() === 'pl' ? 'EN' : 'PL' }}
-          </button>
+      <header>
+        <!-- The mark rather than the name in capitals: this is the first
+             screen of the product, and it is where the mark is worth the
+             space (brand/). -->
+        <div class="sign-in-brand">
+          <img class="mark" src="/brand/blinkycms-mark.svg" alt="" />
+          <span>
+            <span class="wordmark">Blinky<span class="cms">CMS</span></span>
+            <small>{{ i18n.t('credentialConsole') }}</small>
+          </span>
         </div>
         <h1>{{ i18n.t('signInTitle') }}</h1>
         <p class="lede">{{ i18n.t('signInLede') }}</p>
@@ -176,61 +185,68 @@ import { toDataURL } from 'qrcode';
           }
         </div>
       }
+     </div>
     </section>
   `,
   styles: [
     `
       .sign-in {
-        max-width: 34rem;
-        margin: 3rem auto;
-        padding: 0 1.25rem;
         display: grid;
-        gap: 1.5rem;
+        place-items: center;
+        min-height: 100vh;
+        padding: 16px;
       }
-      .sign-in-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
+      .sign-in-card {
+        position: relative;
+        display: grid;
+        gap: 20px;
+        width: min(420px, 100%);
+        padding: 32px;
+        background: var(--bl-surface);
+        border: 1px solid var(--bl-border);
+        border-radius: 14px;
+      }
+      .sign-in-language {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        padding: 6px 10px;
+        font-size: 13px;
       }
       .sign-in-brand {
         display: flex;
         align-items: center;
-        gap: 0.7rem;
-        margin: 0;
+        gap: 12px;
+        margin-bottom: 24px;
       }
       .sign-in-brand .mark {
-        width: 42px;
-        height: 42px;
+        display: block;
+        flex: none;
+        width: 64px;
+        height: 64px;
+      }
+      .sign-in-brand small {
+        display: block;
+        color: var(--bl-text-muted);
+        font-size: 13px;
       }
       .wordmark {
-        font-size: 1.35rem;
+        display: block;
+        font-size: 26px;
+        line-height: 1.1;
         font-weight: 700;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.3px;
       }
       .wordmark .cms {
         color: var(--bl-accent-text);
       }
-      .language {
-        font: inherit;
-        font-size: 0.75rem;
-        letter-spacing: 0.08em;
-        padding: 0.2rem 0.6rem;
-        cursor: pointer;
-        background: transparent;
-        border: 1px solid currentColor;
-        border-radius: 2px;
-        opacity: 0.7;
-      }
-      .language:hover {
-        opacity: 1;
-      }
       .sign-in h1 {
-        margin: 0.25rem 0 0.5rem;
+        margin: 0 0 6px;
+        font-size: 22px;
       }
       .lede {
         margin: 0;
-        opacity: 0.75;
+        color: var(--bl-text-muted);
       }
       .sign-in-form {
         display: grid;
@@ -238,7 +254,7 @@ import { toDataURL } from 'qrcode';
       }
       .sign-in-form label {
         display: grid;
-        gap: 0.35rem;
+        gap: 6px;
       }
       /* The fields the console draws everywhere else. Left to the browser they
          came out light grey on navy, which is the one part of this screen a
@@ -246,16 +262,11 @@ import { toDataURL } from 'qrcode';
       .sign-in-form input,
       details input {
         width: 100%;
-        padding: 0.7rem 0.85rem;
+        padding: 10px 12px;
         border: 1px solid var(--bl-border);
-        border-radius: 10px;
+        border-radius: 8px;
         background: var(--bl-field);
         color: var(--bl-text);
-      }
-      .sign-in-form input:focus-visible,
-      details input:focus-visible {
-        outline: 2px solid var(--bl-accent-text);
-        outline-offset: 1px;
       }
       .sign-in-form input[readonly] {
         opacity: 0.6;
@@ -287,7 +298,7 @@ import { toDataURL } from 'qrcode';
       .sign-in-note,
       .sign-in-hint {
         margin: 0;
-        opacity: 0.8;
+        color: var(--bl-text-muted);
       }
       .sign-in-hint {
         font-size: 0.85rem;

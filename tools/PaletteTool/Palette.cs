@@ -29,8 +29,8 @@ public readonly record struct TextPair(string What, Colour Foreground, Colour Ba
 /// </para>
 /// <para>
 /// The roles are named after what they do, not after what they look like: a
-/// role that reads <c>Accent</c> is cyan in the dark theme and teal in the
-/// light one, and neither name belongs in a stylesheet. The two themes define
+/// role that reads <c>Accent</c> is one cyan fill in both themes while
+/// <c>AccentText</c> darkens on white, and neither hex belongs in a stylesheet. The two themes define
 /// exactly the same roles - one missing from either is a hole nobody sees
 /// until somebody switches theme.
 /// </para>
@@ -73,73 +73,81 @@ public sealed record Palette(
     Colour Shadow,
     Colour AccentGlow)
 {
+    // The neutrals are BlinkyLite's, value for value (its Palette.cs, D-20):
+    // the two consoles are one family and an operator of one should not feel
+    // they have walked into a different product in the other. Only the accent
+    // is Blinky's own. The navy and the glow that were here before went with
+    // the unification.
     public static readonly Palette Dark = new(
         Name: "dark",
-        Background: new("#07101E"),
-        BackgroundGlow: new("#142B4E"),
-        Surface: new("#081321"),
-        Panel: new("#0D192B"),
-        PanelRaised: new("#0E1C30"),
-        Field: new("#0B1626"),
-        Hover: new("#0E1D30"),
-        Border: new("#1C2C44"),
-        BorderStrong: new("#273952"),
-        Text: new("#EAF2FF"),
-        TextBody: new("#AAB8CA"),
-        TextMuted: new("#93A3B8"),
-        TextFaint: new("#8294AB"),
+        Background: new("#1A1A1A"),
+        BackgroundGlow: new("#1A1A1A"),
+        Surface: new("#242424"),
+        Panel: new("#242424"),
+        PanelRaised: new("#2A2A2A"),
+        Field: new("#1A1A1A"),
+        Hover: new("#1A1A1A"),
+        Border: new("#3D3D3D"),
+        BorderStrong: new("#4A4A4A"),
+        Text: new("#F2F2F2"),
+        TextBody: new("#D6D6D6"),
+        TextMuted: new("#B4B4B4"),
+        TextFaint: new("#A3A3A3"),
         Accent: new("#18C9DF"),
         AccentText: new("#35D6E8"),
         OnAccent: new("#03131B"),
-        AccentSoft: new("#102F40"),
-        AccentBorder: new("#2C596D"),
+        AccentSoft: new("#173A40"),
+        AccentBorder: new("#2C5A62"),
         Ok: new("#55DFAD"),
-        OkSoft: new("#153B34"),
-        OkBorder: new("#2A5C4B"),
-        Warning: new("#FFD477"),
-        WarningSoft: new("#40351E"),
-        WarningBorder: new("#684C23"),
-        Danger: new("#FF8993"),
-        DangerSoft: new("#441E2A"),
-        DangerBorder: new("#6A3946"),
+        OkSoft: new("#1D3A30"),
+        OkBorder: new("#2E5A49"),
+        Warning: new("#F0B429"),
+        WarningSoft: new("#3A3020"),
+        WarningBorder: new("#6A5225"),
+        Danger: new("#FF8A85"),
+        DangerSoft: new("#3E2526"),
+        DangerBorder: new("#6E3B3B"),
 
         // The two with an alpha channel, and the only two the WPF dictionaries
-        // skip: a drop shadow under a panel and the halo under an accent
-        // button, both of which have to let the background through.
+        // skip. Both kept as roles and both now nearly nothing: BlinkyLite draws
+        // flat, and a glow under one family's buttons and not the other's is
+        // the kind of difference that makes two products of one.
         Shadow: new("#00000033"),
-        AccentGlow: new("#12C6DC25"));
+        AccentGlow: new("#18C9DF00"));
 
+    // The accent fill is the same in both themes, as BlinkyLite's green is, and
+    // carries near-black text in both; only the accent as text darkens on white.
     public static readonly Palette Light = new(
         Name: "light",
-        Background: new("#EEF3F8"),
-        BackgroundGlow: new("#D9EDF5"),
-        Surface: new("#F9FBFD"),
-        Panel: new("#FFFFFF"),
-        PanelRaised: new("#FFFFFF"),
+        Background: new("#FFFFFF"),
+        BackgroundGlow: new("#FFFFFF"),
+        Surface: new("#F3F3F3"),
+        Panel: new("#F3F3F3"),
+        PanelRaised: new("#F7F7F7"),
         Field: new("#FFFFFF"),
-        Hover: new("#EAF1F6"),
-        Border: new("#D8E1EB"),
-        BorderStrong: new("#CBD7E2"),
-        Text: new("#142238"),
-        TextBody: new("#42556B"),
-        TextMuted: new("#566A80"),
-        TextFaint: new("#5A6D82"),
-        Accent: new("#087D8C"),
+        Hover: new("#FFFFFF"),
+        Border: new("#C8C8C8"),
+        BorderStrong: new("#B0B0B0"),
+        Text: new("#1A1A1A"),
+        TextBody: new("#333333"),
+        TextMuted: new("#595959"),
+        TextFaint: new("#5C5C5C"),
+        Accent: new("#18C9DF"),
         AccentText: new("#05606C"),
-        OnAccent: new("#FFFFFF"),
+        OnAccent: new("#03131B"),
         AccentSoft: new("#DDF2F5"),
         AccentBorder: new("#8FC9D0"),
         Ok: new("#0F6B48"),
         OkSoft: new("#D9F6E7"),
         OkBorder: new("#A9DCC4"),
-        Warning: new("#6C4B00"),
+        Warning: new("#7A4A00"),
         WarningSoft: new("#FFF0C7"),
         WarningBorder: new("#E8C879"),
-        Danger: new("#A32036"),
-        DangerSoft: new("#FFE0E4"),
+        Danger: new("#A4262C"),
+        DangerSoft: new("#FDE2E3"),
         DangerBorder: new("#E0ABB0"),
-        Shadow: new("#26446612"),
-        AccentGlow: new("#087D8C1F"));
+        Shadow: new("#0000001A"),
+        AccentGlow: new("#18C9DF00"));
 
     public static IReadOnlyList<Palette> All => [Dark, Light];
 
