@@ -86,6 +86,8 @@ upgrade is not a new agent.
 | `POST` | `/api/credentials/issue` | Submit PKCS#10 + attestation, receive a certificate |
 | `POST` | `/api/credentials/{id}/installed` | Confirm the certificate reached the card |
 | `GET` | `/api/policy/for-token/{serial}` | What this token should look like |
+| `POST` | `/api/jobs/{id}/fido2/ready` | FIDO2: the key is prepared; answered with the ceremony (0077) |
+| `POST` | `/api/jobs/{id}/fido2/result` | FIDO2: the attestation; answered with the provider's verdict (0077) |
 
 `/api/credentials/issue` and `/api/credentials/{id}/installed` are separate calls
 on purpose — that gap is the `Issued` → `Installed` transition from
@@ -163,6 +165,47 @@ used; it does not decide it. See
 The agent refuses any `op` it does not know rather than skipping it, and reports
 `UnsupportedOperation` with its own version so the mismatch is visible in the
 console.
+
+## Versions
+
+A message carries the **lowest** protocol version that can read it, not the
+highest the sender speaks (`Protocol.VersionFor`). Version 2 exists for one job
+type, `ProvisionFido2Credential`; every other envelope still says 1. An agent
+from before 0074 accepts 1 to 1, so it goes on doing inventory and PIV work after
+the API upgrades, and refuses a FIDO2 job with "protocol 2, I speak 1" before
+reporting anything as started. Stamping 2 on every envelope would have stopped
+the whole fleet for a feature most of it will never be asked to do.
+
+`JobType` travels as a number. New types are appended and nothing is
+renumbered: an older agent reads `8` as `8`, finds the version too new and
+refuses, where a renumbering would have it read a FIDO2 job as one it knows.
+
+## FIDO2 provisioning
+
+Four messages, all in `Blinky.Contracts/Fido2Contracts.cs`, and the agent
+starts every exchange — the same shape as `/api/credentials/issue`, not a push:
+
+1. **Prepare** — the job's single step, `ProvisionFido2Credential`: PIN policy,
+   the key's base name, the holder's name for the window, and the provider as an
+   opaque tag. No challenge: its lifetime is the provider's and starts when the
+   provider is asked.
+2. **Ready** — agent to API once the key is in the reader and prepared: serial,
+   AAGUID, CTAP versions, whether a FIDO2 PIN is set and its retry counter, free
+   discoverable slots, and which CTAP 2.1 controls the key has.
+3. **Ceremony** — the answer to Ready: the provider's creation options,
+   normalised, with rpId and origin, binary values as unpadded base64url.
+   `CeremonyId` is derived from the job and the challenge, so the same challenge
+   twice is one ceremony: an agent that already ran it answers with the result
+   it holds instead of putting a second credential on the key.
+4. **Result** — agent to API: credential id, `clientDataJSON` and
+   `attestationObject` as produced, and the key name it composed. Answered with
+   the provider's verdict, after which — and not before — the agent sets
+   `forceChangePin`.
+
+**No message carries a PIN, in any PIN mode.** A provisional PIN is generated on
+the workstation and shown there, once, by the agent's window; the result says
+only *whether* the agent set one. A test fails if any of these types gains a
+field with somewhere to put it.
 
 ## Idempotency and delivery
 

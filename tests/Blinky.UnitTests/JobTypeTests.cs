@@ -18,6 +18,7 @@ public sealed class JobTypeTests
     [InlineData(JobType.UnblockPin)]
     [InlineData(JobType.RotateMgmtKey)]
     [InlineData(JobType.ResetCard)]
+    [InlineData(JobType.ProvisionFido2Credential)]
     public void Everything_that_touches_a_card_is_an_agent_s(JobType type)
     {
         Assert.True(JobTypes.IsForAgent(type));

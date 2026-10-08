@@ -87,6 +87,17 @@ public sealed record JobEnvelope(
                 ["replaceKey"] = replaceKey ? "true" : string.Empty,
             }),
         ]);
+
+    /// <summary>
+    /// Prepare a key and run one WebAuthn ceremony on it for a provider the agent
+    /// does not need to know. The challenge is not in here - see <see cref="Fido2Ready"/>.
+    /// </summary>
+    /// <param name="tokenSerial">Null when any key will do; the agent reports which one it was.</param>
+    public static JobEnvelope ProvisionFido2(Guid jobId, string idempotencyKey,
+        DateTimeOffset deadline, long? tokenSerial, Fido2Provisioning provisioning) =>
+        new(Protocol.VersionFor(JobType.ProvisionFido2Credential), jobId,
+            JobType.ProvisionFido2Credential, idempotencyKey, deadline, tokenSerial,
+            [provisioning.ToStep()]);
 }
 
 /// <summary>One instruction in a job.</summary>

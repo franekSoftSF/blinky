@@ -1273,9 +1273,10 @@
       "id": "0074",
       "phase": 7,
       "title": "Contracts: ProvisionFido2Credential envelopes and a protocol version bump",
-      "state": "open",
+      "state": "done-unverified",
       "owner": "cloud-ai",
-      "proof": "Not started. Breaking the protocol immobilises deployed agents, which is what the version bump is for."
+      "proof": "Prepare (the job's single step), Ready, Ceremony and Result plus the provider's verdict in Blinky.Contracts/Fido2Contracts.cs; the agent starts every exchange. CeremonyId derived from job and challenge, so one challenge is one ceremony. Version 2 for ProvisionFido2Credential only, every other envelope stays at 1 via Protocol.VersionFor. JobType numbers pinned. No contract can carry a PIN, checked by reflection. 17 tests.",
+      "gap": "No agent built before this commit has been sent a version-2 job; the refusal is the existing version check, tested in this build. The endpoints are 0077's"
     },
     {
       "id": "0075",

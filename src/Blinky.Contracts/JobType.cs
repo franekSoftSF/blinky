@@ -17,6 +17,14 @@ public enum JobType
     /// the lease expired without ever being able to do it.
     /// </summary>
     PublishCrl,
+
+    /// <summary>
+    /// Register a FIDO2 credential on somebody's behalf. Last, and it stays last:
+    /// the envelope carries this as a number, and an agent from before it reads
+    /// the number, finds the protocol version too new, and refuses - which only
+    /// works while every older value keeps the number it had.
+    /// </summary>
+    ProvisionFido2Credential,
 }
 
 /// <summary>

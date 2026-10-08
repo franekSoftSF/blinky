@@ -62,12 +62,12 @@ Everything provider-specific lives behind one interface; everything ceremony-spe
 
 ### 4.2 `Blinky.Contracts` — new job envelope (provider-agnostic)
 
-New job type `ProvisionFido2Credential`, plus a protocol **version bump** per repo rules. Two-phase shape (challenge TTL forces this):
+New job type `ProvisionFido2Credential`, plus a protocol **version bump** per repo rules. Two-phase shape (challenge TTL forces this). As built in 0074 — `Blinky.Contracts/Fido2Contracts.cs`, described in [05](05-agent-protocol.md#fido2-provisioning) — with two corrections to what follows: the agent starts every exchange (Ready is a request whose answer is the ceremony, Result a request whose answer is the provider's verdict), and **no message carries a PIN**. Item 4 below used to allow the provisional PIN in the result; it is shown on the workstation by the agent instead, which is where the person holding the key is. The version bump applies to this job type only — every other envelope stays at 1 so deployed agents keep working:
 
 1. `Fido2PrepareRequest` (backend → agent): reader hint, expected serial (optional), PIN policy `{ mode: OperatorSets | ProvisionalRandom | ProviderDelivers, minPinLength, forceChangePin }`.
 2. `Fido2Ready` (agent → backend): serial, firmware, FIDO2 applet state (PIN set?, retries, free resident slots), AAGUID.
 3. `Fido2CeremonyRequest` (backend → agent): the normalized `PasskeyCreationOptions` **including rpId and origin**, constructed after `Fido2Ready`, immediately after calling the provider.
-4. `Fido2CeremonyResult` (agent → backend): `credentialId`, `attestationObject`, `clientDataJSON`, AAGUID, serial, whether a provisional PIN was set (and the PIN value **only** when policy is `ProvisionalRandom` and the operator must see it once — see §9).
+4. `Fido2CeremonyResult` (agent → backend): `credentialId`, `attestationObject`, `clientDataJSON`, AAGUID, serial, the composed key name, and whether the agent set a PIN — never the PIN itself.
 5. Terminal statuses reuse the existing job state machine; add FIDO2-specific failure codes (§10).
 
 The envelope carries no provider identifier semantics beyond an opaque `directoryProvider` tag for audit — the agent behaves identically for Entra and Okta.
@@ -228,7 +228,7 @@ Operator (Angular)      Blinky.Api              Provider API           Agent.Ser
       │                     │◄──────────── Fido2CeremonyResult ────────────│
       │                     │── register attestation ─►│
       │                     │◄── method/factor id ─────│
-      │◄─ result (+PIN once if ProvisionalRandom) ─ persist, audit, complete
+      │◄─ result (no PIN, ever)         ─ persist, audit, complete
 ```
 
 Timing rule: elapsed time between fetching options and registering must fit the challenge TTL. Enforce a job-level deadline; on expiry, fail with a retryable code (and for Okta, delete the pending factor) — operator re-runs with a fresh challenge.
@@ -236,7 +236,7 @@ Timing rule: elapsed time between fetching options and registering must fit the 
 ## 9. Security requirements
 
 - Provider credentials (Graph app cert/secret, Okta token/private key) live in the existing secrets-at-rest store; never in logs. Prefer certificate/private-key-JWT over shared secrets.
-- Provisional PIN: generated agent-side (CSPRNG, length ≥ the larger of policy min and the key's own `minPINLength`, and never a PIN a key with complexity enforcement refuses — fewer than four distinct digits, or a run like 123456 or 654321, the rule KeyEnroll's generator applies; a `PIN_POLICY_VIOLATION` from the key means generate again, not fail); with `ProvisionalRandom` shown to the operator exactly once in the UI, never persisted, never logged; with Okta `ProviderDelivers` it goes into the preregistration payload and is emailed by Okta — Blinky still never stores it. `forceChangePin` set whenever firmware supports it; if firmware lacks CTAP2.1, fall back to operator-set PIN and say so in the UI.
+- Provisional PIN: generated agent-side (CSPRNG, length ≥ the larger of policy min and the key's own `minPINLength`, and never a PIN a key with complexity enforcement refuses — fewer than four distinct digits, or a run like 123456 or 654321, the rule KeyEnroll's generator applies; a `PIN_POLICY_VIOLATION` from the key means generate again, not fail); with `ProvisionalRandom` shown exactly once on the workstation, in the agent's window — it is in no protocol message (0074), so neither the API nor the console ever holds it — never persisted, never logged; with Okta `ProviderDelivers` it goes into the preregistration payload and is emailed by Okta — Blinky still never stores it. `forceChangePin` set whenever firmware supports it; if firmware lacks CTAP2.1, fall back to operator-set PIN and say so in the UI.
 - Audit every step (job created, options issued, ceremony completed, registered at provider, revoked) with operator identity — reuse the existing audit trail; include `directoryProvider`.
 - Treat a provisioned key as a live credential in transit; extend `docs/06-security.md` with shipping/chain-of-custody notes, mirroring the PUK-escrow threat notes.
 - The FIDO2 PIN retry counter is independent of the PIV PIN — surface both distinctly everywhere (UI, inventory, error messages).
