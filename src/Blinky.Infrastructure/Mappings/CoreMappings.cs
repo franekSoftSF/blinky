@@ -161,6 +161,49 @@ public sealed class CredentialMapping : ClassMapping<Credential>
     }
 }
 
+/// <summary>
+/// No column here can hold a PIN, and <c>PasskeyCredentialTests</c> fails if one
+/// appears: the provisional FIDO2 PIN is shown on the workstation and stored
+/// nowhere, and the only PIN-shaped thing recorded is whether the agent set one.
+/// </summary>
+public sealed class PasskeyCredentialMapping : ClassMapping<PasskeyCredential>
+{
+    public PasskeyCredentialMapping()
+    {
+        Table("passkey_credentials");
+        Id(x => x.Id, m => { m.Column("id"); m.Generator(Generators.GuidComb); });
+        Property(x => x.Directory, m => { m.Column("directory"); m.NotNullable(true); });
+        Property(x => x.ProviderUserId, m => { m.Column("provider_user_id"); m.NotNullable(true); });
+        Property(x => x.ProviderLogin, m => { m.Column("provider_login"); m.NotNullable(true); });
+        ManyToOne(x => x.Cardholder, m => m.Column("cardholder_id"));
+        Property(x => x.TokenSerial, m => m.Column("token_serial"));
+        Property(x => x.JobId, m => m.Column("job_id"));
+
+        // Unique: one ceremony is one row, however many times its result arrives.
+        Property(x => x.CeremonyId, m => { m.Column("ceremony_id"); m.Unique(true); });
+        Property(x => x.Challenge, m => m.Column(c => { c.Name("challenge"); c.SqlType("text"); }));
+        Property(x => x.ChallengeDeadlineAt,
+            m => Conventions.AsTimestamp(m, "challenge_deadline_at", notNull: false));
+        Property(x => x.ProviderReference, m => m.Column("provider_reference"));
+        Property(x => x.CredentialId, m => m.Column("credential_id"));
+        Property(x => x.Aaguid, m => m.Column("aaguid"));
+        Property(x => x.KeyName, m => m.Column("key_name"));
+        Property(x => x.AttestationObject, m => m.Column("attestation_object"));
+        Property(x => x.ProviderMethodId, m => m.Column("provider_method_id"));
+        Property(x => x.PinSetByAgent, m => { m.Column("pin_set_by_agent"); m.NotNullable(true); });
+        Property(x => x.State, m => Conventions.AsEnumString<PasskeyCredentialState>(m, "state"));
+        // text, not varchar(255): this is a provider's error message, Okta's
+        // with its causes appended, and an insert that fails on its length
+        // loses the one thing that says why the passkey failed.
+        Property(x => x.FailureReason, m => m.Column(c => { c.Name("failure_reason"); c.SqlType("text"); }));
+        Property(x => x.RegisteredAt, m => Conventions.AsTimestamp(m, "registered_at", notNull: false));
+        Property(x => x.RevocationReason, m => m.Column("revocation_reason"));
+        Property(x => x.RevokedAt, m => Conventions.AsTimestamp(m, "revoked_at", notNull: false));
+        Property(x => x.CreatedAt, m => Conventions.AsTimestamp(m, "created_at"));
+        Property(x => x.UpdatedAt, m => Conventions.AsTimestamp(m, "updated_at"));
+    }
+}
+
 public sealed class CaInstanceMapping : ClassMapping<CaInstance>
 {
     public CaInstanceMapping()

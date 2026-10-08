@@ -111,6 +111,34 @@ create table credentials (
        primary key (id)
     );
 
+create table passkey_credentials (
+        id uuid not null,
+       directory varchar(255) not null,
+       provider_user_id varchar(255) not null,
+       provider_login varchar(255) not null,
+       cardholder_id uuid,
+       token_serial int8,
+       job_id uuid,
+       ceremony_id uuid unique,
+       challenge text,
+       challenge_deadline_at timestamptz,
+       provider_reference varchar(255),
+       credential_id varchar(255),
+       aaguid uuid,
+       key_name varchar(255),
+       attestation_object bytea,
+       provider_method_id varchar(255),
+       pin_set_by_agent boolean not null,
+       state text not null,
+       failure_reason text,
+       registered_at timestamptz,
+       revocation_reason varchar(255),
+       revoked_at timestamptz,
+       created_at timestamptz not null,
+       updated_at timestamptz not null,
+       primary key (id)
+    );
+
 create table ca_instances (
         id uuid not null,
        name varchar(255) not null unique,
@@ -248,6 +276,11 @@ alter table credentials
         add constraint FK_5DB8FEF0 
         foreign key (supersedes_id) 
         references credentials;
+
+alter table passkey_credentials 
+        add constraint FK_25D7557A 
+        foreign key (cardholder_id) 
+        references cardholders;
 
 alter table certificate_profiles 
         add constraint FK_62B5CCF5 

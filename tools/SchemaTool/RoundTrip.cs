@@ -13,12 +13,23 @@ internal static class RoundTrip
 {
     public static int Run(string connectionString)
     {
+        // Shapes first: an insert that works into a column of the wrong shape
+        // proves nothing about what the services will say at start.
+        var validation = SchemaValidator.Validate(BlinkySessionFactory.BuildConfiguration(connectionString));
+        Console.WriteLine($"  validation  {validation.Summary}");
+
+        if (!validation.IsValid)
+        {
+            return 1;
+        }
+
         using var factory = BlinkySessionFactory.Build(connectionString);
         var now = DateTime.UtcNow;
         var serial = 900000000 + (now.Ticks % 1000);
 
         Guid tokenId;
         Guid jobId;
+        Guid passkeyId;
 
         using (var session = factory.OpenSession())
         using (var transaction = session.BeginTransaction())
@@ -63,9 +74,31 @@ internal static class RoundTrip
             };
             session.Save(envelope);
 
+            // bytea, a unique uuid, a state that only moves through MoveTo, and
+            // a boolean that is the only PIN-shaped column the table has.
+            var passkey = new PasskeyCredential
+            {
+                Directory = "roundtrip",
+                ProviderUserId = "user-1",
+                ProviderLogin = "roundtrip@blinky.lab",
+                TokenSerial = serial,
+                JobId = job.Id,
+                CeremonyId = Guid.NewGuid(),
+                Challenge = "cdsZ1V10E0BGE4GcG3IK",
+                AttestationObject = [0xA3, 0x63, 0x66, 0x6D, 0x74],
+                PinSetByAgent = true,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            passkey.MoveTo(PasskeyCredentialState.KeyReady, now);
+            passkey.MoveTo(PasskeyCredentialState.Failed, now,
+                "A provider's error message, which is longer than anybody expects it to be. ".PadRight(400, '.'));
+            session.Save(passkey);
+
             transaction.Commit();
             tokenId = token.Id;
             jobId = job.Id;
+            passkeyId = passkey.Id;
         }
 
         using (var session = factory.OpenSession())
@@ -79,6 +112,17 @@ internal static class RoundTrip
             Console.WriteLine($"  job payload {job.Payload}");
             Console.WriteLine($"  unrecoverable {token.IsUnrecoverable}");
 
+            var passkey = session.Get<PasskeyCredential>(passkeyId);
+            Console.WriteLine($"  passkey     {passkey.State} pinSet={passkey.PinSetByAgent} "
+                              + $"attestation={passkey.AttestationObject?.Length} reason={passkey.FailureReason?.Length}");
+
+            if (passkey.State != PasskeyCredentialState.Failed || passkey.AttestationObject?.Length != 5
+                || passkey.FailureReason?.Length != 400)
+            {
+                Console.Error.WriteLine("passkey round trip did not return what was written");
+                return 1;
+            }
+
             if (token.PukState != CredentialSecretState.NotApplicable
                 || !job.Payload.Contains("RequireToken", StringComparison.Ordinal))
             {
@@ -91,6 +135,8 @@ internal static class RoundTrip
         using (var session = factory.OpenSession())
         using (var transaction = session.BeginTransaction())
         {
+            session.CreateSQLQuery("delete from passkey_credentials where id = :id")
+                .SetGuid("id", passkeyId).ExecuteUpdate();
             session.CreateSQLQuery("delete from secret_envelopes where token_id = :id")
                 .SetGuid("id", tokenId).ExecuteUpdate();
             session.CreateSQLQuery("delete from jobs where id = :id")

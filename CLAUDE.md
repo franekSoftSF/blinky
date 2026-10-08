@@ -99,7 +99,7 @@ dotnet run --project tools/PivProbe -- transcript.json   # read-only, real card
   readable, creatable, editable and deletable from the admin panel in the same
   change that adds it; a model that exists in the database and nowhere in the
   UI is a model only its author can change. The exception is not optional:
-  `AuditEvent`, `Job`, `Credential` and the PUK disclosure rows are history,
+  `AuditEvent`, `Job`, `Credential`, `PasskeyCredential` and the PUK disclosure rows are history,
   and they get create-and-transition instead. A credential is revoked, never
   deleted — the row outlives the card, which is the point of the state machines
   in [docs/02-data-model.md](docs/02-data-model.md). An audit trail that

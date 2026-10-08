@@ -61,6 +61,7 @@ public sealed class SchemaMappingTests
         Assert.Contains(typeof(Job), mapped);
         Assert.Contains(typeof(SecretEnvelope), mapped);
         Assert.Contains(typeof(AuditEvent), mapped);
+        Assert.Contains(typeof(PasskeyCredential), mapped);
     }
 
     [Fact]

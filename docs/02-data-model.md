@@ -131,7 +131,38 @@ deadline_at       timestamptz
 created_at, updated_at timestamptz
 ```
 
-## Three state machines
+### `PasskeyCredential`
+
+```
+id                     uuid
+directory              text          -- configured provider instance, opaque
+provider_user_id       text          -- Entra object id, Okta user id
+provider_login         text          -- UPN or login, a snapshot
+cardholder_id          uuid NULL
+token_serial           bigint NULL   -- null for a key that did not report one
+job_id                 uuid NULL
+ceremony_id            uuid UNIQUE   -- one challenge, one row
+challenge              text NULL     -- a nonce, kept to check clientDataJSON against
+challenge_deadline_at  timestamptz NULL
+provider_reference     text NULL     -- Okta's pending factor id, for cleanup
+credential_id          text NULL     -- base64url, as the key produced it
+aaguid                 uuid NULL
+key_name               text NULL
+attestation_object     bytea NULL    -- what the provider was shown, byte for byte
+provider_method_id     text NULL
+pin_set_by_agent       boolean       -- whether, never what
+state                  text
+failure_reason         text NULL
+registered_at, revoked_at timestamptz NULL
+revocation_reason      text NULL
+created_at, updated_at timestamptz
+```
+
+History, like `Credential`: created and moved, never edited, never deleted.
+There is no column a PIN fits in — `pin_set_by_agent` is a boolean, and a test
+on the mapping fails if any other column with "pin" in its name appears.
+
+## Four state machines
 
 Keeping them separate is deliberate. A token can be perfectly healthy while a
 credential on it is revoked, and a job can fail without either of them moving.
@@ -186,6 +217,24 @@ in the CA's database with no matching key holder — and Blinky knows, because t
 row is stuck in `Issued`. The worker's reconciler either retries installation or
 revokes the orphan. Merging the two states would make that class of leak
 invisible. Same reasoning as FAG's two record counters.
+
+### Passkey lifecycle
+
+```
+Requested ─► KeyReady ─► ChallengeIssued ─► Provisioned ─► Registered ─► Revoked
+    │           ▲  │            │  │             │
+    │           └──┼────────────┘  │             │
+    └──────────────┴───────────────┴─────────────┴─► Failed
+```
+
+`Provisioned` and `Registered` are two states for the reason `Issued` and
+`Installed` are: between them the key holds a credential the provider has not
+accepted, and a row stuck in `Provisioned` is a user about to receive a key
+that opens nothing. `KeyReady` and `ChallengeIssued` can be re-entered — a job
+retried after its lease ran out reports the key ready again and gets a fresh
+challenge, on the same row. `Failed` is final; trying again is a new job and a
+new row. `Revoked` is reached only after the provider has deleted the method.
+The moves are enforced by `PasskeyCredential.MoveTo`, not by whoever calls it.
 
 ### Job lifecycle
 
