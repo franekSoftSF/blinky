@@ -74,7 +74,47 @@ public sealed class ConnectorOptions
     /// </summary>
     public ApiOptions Api { get; set; } = new();
 
+    /// <summary>
+    /// The domain this connector reads people from on the API's behalf (0104).
+    /// </summary>
+    public DirectoryOptions Directory { get; set; } = new();
+
     public bool DialsApi => !string.IsNullOrWhiteSpace(Api.Url);
+}
+
+/// <summary>
+/// Where the connector reads people from, as the account it runs as.
+/// </summary>
+/// <remarks>
+/// Every value may be left empty on a domain member: the domain controller comes from
+/// the DC locator and the naming context from its RootDSE, which is what makes this
+/// the configuration with no password in it anywhere.
+/// </remarks>
+public sealed class DirectoryOptions
+{
+    /// <summary>
+    /// False and the directory routes refuse, for a connector whose API binds to the
+    /// directory itself.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// A domain controller by the name in its LDAPS certificate. Empty asks the DC
+    /// locator for one in this machine's domain.
+    /// </summary>
+    public string? Host { get; set; }
+
+    /// <summary>
+    /// 636, LDAPS. The domain controller's certificate is issued by the domain's own
+    /// CA, which a member already trusts, so the encryption costs no configuration.
+    /// </summary>
+    public int Port { get; set; } = 636;
+
+    /// <summary>Empty reads <c>defaultNamingContext</c> from the controller.</summary>
+    public string? BaseDn { get; set; }
+
+    /// <summary>Empty reads the domain's crossRef, as the API's own client does.</summary>
+    public string? NetBiosDomain { get; set; }
 }
 
 /// <summary>How the connector reaches the API when it is the one that dials.</summary>

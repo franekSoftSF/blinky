@@ -55,6 +55,12 @@ public sealed class AdcsCertificateAuthority : ICertificateAuthority, IDisposabl
 
     public string Name => name;
 
+    /// <summary>
+    /// The connector in front of this CA, for the directory reads it also makes (0104).
+    /// Null for a transport that is not the connector.
+    /// </summary>
+    public ConnectorAdcsTransport? Connector => transport as ConnectorAdcsTransport;
+
     /// <summary>Where the enrolment agent's key lives, for the console.</summary>
     public string AgentDescription => agents?.Description ?? "none - this instance does not issue";
 

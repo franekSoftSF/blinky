@@ -111,8 +111,35 @@ builder.Services.AddSingleton(services =>
 // endpoints exist and answer "there is no directory here" rather than failing
 // to resolve a service - a deployment without one is a normal deployment, with
 // cardholders entered by hand.
-builder.Services.AddSingleton<Blinky.Directory.IDirectory>(_ =>
+// Via=Connector reads Active Directory through the ADCS connector, as the domain account
+// it runs as, so this host keeps no bind password for the domain (0104). Refused at
+// start without ADCS, because then there is no connector to ask and every read would
+// fail later for a reason that names neither setting.
+var directoryViaConnector = string.Equals(
+    builder.Configuration["Blinky:Directory:Via"], "Connector", StringComparison.OrdinalIgnoreCase);
+
+if (directoryViaConnector && caBackend != CaBackend.Adcs)
 {
+    throw new InvalidOperationException(
+        "Blinky:Directory:Via is Connector, and the CA backend is not Adcs. The directory is "
+        + "read by the ADCS connector; without one, bind to the directory directly "
+        + "(Blinky:Directory:Host) and leave Via empty.");
+}
+
+builder.Services.AddSingleton<Blinky.Directory.IDirectory>(services =>
+{
+    if (directoryViaConnector)
+    {
+        var connector = (services.GetRequiredService<Blinky.Pki.ICertificateAuthority>()
+                            as Blinky.Pki.Adcs.AdcsCertificateAuthority)?.Connector
+                        ?? throw new InvalidOperationException(
+                            "Blinky:Directory:Via is Connector, and the ADCS transport is not the "
+                            + "connector.");
+
+        return new Blinky.Api.Credentials.ConnectorDirectory(
+            connector, builder.Configuration["Blinky:Directory:NetBiosDomain"]);
+    }
+
     var directoryHost = builder.Configuration["Blinky:Directory:Host"];
 
     if (string.IsNullOrWhiteSpace(directoryHost))
@@ -1360,11 +1387,18 @@ app.MapGet("/api/system/status",
             {
                 configured = directory is not Blinky.Directory.NoDirectory,
                 source = directory.Source.ToString(),
-                host = configuration["Blinky:Directory:Host"],
-                baseDn = configuration["Blinky:Directory:BaseDn"],
-                boundAs = configuration["Blinky:Directory:BindDn"] is { Length: > 0 } bind
-                    ? bind
-                    : "the container's own Kerberos credentials",
+                via = directory is Blinky.Api.Credentials.ConnectorDirectory ? "connector" : "ldap",
+                host = directory is Blinky.Api.Credentials.ConnectorDirectory viaConnector
+                    ? viaConnector.Host
+                    : configuration["Blinky:Directory:Host"],
+                baseDn = directory is Blinky.Api.Credentials.ConnectorDirectory throughConnector
+                    ? throughConnector.BaseDn
+                    : configuration["Blinky:Directory:BaseDn"],
+                boundAs = directory is Blinky.Api.Credentials.ConnectorDirectory
+                    ? "the ADCS connector's service account, with Kerberos"
+                    : configuration["Blinky:Directory:BindDn"] is { Length: > 0 } bind
+                        ? bind
+                        : "the container's own Kerberos credentials",
 
                 // Never the password, not even masked. It is not sent here and
                 // must not look as though it could be.

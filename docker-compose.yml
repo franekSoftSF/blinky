@@ -92,6 +92,10 @@ services:
       # Kerberos from the container's own credentials instead, which is better
       # where it is possible - no password anywhere.
       Blinky__Directory__Host: ${DIRECTORY_HOST:-}
+      # Connector: Active Directory is read by the ADCS connector as the domain
+      # account it runs as, and nothing below but NetBiosDomain is read (0104).
+      # The host this runs on then holds no credential for the domain.
+      Blinky__Directory__Via: ${DIRECTORY_VIA:-}
       # 636, not 389. LDAPS establishes encryption before the first message;
       # StartTLS on 389 starts in the clear and upgrades, and that upgrade is
       # not implemented in System.DirectoryServices.Protocols on Linux - it

@@ -1150,6 +1150,15 @@
       "gap": "Not deployed. The lab server runs the old build, and this is a schema change: deploying means docker compose down -v or a hand-written ALTER for enrolment_tokens and connector_registrations. Agents already enrolled are unaffected - they authenticate with certificates - but the value in the lab's .env stops working, and the ADCS connector on HZCS01 has to enrol once to get a registration row before it can collect work again. smoke-test.sh mints its own token through scripts/new-enrol-token.sh; that path ran here, but the two enrolment checks were not seen green in one run because the lab's usual ports were taken by other projects on this machine and the script's host-side call uses the same variable for the published and the internal port."
     },
     {
+      "id": "0104",
+      "phase": 3,
+      "title": "One connector reads the CA and the directory",
+      "state": "done-unverified",
+      "owner": "cloud-ai",
+      "proof": "The API read Active Directory with a bind DN and svc_blinky's password in .env on a Linux host, the only process in the deployment with no domain identity; the password went with that host's .env when BY-CACMS was wiped on 2026-10-08. The ADCS connector already runs as the integration account on a domain member, so it now answers six directory routes (/connector/directory/probe, search, find, members, write-access, netbios) over the same channel as the CA, POST with the value in the body. It runs the API's own LdapDirectory with no bind DN - Negotiate from the service's Kerberos ticket, DC from the locator, naming context from RootDSE, LDAPS 636 - and drops the connection after any failure. The API's ConnectorDirectory is chosen with DIRECTORY_VIA=Connector and refuses to start without CA_BACKEND=Adcs; a pre-0104 connector's 404 is reported as too old, not as nobody found. ConnectorDirectoryTests (11) drive the API client through the polling queue into the connector's routes in memory, including LogonNames resolving AD\\s.frankiewicz end to end; 821 tests pass.",
+      "gap": "Never run against a real domain: no bind from a real service account on a member has happened. First run is MS-CONN01.ad.digitalworkspace.pl with the connector as AD\\svc_blinky; the console's directory test and one enrolment through ADCS are the check"
+    },
+    {
       "id": "0080",
       "phase": 8,
       "title": "The agent's loopback API, and the ACL it has to replace",

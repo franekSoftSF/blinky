@@ -11,7 +11,9 @@ elsewhere before it is of any use.
 
 It is a transport, and it is where the enrolment agent's key lives. It signs a
 `PKIData` it did not build, submits the result through `ICertRequest3::Submit`,
-and returns what the CA said.
+and returns what the CA said. Since 0104 it also reads the directory for the API,
+as the same account - see [below](#the-directory-read-by-the-connector-0104);
+reading is not deciding, and the paragraph after this one still holds.
 
 It is **not** a certificate authority, and it decides nothing about a
 certificate. Who it is for, against which template, and what goes into the
@@ -1062,6 +1064,49 @@ What it took:
 - **An order to check on a CA.** `SignerInfos` is a DER `SET OF`, so "first" and
   "second" are an encoding order, not an insertion order. The CA accepted the
   encoding order.
+
+## The directory, read by the connector (0104)
+
+One connector for the CA and for the directory, because they are one account.
+The CA issues for `DOMAIN\user`, `LogonNames` has to read that name and the SID
+from Active Directory at issuance, and the only process in the deployment that is
+already a domain identity is this one. Reading it from the API meant a bind DN
+and `svc_blinky`'s password in `.env` on a Linux host - which is how the lab ran
+until 2026-10-08, and which was lost with that host's `.env` when it was wiped.
+
+**What travels.** Six routes, POST with the value in the body so that no account
+name lands in a request log:
+
+| Route | Answers with | The API's `IDirectory` member |
+|---|---|---|
+| `/connector/directory/probe` | `ConnectorDirectoryProbe`, plus the DC and naming context it read | `TestAsync` |
+| `/connector/directory/search` | `ConnectorDirectoryUsers` | `SearchAsync` |
+| `/connector/directory/find` | `ConnectorDirectoryFound`, null for nobody and for two | `FindAsync` |
+| `/connector/directory/members` | `ConnectorDirectoryUsers` | `MembersOfAsync` |
+| `/connector/directory/write-access` | `ConnectorDirectoryWriteAccess` | `CanWriteAsync` |
+| `/connector/directory/netbios` | `ConnectorDirectoryNetBios` | `NetBiosDomainAsync` |
+
+Additive to `AdcsTransport` schema 1, so neither version moves. A connector built
+before 0104 answers 404 and the API says the connector is too old to read the
+directory, rather than that nobody matched.
+
+**How it reads.** `DomainDirectory` wraps the API's own `LdapDirectory` with no
+bind DN, so it binds with Negotiate from the service's Kerberos ticket. The
+domain controller comes from the DC locator and the naming context from its
+RootDSE unless `Connector:Directory:Host` and `BaseDn` say otherwise; 636 by
+default, because a member trusts its DC's certificate already. A failure drops
+the connection and the next call finds a controller again: the service outlives
+the DC it first found. `Connector:Directory:Enabled=false` turns the routes into
+a 404 with that reason.
+
+**On the API.** `DIRECTORY_VIA=Connector` with `CA_BACKEND=Adcs`; without ADCS the
+API refuses to start rather than fail every read later. `DIRECTORY_NETBIOS_DOMAIN`
+still answers locally. Every other `DIRECTORY_*` value is unread.
+
+**Proved:** `ConnectorDirectoryTests` drive the API's client through the polling
+queue into the connector's routes in memory, including `LogonNames` resolving
+`AD\s.frankiewicz` end to end. **Not proved:** a bind from a real service account
+on a real member - the first run on MS-CONN01 is that test.
 
 ## Unverified, and named as such
 

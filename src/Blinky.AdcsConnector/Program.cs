@@ -73,6 +73,14 @@ builder.Services.AddSingleton<ICertificateServices, CertificateServices>();
 builder.Services.AddSingleton<CertificateServiceHost>();
 builder.Services.AddSingleton<ITemplateDirectory, ActiveDirectoryTemplates>();
 
+// The domain, for the API's directory routes (0104). Resolved at the first call, not
+// here: a connector that starts while its domain controller reboots should still sign.
+builder.Services.AddSingleton(options.Directory);
+builder.Services.AddSingleton<Blinky.Directory.IDirectory>(services => options.Directory.Enabled
+    ? services.GetRequiredService<DomainDirectory>()
+    : new Blinky.Directory.NoDirectory());
+builder.Services.AddSingleton<DomainDirectory>();
+
 // Loaded now, so an enrolment agent that is configured and unusable - expired,
 // missing the Certificate Request Agent policy, or with a key this account
 // cannot reach - stops the service here, in front of whoever installed it,
@@ -205,6 +213,7 @@ app.Use(async (context, next) =>
 });
 
 app.MapConnector();
+app.MapDirectory();
 
 app.Run();
 

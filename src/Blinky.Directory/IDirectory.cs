@@ -19,6 +19,11 @@ namespace Blinky.Directory;
 /// attributes. A Windows-native connector earns its place where LDAP falls
 /// short, not because the directory runs on Windows.
 /// </para>
+/// <para>
+/// Where LDAP falls short is identity, not protocol: the ADCS connector runs this
+/// same LDAP client as a domain account, so an API with no Kerberos identity in
+/// the domain reads through it with no password stored (0104).
+/// </para>
 /// </remarks>
 public interface IDirectory
 {

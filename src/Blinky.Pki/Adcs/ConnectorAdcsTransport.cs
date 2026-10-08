@@ -260,6 +260,33 @@ public sealed class ConnectorAdcsTransport : IAdcsTransport, IRemoteEnrolmentAge
         }
     }
 
+    /// <summary>
+    /// A directory read made by the connector as the account it runs as (0104).
+    /// </summary>
+    /// <remarks>
+    /// Here rather than in a second client because it is the same wire, the same
+    /// queue and the same refusals; a directory that needs its own transport is a
+    /// second connector nobody asked for.
+    /// </remarks>
+    public async Task<TAnswer> DirectoryAsync<TAnswer>(
+        string path, ConnectorDirectoryRequest body, CancellationToken ct = default)
+    {
+        var response = await Send(() => client.PostAsJsonAsync(path, body, Json, ct));
+
+        // A connector from before these routes answers 404 with nothing in it, and so
+        // does one told not to read the directory, with a reason. Neither is "nobody
+        // by that name", which is what an empty answer would be taken for.
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            throw new CertificateAuthorityException(
+                $"The connector at {where} does not read the directory: {await Problem(response, ct)} "
+                + "A connector older than 0104 has no directory routes and has to be upgraded on the "
+                + "CA server.");
+        }
+
+        return await ReadAsync<TAnswer>(response, ct);
+    }
+
     private async Task<TAnswer> PostAsync<TBody, TAnswer>(
         string path, TBody body, CancellationToken ct)
     {

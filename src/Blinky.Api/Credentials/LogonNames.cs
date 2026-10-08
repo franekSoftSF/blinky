@@ -44,7 +44,8 @@ public sealed class LogonNames(IDirectory directory, bool required)
                    ?? throw new IssuancePolicyException(
                        $"The directory has no single account for {upn}, so the CA cannot be told "
                        + "whom to issue for. Either nobody holds that UPN, or more than one account "
-                       + "answers to it, or no directory is configured (Blinky:Directory:Host).");
+                       + "answers to it, or no directory is configured (Blinky:Directory:Host, or "
+                       + "Blinky:Directory:Via=Connector).");
 
         if (cardholder.ObjectSid is { Length: > 0 } sid
             && !string.Equals(user.ObjectSid, sid, StringComparison.OrdinalIgnoreCase))

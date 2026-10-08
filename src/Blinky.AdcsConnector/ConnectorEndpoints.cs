@@ -7,8 +7,9 @@ using Microsoft.AspNetCore.Routing;
 namespace Blinky.AdcsConnector;
 
 /// <summary>
-/// The connector's whole surface: four things a CA can be asked, a signature
-/// from the enrolment agent it holds, and a liveness answer.
+/// The CA half of the connector's surface: four things a CA can be asked, a
+/// signature from the enrolment agent it holds, and a liveness answer. The
+/// directory half is <see cref="DirectoryEndpoints"/>.
 /// </summary>
 /// <remarks>
 /// Deliberately thin. Everything that decides what a certificate should say

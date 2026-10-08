@@ -274,6 +274,16 @@ administrator for and an easy thing to audit. Leave the bind DN empty to bind
 with Kerberos from the container's own credentials instead: better still,
 because then there is no password anywhere.
 
+**Or let the ADCS connector read it (0104).** A Linux container has no
+Kerberos identity in a Windows domain unless somebody makes it a keytab, and in
+practice the lab ended up with `svc_blinky`'s password in `.env`. Where the CA
+is a Microsoft one there is already a domain member running as the integration
+account: the connector. `DIRECTORY_VIA=Connector` sends every read above to it,
+over the channel it already uses for the CA, and it answers with this same
+`LdapDirectory` bound as itself. Same filters, same SID parsing, same crossRef
+read; no password on either machine. The direct bind stays for Samba4 and for a
+deployment with no connector. See [15](15-adcs-connector.md#the-directory-read-by-the-connector-0104).
+
 ```
 GET  /api/directory/users?q=admin
 GET  /api/cardholders?q=admin

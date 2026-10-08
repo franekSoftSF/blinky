@@ -50,6 +50,12 @@
          interface would invite exactly the drift that makes the two transports
          stop being interchangeable. -->
     <ProjectReference Include="..\Blinky.Contracts\Blinky.Contracts.csproj" />
+    <!-- The API's own LDAP client, bound with this service's Kerberos credentials
+         for the directory routes (0104). Reused rather than rewritten in ADSI so
+         that who counts as a person is decided by one set of filters whichever
+         side reads the directory. Blinky.Directory chooses nobody either: it
+         answers what the directory says. -->
+    <ProjectReference Include="..\Blinky.Directory\Blinky.Directory.csproj" />
   </ItemGroup>
 
   <ItemGroup>
