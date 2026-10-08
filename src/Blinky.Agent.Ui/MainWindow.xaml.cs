@@ -43,7 +43,8 @@ public partial class MainWindow : Window
             PinBox.Password = string.Empty;
             PinBox.Visibility = wantsPin ? Visibility.Visible : Visibility.Collapsed;
             OkButton.Visibility = wantsPin ? Visibility.Visible : Visibility.Collapsed;
-            CancelButton.Content = wantsPin ? "Cancel" : "Close";
+            CancelButton.Content = Strings.Current[wantsPin ? "Pin.Cancel" : "Tokens.Close"];
+            OkButton.Content = Strings.Current["Prompt.Unlock"];
 
             // On a fingerprint prompt the count is worth showing from the
             // start rather than at two: three is all there is, and a Bio has no
@@ -106,7 +107,7 @@ public partial class MainWindow : Window
         {
             // Refused here rather than on the card: a short PIN sent to the
             // token would still cost an attempt.
-            AttemptsText.Text = "A PIN is between six and eight characters";
+            AttemptsText.Text = Strings.Current["Prompt.PinLength"];
             return;
         }
 
