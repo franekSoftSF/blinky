@@ -1063,7 +1063,18 @@ app.MapGet("/api/passkeys/directories",
     (HttpContext context, Blinky.Api.Passkeys.PasskeyDirectories directories) =>
         !IsOperator(context)
             ? Results.Json(new { error = "an operator token is required" }, statusCode: 401)
-            : Results.Ok(directories.All.Select(d => new { d.Name, d.Capabilities })));
+            : Results.Ok(new
+            {
+                directories = directories.All.Select(d => new { d.Name, d.Capabilities }),
+                analysisOnly = Blinky.Api.Passkeys.AnalysisOnlyDirectory.All,
+            }));
+
+// One passkey, for the console following a ceremony. The row's state is the step.
+app.MapGet("/api/passkeys/{id:guid}",
+    (Guid id, HttpContext context, Blinky.Api.Passkeys.PasskeyProvisioningService passkeys) =>
+        Passkey(() => Task.FromResult(!IsOperator(context)
+            ? Results.Json(new { error = "an operator token is required" }, statusCode: 401)
+            : Results.Ok(passkeys.Status(id)))));
 
 // The database and the provider side by side. Disagreement is shown, not fixed:
 // a method somebody deleted at the provider, or a key the user enrolled alone,

@@ -70,6 +70,7 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         "/api/jobs/fido2",
         "/api/passkeys",
         "/api/passkeys/directories",
+        "/api/passkeys/{id:guid}",
         "/api/passkeys/{id:guid}/revoke",
 
         // Both reached from a console, never from an agent: the machine whose

@@ -46,6 +46,7 @@ export class App {
     { path: '/certificates', label: this.i18n.t('certificates'), icon: '▤' },
     { path: '/agents', label: this.i18n.t('agents'), icon: '⌁' },
     { path: '/jobs', label: this.i18n.t('jobs'), icon: '↯' },
+    { path: '/passkeys', label: this.i18n.t('passkeys'), icon: '⚿' },
   ]);
   protected readonly administration = computed(() => [
     { path: '/directory', label: this.i18n.t('directory'), icon: '⌁' },

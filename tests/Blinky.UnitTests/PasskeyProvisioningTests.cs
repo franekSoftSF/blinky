@@ -250,6 +250,27 @@ public sealed class PasskeyProvisioningTests
     }
 
     [Fact]
+    public async Task The_status_follows_the_ceremony_and_carries_no_pin()
+    {
+        var job = Requested();
+        var id = store.ForJob(job.Id)!.Id;
+        Assert.Equal("Requested", service.Status(id).State);
+
+        var ceremony = await service.ReadyAsync(AgentId, job.Id, Ready(job.Id), default);
+        Assert.Equal("ChallengeIssued", service.Status(id).State);
+        Assert.Equal("Running", service.Status(id).JobState);
+
+        await service.ResultAsync(AgentId, job.Id, Result(job.Id, ceremony), default);
+        var status = service.Status(id);
+
+        Assert.Equal("Registered", status.State);
+        Assert.Equal("method-1", status.MethodId);
+        Assert.True(status.PinSetByAgent);
+        Assert.DoesNotContain(typeof(PasskeyStatus).GetProperties(),
+            p => p.Name.Contains("Pin", StringComparison.Ordinal) && p.PropertyType != typeof(bool));
+    }
+
+    [Fact]
     public async Task An_unknown_user_is_refused_before_any_job_exists()
     {
         directory.User = null;

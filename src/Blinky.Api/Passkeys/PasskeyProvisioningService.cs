@@ -311,6 +311,26 @@ public sealed class PasskeyProvisioningService(
     }
 
     /// <summary>
+    /// Where one passkey is, for the console to show while a ceremony runs. The
+    /// row's state is the step - waiting for the key, the challenge out, the
+    /// provider deciding - and the job's state says whether anybody is still on it.
+    /// </summary>
+    /// <remarks>
+    /// No attestation and no challenge in it: the console needs to say where things
+    /// are, not to hold what the key produced.
+    /// </remarks>
+    public PasskeyStatus Status(Guid id)
+    {
+        var passkey = store.Get(id) ?? throw new PasskeyFlowException(404, "no-such-passkey", "No such passkey.");
+        var job = passkey.JobId is { } jobId ? store.Job(jobId) : null;
+
+        return new PasskeyStatus(passkey.Id, passkey.Directory, passkey.ProviderLogin, passkey.State.ToString(),
+            job?.State.ToString(), passkey.TokenSerial, passkey.KeyName, passkey.PinSetByAgent,
+            passkey.ProviderMethodId, passkey.FailureReason, passkey.ChallengeDeadlineAt, passkey.RegisteredAt,
+            passkey.RevokedAt);
+    }
+
+    /// <summary>
     /// Deletes at the provider, then marks the row. A provider that answers 404
     /// already agrees, and that is recorded rather than treated as a failure.
     /// </summary>
@@ -537,6 +557,37 @@ public enum PasskeyDrift
 
     /// <summary>At the provider, never made by Blinky.</summary>
     ProviderOnly,
+}
+
+/// <summary>One passkey, as the console follows it.</summary>
+/// <param name="PinSetByAgent">Whether a PIN was set on the workstation. Never what it was.</param>
+public sealed record PasskeyStatus(
+    Guid Id,
+    string Directory,
+    string Login,
+    string State,
+    string? JobState,
+    long? TokenSerial,
+    string? KeyName,
+    bool PinSetByAgent,
+    string? MethodId,
+    string? FailureReason,
+    DateTime? ChallengeDeadlineAt,
+    DateTime? RegisteredAt,
+    DateTime? RevokedAt);
+
+/// <summary>
+/// A provider the console names and cannot use, with the reason. Google today: it
+/// accepts no attestation on a user's behalf, and leaving it out of the list would
+/// let somebody assume it was simply not configured.
+/// </summary>
+public sealed record AnalysisOnlyDirectory(string Name, string Reason)
+{
+    public static readonly IReadOnlyList<AnalysisOnlyDirectory> All =
+    [
+        new("Google Workspace",
+            "Google exposes no API that accepts a passkey registered on a user's behalf; users enrol their own keys. See docs/12 section 7."),
+    ];
 }
 
 /// <param name="Id">Blinky's row, null for a provider-only method.</param>

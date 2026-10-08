@@ -125,6 +125,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--bl-border);
 }
@@ -197,14 +198,16 @@ td strong {
 .state[data-state='Failed'],
 .state[data-state='Blocked'],
 .state[data-state='Rejected'],
-.state[data-state='Suspended'] {
+.state[data-state='Suspended'],
+.state[data-state='Revoked'] {
   color: var(--bl-danger);
 }
 
 .state[data-state='Failed']::before,
 .state[data-state='Blocked']::before,
 .state[data-state='Rejected']::before,
-.state[data-state='Suspended']::before {
+.state[data-state='Suspended']::before,
+.state[data-state='Revoked']::before {
   content: '✗';
   color: var(--bl-danger);
 }

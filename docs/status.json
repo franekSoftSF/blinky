@@ -1355,9 +1355,10 @@
       "id": "0078",
       "phase": 7,
       "title": "The passkey panel",
-      "state": "open",
-      "owner": "codex",
-      "proof": "Not started, and waits on 0077 the way 0052 waits on the API today. The provisional PIN is shown once and is not re-fetchable."
+      "state": "done-unverified",
+      "owner": "cloud-ai",
+      "proof": "Written by cloud-ai because codex is not writing for now. /passkeys: provider select with Google shown disabled with its reason, user resolved at the provider, database and provider side by side with drift labelled, revoke with a reason, provisioning with workstation, PIN mode, minimum, forced change and key name, and the ceremony followed live through GET /api/passkeys/{id}. Says whether a PIN was set and that it was shown on the workstation; has nowhere to show one. Walked through end to end on 2026-10-09 against a stand-in API.",
+      "gap": "Never against the real API with a provider configured; no console unit test of its own"
     },
     {
       "id": "0079",
