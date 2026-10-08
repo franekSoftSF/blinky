@@ -1141,6 +1141,15 @@
       "gap": "Not deployed anywhere yet. The lab server still runs the old build, and everybody signed in there will be signed out once when it is updated, because their token is no longer read."
     },
     {
+      "id": "0102",
+      "phase": 5,
+      "title": "An enrolment token is a row, not a constant",
+      "state": "done",
+      "owner": "both",
+      "proof": "Blinky:Enrolment:BootstrapToken was one value in docker-compose.yml - the same secret for every machine and for the life of the deployment - and ADCS_CONNECTOR_CLIENT_FINGERPRINTS was a connector fingerprint copied into .env by hand. Both are gone. EnrolmentToken carries a name, purpose (Agent or AdcsConnector), term, max uses, uses, optional domain, creator and revocation; the value is shown once and the row holds only its SHA-256. The console has Administracja / Żetony to make, list and revoke - not edit and not delete, for the reason AuditEvent is not editable. A connector enrols through the same endpoint with a connector-purpose token and the API writes connector_registrations itself; ConnectorIdentities reads that table per request, so a withdrawal takes effect on the next call rather than at the next restart. Shape taken from Winch's EnrollmentToken. Verified on a stack on this machine: a 1-day 1-use token enrolled an agent and was refused the second time (401); an agent token presented with purpose=connector was refused; a revoked token was refused; the connector's enrolment returned its fingerprint and the row showed active; the list endpoint shows uses and carries no values; the console created a token and showed it once. 694 tests pass, 11 of them new.",
+      "gap": "Not deployed. The lab server runs the old build, and this is a schema change: deploying means docker compose down -v or a hand-written ALTER for enrolment_tokens and connector_registrations. Agents already enrolled are unaffected - they authenticate with certificates - but the value in the lab's .env stops working, and the ADCS connector on HZCS01 has to enrol once to get a registration row before it can collect work again. smoke-test.sh mints its own token through scripts/new-enrol-token.sh; that path ran here, but the two enrolment checks were not seen green in one run because the lab's usual ports were taken by other projects on this machine and the script's host-side call uses the same variable for the published and the internal port."
+    },
+    {
       "id": "0080",
       "phase": 8,
       "title": "The agent's loopback API, and the ACL it has to replace",

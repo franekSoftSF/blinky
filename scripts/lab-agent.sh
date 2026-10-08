@@ -58,7 +58,7 @@ start() {
     # Only used when nothing is enrolled yet, which after moving to the store
     # is the first run on this machine.
     if [[ -z "${Agent__BootstrapToken:-}" && -f "$root/.env" ]]; then
-        Agent__BootstrapToken="$(grep '^BOOTSTRAP_TOKEN=' "$root/.env" | cut -d= -f2-)"
+        Agent__BootstrapToken="$("$root/scripts/new-enrol-token.sh" --name "lab-agent" --uses 1 --days 1)" 
         export Agent__BootstrapToken
     fi
     export Agent__BackendUrl="${AGENT_BACKEND:-https://localhost:9443}"

@@ -243,6 +243,35 @@ create table audit_events (
        primary key (id)
     );
 
+create table enrolment_tokens (
+        id uuid not null,
+       name varchar(255) not null,
+       purpose text not null,
+       token_hash varchar(255) not null unique,
+       expires_at timestamptz,
+       max_uses int4,
+       uses int4 not null,
+       allowed_domain varchar(255),
+       created_by varchar(255) not null,
+       created_at timestamptz not null,
+       revoked_at timestamptz,
+       revoked_by varchar(255),
+       revoked_reason varchar(255),
+       primary key (id)
+    );
+
+create table connector_registrations (
+        id uuid not null,
+       name varchar(255) not null,
+       fingerprint varchar(255) not null unique,
+       enrolment_token_id uuid not null,
+       enrolled_at timestamptz not null,
+       certificate_not_after timestamptz,
+       revoked_at timestamptz,
+       revoked_by varchar(255),
+       primary key (id)
+    );
+
 alter table tokens 
         add constraint FK_899BCD5E 
         foreign key (cardholder_id) 

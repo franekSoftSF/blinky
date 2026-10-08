@@ -346,3 +346,56 @@ public sealed class AuditEventMapping : ClassMapping<AuditEvent>
             m => { m.Column("is_exempt_from_retention"); m.NotNullable(true); });
     }
 }
+
+/// <remarks>
+/// The hash is unique for the same reason a session's is: it is what a
+/// presented token is looked up by, and two rows answering one token would
+/// leave nothing able to say which of them was spent.
+/// </remarks>
+public sealed class EnrolmentTokenMapping : ClassMapping<EnrolmentToken>
+{
+    public EnrolmentTokenMapping()
+    {
+        Table("enrolment_tokens");
+        Id(x => x.Id, m => { m.Column("id"); m.Generator(Generators.GuidComb); });
+        Property(x => x.Name, m => { m.Column("name"); m.NotNullable(true); });
+        Property(x => x.Purpose,
+            m => Conventions.AsEnumString<EnrolmentPurpose>(m, "purpose"));
+        Property(x => x.TokenHash,
+            m => { m.Column("token_hash"); m.NotNullable(true); m.Unique(true); });
+        Property(x => x.ExpiresAt,
+            m => Conventions.AsTimestamp(m, "expires_at", notNull: false));
+        Property(x => x.MaxUses, m => m.Column("max_uses"));
+        Property(x => x.Uses, m => { m.Column("uses"); m.NotNullable(true); });
+        Property(x => x.AllowedDomain, m => m.Column("allowed_domain"));
+        Property(x => x.CreatedBy, m => { m.Column("created_by"); m.NotNullable(true); });
+        Property(x => x.CreatedAt, m => Conventions.AsTimestamp(m, "created_at"));
+        Property(x => x.RevokedAt,
+            m => Conventions.AsTimestamp(m, "revoked_at", notNull: false));
+        Property(x => x.RevokedBy, m => m.Column("revoked_by"));
+        Property(x => x.RevokedReason, m => m.Column("revoked_reason"));
+    }
+}
+
+public sealed class ConnectorRegistrationMapping : ClassMapping<ConnectorRegistration>
+{
+    public ConnectorRegistrationMapping()
+    {
+        Table("connector_registrations");
+        Id(x => x.Id, m => { m.Column("id"); m.Generator(Generators.GuidComb); });
+        Property(x => x.Name, m => { m.Column("name"); m.NotNullable(true); });
+
+        // Unique: one certificate is one connector, and the middleware decides
+        // by this value alone.
+        Property(x => x.Fingerprint,
+            m => { m.Column("fingerprint"); m.NotNullable(true); m.Unique(true); });
+        Property(x => x.EnrolmentTokenId,
+            m => { m.Column("enrolment_token_id"); m.NotNullable(true); });
+        Property(x => x.EnrolledAt, m => Conventions.AsTimestamp(m, "enrolled_at"));
+        Property(x => x.CertificateNotAfter,
+            m => Conventions.AsTimestamp(m, "certificate_not_after", notNull: false));
+        Property(x => x.RevokedAt,
+            m => Conventions.AsTimestamp(m, "revoked_at", notNull: false));
+        Property(x => x.RevokedBy, m => m.Column("revoked_by"));
+    }
+}

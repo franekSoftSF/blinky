@@ -91,7 +91,7 @@ public sealed class ApiOptions
 
     /// <summary>
     /// What this connector presents: a certificate from the deployment's agent CA, with
-    /// its SHA-256 listed in <c>Blinky:Adcs:Connector:ClientFingerprints</c> on the API.
+    /// its fingerprint registered on the API, which the connector's own enrolment does (0102).
     /// </summary>
     public ServerCertificateOptions ClientCertificate { get; set; } = new();
 

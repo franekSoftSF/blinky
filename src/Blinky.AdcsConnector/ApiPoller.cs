@@ -62,7 +62,8 @@ public sealed class ApiPoller(
                         $"{(int)response.StatusCode} {await Text(response, stoppingToken)}"
                         + (response.StatusCode == HttpStatusCode.Unauthorized
                             ? " - the API does not accept this certificate as a connector's: its chain must end at "
-                              + "the agent CA and its SHA-256 must be in Blinky:Adcs:Connector:ClientFingerprints"
+                              + "the agent CA, and the connector must have enrolled with a connector "
+                              + "enrolment token so the API knows its fingerprint"
                             : string.Empty));
                 }
 

@@ -80,12 +80,6 @@ public sealed class AdcsConnectorOptions
 
     public string? CaConfig { get; set; }
 
-    /// <summary>
-    /// For <c>ConnectorPolls</c>: SHA-256 fingerprints of the client certificates a
-    /// connector may collect calls with. The edge verifies the chain; this list is
-    /// what makes one certificate a connector and every other agent certificate not.
-    /// </summary>
-    public List<string> ClientFingerprints { get; set; } = [];
 
     public int TimeoutSeconds { get; set; } = 90;
 }
@@ -229,14 +223,6 @@ public static class AdcsInstance
                 + "connector to collect from. Only the API answers a connector.");
         }
 
-        if (ConnectorFingerprints(options.Connector.ClientFingerprints).Count == 0)
-        {
-            throw new CertificateAuthorityException(
-                "Blinky:Adcs:Transport is ConnectorPolls and Blinky:Adcs:Connector:ClientFingerprints "
-                + "is empty. Without it no connector can collect a call - and with an issuer alone, "
-                + "every agent certificate the edge accepts could.");
-        }
-
         var algorithms = KeyAlgorithms(options.KeyAlgorithms);
         var transport = new ConnectorAdcsTransport(queue, options.Connector.CaConfig);
 
@@ -261,36 +247,6 @@ public static class AdcsInstance
         }
     }
 
-    /// <summary>
-    /// The SHA-256 fingerprints a connector may present, upper-case hex. A value that is
-    /// not 64 hex digits stops the start: a SHA-1 thumbprint pasted here would match
-    /// nothing and read as a connector that never polls.
-    /// </summary>
-    public static IReadOnlySet<string> ConnectorFingerprints(IEnumerable<string> configured)
-    {
-        var set = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var value in configured)
-        {
-            var hex = string.Concat(value.Where(char.IsAsciiHexDigit)).ToUpperInvariant();
-
-            if (hex.Length == 0)
-            {
-                continue;
-            }
-
-            if (hex.Length != 64)
-            {
-                throw new CertificateAuthorityException(
-                    $"Blinky:Adcs:Connector:ClientFingerprints holds {value}, which is {hex.Length} hex "
-                    + "digits rather than a SHA-256 fingerprint's 64.");
-            }
-
-            set.Add(hex);
-        }
-
-        return set;
-    }
 
     private static IEnrolmentAgentSource Agents(
         AdcsInstanceOptions options, ConnectorAdcsTransport transport, string where)

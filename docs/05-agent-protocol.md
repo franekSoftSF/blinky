@@ -27,7 +27,7 @@ bind a credential to a person.
 ## Agent enrolment
 
 ```
-MSI install ──► bootstrap token (per-deployment, in the MSI properties)
+MSI install ──► enrolment token (made in the console, in the MSI properties)
     │
     ▼
 POST /api/agents/enroll        { hostname, domain, bootstrapToken, csr }
@@ -39,13 +39,21 @@ Api: validate token, create/lookup Agent by (hostname, domain), issue client cer
 agent stores cert in LocalMachine\My, uses it for everything afterwards
 ```
 
-The bootstrap token is **per deployment, not per machine** — an earlier draft
-of this document said it authorises exactly one issuance, which cannot be true
-of a token shipped in an MSI to a fleet. It is compared in constant time,
-rate-limited, revocable by changing it, and every use is audited. Agent
-certificates are short-lived (90 days) and renewed automatically over mTLS, so
-a leaked bootstrap token buys agent certificates only until it is rotated, and
-a leaked agent certificate expires on its own.
+The enrolment token is **a row, since 0102** — not the one string in
+`docker-compose.yml` this document used to describe. An earlier draft said it
+authorises exactly one issuance, which could not be true of a value shipped in
+an MSI to a fleet; it is true now when somebody asks for it, because a token
+carries the number of machines it may enrol.
+
+What a token has: a name, a term, a count of uses, optionally one domain it
+must be presented from, and a **purpose** — a workstation agent or an ADCS
+connector, never both. It is made from the console (Administracja / Żetony),
+its value is shown once, every use is counted on the row, and withdrawing it
+takes effect on the next request rather than at the next restart.
+
+Agent certificates are still short-lived (90 days) and renewed automatically
+over mTLS, so a leaked token buys agent certificates until it expires, is used
+up or is withdrawn — and a leaked agent certificate expires on its own.
 
 What the token cannot do is authorise anything: it buys an identity for a
 machine, and a machine identity never authorises an issuance on its own. That

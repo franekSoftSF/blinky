@@ -45,11 +45,8 @@ builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyProvisioningService>();
 // the open half of patch 0022; until then the choice is configuration.
 var caBackend = Blinky.Pki.Adcs.AdcsInstance.Backend(builder.Configuration["Blinky:Ca:Backend"]);
 
-// Only a connector that dials this API collects from it. Absent otherwise, and the
-// connector routes then answer nobody: ConnectorIdentities.None accepts no
-// certificate.
+// Only a connector that dials this API collects from it.
 Blinky.Pki.Adcs.ConnectorQueue? connectorQueue = null;
-var connectorIdentities = Blinky.Api.Security.ConnectorIdentities.None;
 
 if (caBackend == CaBackend.Adcs)
 {
@@ -59,8 +56,6 @@ if (caBackend == CaBackend.Adcs)
     if (string.Equals(adcs.Transport, "ConnectorPolls", StringComparison.OrdinalIgnoreCase))
     {
         connectorQueue = new Blinky.Pki.Adcs.ConnectorQueue();
-        connectorIdentities = new Blinky.Api.Security.ConnectorIdentities(
-            Blinky.Pki.Adcs.AdcsInstance.ConnectorFingerprints(adcs.Connector.ClientFingerprints));
 
         builder.Services.AddSingleton(connectorQueue);
     }
@@ -105,7 +100,12 @@ else
                 builder.Configuration["Blinky:Ca:OcspUrl"])));
 }
 
-builder.Services.AddSingleton(connectorIdentities);
+// Which certificates are connectors is a table, not a setting: a connector is
+// registered by the enrolment that issued its certificate and withdrawn from
+// the console (0102). Registered unconditionally, because the routes that ask
+// are only reachable when a connector transport is configured anyway.
+builder.Services.AddSingleton(services =>
+    new Blinky.Api.Security.ConnectorIdentities(services.GetRequiredService<Database>()));
 
 // The directory, or an honest absence of one. Registered either way so the
 // endpoints exist and answer "there is no directory here" rather than failing
@@ -175,10 +175,15 @@ builder.Services.AddSingleton(services => new PukEscrow(
     secrets.LegacyPukKek,
     services.GetRequiredService<ILogger<PukEscrow>>()));
 
+builder.Services.AddSingleton(services => new EnrolmentTokens(
+    services.GetRequiredService<Database>(),
+    () => DateTime.UtcNow,
+    services.GetRequiredService<ILogger<EnrolmentTokens>>()));
+
 builder.Services.AddSingleton(services => new AgentEnrolmentService(
     services.GetRequiredService<Database>(),
     services.GetRequiredService<AgentCertificateAuthority>(),
-    builder.Configuration["Blinky:Enrolment:BootstrapToken"] ?? string.Empty,
+    services.GetRequiredService<EnrolmentTokens>(),
     services.GetRequiredService<ILogger<AgentEnrolmentService>>()));
 
 var app = builder.Build();
@@ -294,6 +299,24 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapPost(AgentAuthenticationMiddleware.EnrolmentPath,
     (EnrolmentRequest request, AgentEnrolmentService enrolment) =>
     {
+        // An ADCS connector joins through the same door, because it is the same
+        // problem: a machine with no certificate asking for one. Which row it
+        // becomes is decided by the token it holds, not by this field (0102).
+        if (string.Equals(request.Purpose, "connector", StringComparison.OrdinalIgnoreCase))
+        {
+            var connector = enrolment.EnrolConnector(request);
+
+            return connector.Outcome switch
+            {
+                EnrolmentOutcome.Issued => Results.Ok(connector.Response),
+                EnrolmentOutcome.InvalidToken =>
+                    Results.Json(new { error = connector.Message }, statusCode: 401),
+                EnrolmentOutcome.InvalidRequest =>
+                    Results.Json(new { error = connector.Message }, statusCode: 400),
+                _ => Results.Json(new { error = connector.Message }, statusCode: 403),
+            };
+        }
+
         var result = enrolment.Enrol(request);
 
         return result.Outcome switch
@@ -1594,6 +1617,148 @@ app.MapGet("/api/directory/users",
 // a resolved SID and that refusal is right; a page that offers the profile
 // without knowing the rule posts a job that fails a minute later, somewhere the
 // operator is no longer looking.
+// ---- enrolment tokens (0102) ------------------------------------------------
+//
+// What a machine presents to join. These used to be one string in
+// docker-compose.yml, the same for every agent and for the life of the
+// deployment; they are rows now, with a term, a number of uses and a purpose.
+//
+// Created, listed and withdrawn - not edited and not deleted. A token whose
+// limits can be changed after it was handed out is a token whose limits mean
+// nothing, and a deleted one takes the record of what enrolled with it along
+// with it. That is the same exception AuditEvent and Credential take to the
+// CRUD rule, for the same reason.
+app.MapPost("/api/enrol-tokens",
+    (CreateEnrolTokenRequest request, HttpContext context, Database database, EnrolmentTokens tokens) =>
+    {
+        if (context.Items["operator"] is not OperatorAccount caller)
+        {
+            return Results.Json(new { error = "an operator session is required" }, statusCode: 401);
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return Results.BadRequest(new { error = "a name is required: somebody has to recognise this later" });
+        }
+
+        var purpose = request.Purpose?.Trim().ToLowerInvariant() switch
+        {
+            null or "" or "agent" => EnrolmentPurpose.Agent,
+            "connector" or "adcsconnector" or "adcs-connector" => EnrolmentPurpose.AdcsConnector,
+            _ => (EnrolmentPurpose?)null,
+        };
+
+        if (purpose is null)
+        {
+            return Results.BadRequest(new { error = "purpose is 'agent' or 'connector'" });
+        }
+
+        try
+        {
+            var (row, token) = tokens.Create(
+                request.Name,
+                purpose.Value,
+                request.ValidForDays is { } days ? TimeSpan.FromDays(days) : null,
+                request.MaxUses,
+                request.AllowedDomain,
+                caller.Username);
+
+            using var session = database.OpenSession();
+            using var transaction = session.BeginTransaction();
+
+            session.Save(new AuditEvent
+            {
+                OccurredAt = DateTime.UtcNow,
+                EventType = "enrolment-token.created",
+                Actor = caller.Username,
+                SubjectType = nameof(EnrolmentToken),
+                SubjectId = row.Id,
+                Detail = $$"""{"name":"{{row.Name}}","purpose":"{{row.Purpose}}","expires":"{{row.ExpiresAt?.ToString("u") ?? "never"}}","maxUses":"{{row.MaxUses?.ToString() ?? "unlimited"}}"}""",
+            });
+
+            transaction.Commit();
+
+            // The only time the value exists outside the holder's hands.
+            return Results.Ok(new
+            {
+                row.Id,
+                row.Name,
+                purpose = row.Purpose.ToString(),
+                token,
+                expires = row.ExpiresAt,
+                maxUses = row.MaxUses,
+                allowedDomain = row.AllowedDomain,
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    });
+
+app.MapGet("/api/enrol-tokens",
+    (HttpContext context, EnrolmentTokens tokens) =>
+    {
+        if (!IsOperator(context))
+        {
+            return Results.Json(new { error = "an operator session is required" }, statusCode: 401);
+        }
+
+        var now = DateTime.UtcNow;
+
+        // No hashes and no values: the list says what exists and what it can
+        // still do, which is what somebody deciding whether to revoke needs.
+        return Results.Ok(tokens.All().Select(t => new
+        {
+            t.Id,
+            t.Name,
+            purpose = t.Purpose.ToString(),
+            expires = t.ExpiresAt,
+            maxUses = t.MaxUses,
+            t.Uses,
+            allowedDomain = t.AllowedDomain,
+            t.CreatedBy,
+            t.CreatedAt,
+            t.RevokedAt,
+            t.RevokedBy,
+            usable = t.IsUsable(now),
+            spent = t.Spent(now),
+        }));
+    });
+
+app.MapPost("/api/enrol-tokens/{id:guid}/revoke",
+    (Guid id, RevokeEnrolTokenRequest? request, HttpContext context, Database database, EnrolmentTokens tokens) =>
+    {
+        if (context.Items["operator"] is not OperatorAccount caller)
+        {
+            return Results.Json(new { error = "an operator session is required" }, statusCode: 401);
+        }
+
+        var row = tokens.Revoke(id, caller.Username, request?.Reason);
+
+        if (row is null)
+        {
+            return Results.NotFound(new { error = "no such token" });
+        }
+
+        using var session = database.OpenSession();
+        using var transaction = session.BeginTransaction();
+
+        session.Save(new AuditEvent
+        {
+            OccurredAt = DateTime.UtcNow,
+            EventType = "enrolment-token.revoked",
+            Actor = caller.Username,
+            SubjectType = nameof(EnrolmentToken),
+            SubjectId = row.Id,
+            Detail = $$"""{"name":"{{row.Name}}","reason":"{{request?.Reason ?? "none given"}}"}""",
+        });
+
+        transaction.Commit();
+
+        return Results.Ok(new { row.Id, row.Name, row.RevokedAt, row.RevokedBy });
+    });
+
 app.MapGet("/api/profiles",
     (HttpContext context) =>
     {
@@ -2578,6 +2743,22 @@ static bool IsOperator(HttpContext context) =>
     context.Items.TryGetValue("operator", out var signedIn) && signedIn is OperatorAccount;
 
 /// <summary>What an agent reports when it checks in.</summary>
+/// <summary>An operator asking for a new enrolment token.</summary>
+/// <param name="Name">What it is for, in words, so it can be recognised on the list.</param>
+/// <param name="Purpose">"agent" or "connector". Absent means an agent.</param>
+/// <param name="ValidForDays">Days until it stops working. Absent means never, which is a choice.</param>
+/// <param name="MaxUses">How many machines may use it. Absent means any number.</param>
+/// <param name="AllowedDomain">The domain a machine must report. Absent means any.</param>
+internal sealed record CreateEnrolTokenRequest(
+    string Name,
+    string? Purpose,
+    int? ValidForDays,
+    int? MaxUses,
+    string? AllowedDomain);
+
+/// <summary>Why a token is being withdrawn. Optional, and worth filling in.</summary>
+internal sealed record RevokeEnrolTokenRequest(string? Reason);
+
 /// <summary>Asks for one token inventory pass on one agent.</summary>
 internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
 

@@ -49,6 +49,7 @@ export class App {
   ]);
   protected readonly administration = computed(() => [
     { path: '/directory', label: this.i18n.t('directory'), icon: '⌁' },
+    { path: '/enrol-tokens', label: this.i18n.t('enrolTokens'), icon: '⚷' },
     { path: '/system', label: this.i18n.t('deployment'), icon: '◆' },
     { path: '/settings', label: this.i18n.t('settings'), icon: '⚙' },
   ]);

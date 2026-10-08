@@ -120,6 +120,12 @@ dotnet run --project tools/PivProbe -- transcript.json   # read-only, real card
 - **Untracked and irreplaceable:** `.env` (holds the management-key master and
   `PUK_KEK`), `ca/`, `certs/`, `.lab/`. They are gitignored on purpose. Do not
   commit them, and do not assume a fresh clone has them.
+- **An enrolment token is a row, never a constant.** What a machine presents
+  to join has a term, a number of machines it may enrol and a purpose - agent
+  or ADCS connector - and is made from the console (0102). Nothing in
+  `docker-compose.yml` or `.env.example` carries one, `EnrolmentTokenTests`
+  fails the build if one comes back, and a connector's fingerprint is written
+  by its own enrolment rather than copied into `.env`.
 - **The console's session is a cookie, and never a token in JavaScript.**
   `blinky_session` is `HttpOnly`, `Secure`, `SameSite=Strict`; `blinky_csrf` is
   readable on purpose and every state-changing operator request echoes it in

@@ -230,8 +230,9 @@ ensure POSTGRES_DB blinky
 ensure POSTGRES_USER blinky
 ensure POSTGRES_PASSWORD "$(secret 24)"
 
-# What an agent presents once, to get an identity it then uses instead.
-ensure BOOTSTRAP_TOKEN "$(secret 24)"
+# No enrolment token here since 0102. What a machine presents once is a row
+# made from the console, with a term and a number of uses, and the installer
+# cannot make one because there is no operator to attribute it to yet.
 
 # What the console and any operator tooling presents on every call.
 
@@ -674,11 +675,14 @@ cat <<EOF
 
 Secrets are in $root/.env, readable by root only. To read one:
 
-    sudo grep ^BOOTSTRAP_TOKEN= $root/.env
+    sudo grep ^CA_PASSWORD= $root/.env
 
-Nothing else on this machine needs them, and nothing prints them. If one has to
-travel - a bootstrap token to a workstation - it travels once and the agent
-never needs it again.
+Nothing else on this machine needs them, and nothing prints them.
+
+To enrol the first workstation, sign in to the console and make an enrolment
+token under Administracja / Zetony: give it a term and the number of machines
+it may enrol. The value is shown once. An agent needs it once; afterwards it
+authenticates with the certificate that enrolment issued.
 
 The certificate authority in use:
 

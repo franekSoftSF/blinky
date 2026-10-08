@@ -98,6 +98,14 @@ check "a PKCS#10 body reaches the API, not the rule set" 401 \
 echo
 echo "agent enrolment"
 
+# One token for this run: a day, two uses, thrown away afterwards. Before 0102
+# this was BOOTSTRAP_TOKEN from .env, which was the same value for the life of
+# the deployment - the thing that patch removed.
+smoke_token=""
+if docker compose ps postgres >/dev/null 2>&1; then
+    smoke_token="$(./scripts/new-enrol-token.sh --name "smoke-test" --uses 2 --days 1 2>/dev/null || true)"
+fi
+
 enrol() {
     # No --no-build. On a machine where the repository has just been cloned
     # nothing is built yet, and --no-build fails silently into an empty result -
@@ -106,7 +114,7 @@ enrol() {
     dotnet run --project tools/AgentEnrol -- \
         --backend "https://${BLINKY_HOST:-localhost}:${AGENT_PORT:-9443}" \
         --hostname smoke-test --domain blinky.invalid \
-        --token "${BOOTSTRAP_TOKEN:-change-me-before-anyone-else-can-reach-this}" \
+        --token "$smoke_token" \
         --out "$(mktemp -d)/agent" --insecure 2>/dev/null \
         | grep -oE "enrolled: [0-9a-f-]+" | cut -d" " -f2
 }
@@ -117,6 +125,12 @@ enrol() {
 if ! command -v dotnet >/dev/null 2>&1; then
     skip "an agent enrols and the issued certificate works" "no dotnet SDK on this host"
     skip "enrolling the same machine twice reuses the agent" "no dotnet SDK on this host"
+elif [ -z "$smoke_token" ]; then
+    # Says which half is missing rather than reporting the backend as broken:
+    # the token is made against the database, so a stack this script can only
+    # reach over HTTP cannot have one.
+    skip "an agent enrols and the issued certificate works" "no enrolment token could be made here"
+    skip "enrolling the same machine twice reuses the agent" "no enrolment token could be made here"
 else
     first=$(enrol)
     second=$(enrol)
@@ -133,7 +147,7 @@ else
         "$([ -n "$first" ] && [ "$first" = "$second" ] \
             && echo "same:$first" || echo "differed:${second:-<none>}")"
 fi
-check "a bad bootstrap token is refused" 401 \
+check "a bad enrolment token is refused" 401 \
     "$(status -X POST -H "Content-Type: application/json" \
         -d '{"hostname":"x","domain":"y","bootstrapToken":"wrong","certificateSigningRequest":""}' \
         "$AGENT/api/agents/enroll")"
