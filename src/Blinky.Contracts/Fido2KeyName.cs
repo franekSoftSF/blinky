@@ -1,7 +1,7 @@
-namespace Blinky.Passkeys;
+namespace Blinky.Contracts;
 
-/// <summary>The name a key is registered under.</summary>
-public static class PasskeyDisplayName
+/// <summary>The name a key is registered under. Composed by the agent, which is the one that reads the serial.</summary>
+public static class Fido2KeyName
 {
     /// <summary>
     /// Appends the serial number, shortening the base rather than the serial when

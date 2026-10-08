@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Yubico.YubiKey" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Blinky.Contracts\Blinky.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Blinky.UnitTests" />
+  </ItemGroup>
+
+</Project>

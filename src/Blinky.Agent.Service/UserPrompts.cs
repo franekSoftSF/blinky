@@ -85,6 +85,30 @@ public sealed class UserPrompts(ILogger<UserPrompts> logger, TimeSpan timeout,
         }
     }
 
+    /// <summary>
+    /// Shows something to read and waits until it is closed. The provisional FIDO2
+    /// PIN travels this way: over the pipe to the window and nowhere else.
+    /// </summary>
+    /// <remarks>
+    /// Throws when nobody saw it. A PIN that was set on a key and shown to no one
+    /// is a key only a reset recovers, and the job must say so rather than succeed.
+    /// </remarks>
+    public async Task ShowNoticeAsync(long serial, string title, string message, CancellationToken ct)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(timeout);
+
+        await using var pipe = await ConnectAsync(deadline.Token);
+        await SendAsync(pipe, PromptRequest.ForNotice(serial, title, message), deadline.Token);
+
+        using var reader = new StreamReader(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
+
+        if (await reader.ReadLineAsync(deadline.Token) is null)
+        {
+            throw new InvalidOperationException("The window closed before the notice was read.");
+        }
+    }
+
     /// <summary>Takes the prompt off the screen once the card has answered.</summary>
     public async Task DismissAsync(CancellationToken ct)
     {

@@ -2,7 +2,6 @@ using System.Reflection;
 using System.Text.Json;
 using Blinky.Agent.Service;
 using Blinky.Contracts;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Blinky.UnitTests;
 
@@ -62,21 +61,12 @@ public sealed class Fido2ContractTests
     }
 
     [Fact]
-    public async Task This_agent_refuses_the_step_cleanly_until_the_ceremony_exists()
+    public void This_agent_knows_the_step_it_is_sent()
     {
-        // Until 0076 the agent speaks version 2 and knows no FIDO2 step. It must
-        // say so by name, before reporting anything as started.
-        var executor = new JobExecutor(new InventoryCollector(NullLogger<InventoryCollector>.Instance),
-            enrolment: null, cards: null, NullLogger<JobExecutor>.Instance);
-        var job = JobEnvelope.ProvisionFido2(Guid.NewGuid(), "k", DateTimeOffset.UtcNow.AddHours(1), null,
-            Provisioning);
-
-        var result = await executor.ExecuteAsync(job, new BackendClient(new Uri("https://localhost:9443")), 1,
-            CancellationToken.None);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(Fido2Provisioning.Op, result.FailedStep);
-        Assert.Contains("UnsupportedOperation", result.Detail, StringComparison.Ordinal);
+        // Since the ceremony landed. Before it, the same envelope was refused by
+        // name as UnsupportedOperation - which is what an agent from between 0074
+        // and this one still does.
+        Assert.Contains(Fido2Provisioning.Op, JobExecutor.Supported);
     }
 
     [Fact]

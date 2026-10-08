@@ -43,13 +43,16 @@ for MSI packaging.
 
 Bouncy Castle (BouncyCastle.Cryptography) is licensed under the MIT licence.
 PCSC-sharp is licensed under the BSD 3-Clause licence. Both are consumed as
-unmodified NuGet packages.
+unmodified NuGet packages. Yubico.YubiKey, the Yubico .NET SDK used by
+Blinky.Fido for FIDO2 over HID, is licensed under the Apache License 2.0 and is
+likewise consumed unmodified.
 
 Blinky.Passkeys ports, in semantics rather than in code, the identity-provider
 calls of KeyEnroll (https://github.com/inowakowski/KeyEnroll), Copyright (c)
 2026 Ignacy Nowakowski, licensed under the MIT licence: the Graph and Okta
 endpoints and payload shapes, the normalisation of their binary values, and the
-handling of a pending Okta factor.
+handling of a pending Okta factor. Blinky.Fido ports its enrolment engine the
+same way, and the unit tests a software CTAP 2.1 authenticator after its own.
 
 The Yubico PIV attestation root certificate is redistributed for the purpose of
 verifying attestation chains. It is Yubico's certificate, not part of this

@@ -7,7 +7,7 @@ using Blinky.Contracts;
 namespace Blinky.Agent.Service;
 
 /// <summary>Everything the agent says to the backend.</summary>
-public sealed class BackendClient : IDisposable
+public sealed partial class BackendClient : IDisposable
 {
     private readonly Uri backend;
     private readonly X509Certificate2Collection pinnedRoots = [];

@@ -76,7 +76,7 @@ Idempotency: `excludeCredentials` prevents duplicate registration of the same ke
 
 ### 4.3 `Blinky.Agent.Service` — the ceremony executor (unchanged between providers)
 
-- Add package `Yubico.YubiKey` (Yubico .NET SDK). The FIDO2 applet over USB is **HID, not PC/SC** — enumeration is separate from the existing reader watcher. Correlate HID device ↔ PC/SC card by YubiKey serial.
+- Add package `Yubico.YubiKey` (Yubico .NET SDK) — 1.18.0 since 0076, behind `Blinky.Fido.IFidoKey` so the engine is tested against a software key. The attestationObject is assembled from the key's own authData and attestation-statement bytes; CTAP numbers the three fields and WebAuthn names them, so that one map is re-encoded by every client, and nothing inside it is. The FIDO2 applet over USB is **HID, not PC/SC** — enumeration is separate from the existing reader watcher. Correlate HID device ↔ PC/SC card by YubiKey serial.
 - Windows restricts raw FIDO HID access to elevated processes; `Agent.Service` runs as LocalSystem, so this is satisfied. Document it; fail with a clear error if access is denied.
 - Use `Fido2Session`:
   - read applet info (`AuthenticatorInfo`): AAGUID, options, minPinLength, remaining resident credential slots, PIN retries;
@@ -121,7 +121,7 @@ DELETE https://graph.microsoft.com/v1.0/users/{id|upn}/authentication/fido2Metho
 ```
 
 - Auth: **client credentials** (application permissions `UserAuthenticationMethod.ReadWrite.All`, and `User.Read.All` for the user lookup, admin-consented). Certificate credential preferred, secret for labs. Built without MSAL or `Azure.Identity`: Entra's certificate credential and Okta's `private_key_jwt` are the same RFC 7523 client assertion, and one implementation of it in `Blinky.Passkeys` is less to audit than two vendor stacks. KeyEnroll signs the operator in with PKCE instead; that suits a desktop tool and not a container with nobody at it.
-- Display names longer than 30 characters are refused by Graph. `PasskeyDisplayName.Compose` shortens the base name and never the serial.
+- Display names longer than 30 characters are refused by Graph. `Fido2KeyName.Compose` shortens the base name and never the serial.
 - `creationOptions` returns a `publicKey` object shaped like WebAuthn `PublicKeyCredentialCreationOptions`; rp.id is `login.microsoft.com`, origin for clientDataJSON is `https://login.microsoft.com`.
 - The **challenge TTL** equals `challengeTimeoutInMinutes` requested — fetch options only after `Fido2Ready`.
 - Registration POST body:

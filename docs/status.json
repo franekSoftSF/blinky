@@ -224,7 +224,7 @@
       "name": "Blinky.Fido",
       "type": "library",
       "phase": 7,
-      "state": "not-started"
+      "state": "partial"
     },
     {
       "name": "Blinky.Passkeys",
@@ -1223,9 +1223,10 @@
       "id": "0070",
       "phase": 7,
       "title": "Blinky.Fido: CTAP2 over HID, AuthenticatorInfo, joined to the token by serial",
-      "state": "open",
+      "state": "partly-done",
       "owner": "cloud-ai",
-      "proof": "Not started. Foundation for the rest of the phase: HID is not PC/SC, so nothing in Blinky.Piv carries over below the token."
+      "proof": "Blinky.Fido on Yubico.YubiKey 1.18.0: IFidoKey and its Yubico adapter read AAGUID, CTAP versions, FIDO2 PIN set and retries, discoverable slots left and CTAP 2.1 controls, and open a key by serial. Denied HID access is an error naming elevation, from the SDK's own exception seen on 2026-10-08.",
+      "gap": "Not in the inventory and not joined to the PC/SC token; no key has been read through it"
     },
     {
       "id": "0071",
@@ -1239,9 +1240,10 @@
       "id": "0072",
       "phase": 7,
       "title": "FIDO PIN set and change, and FIDO reset",
-      "state": "open",
+      "state": "partly-done",
       "owner": "cloud-ai",
-      "proof": "Not started. Needs no identity provider, and answers whether a returned key is actually empty."
+      "proof": "PIN set, change, minimum length and forced change enforced in the service inside provisioning; IFidoKey.Reset in the adapter.",
+      "gap": "No standalone PIN-change or reset job, so no confirmation naming what a reset destroys and no power-up window handling; nothing run on a key"
     },
     {
       "id": "0073",
@@ -1291,9 +1293,10 @@
       "id": "0076",
       "phase": 7,
       "title": "The makeCredential ceremony in the agent",
-      "state": "open",
+      "state": "done-unverified",
       "owner": "cloud-ai",
-      "proof": "Not started. Hardware milestone: prove it on the bench against a mock relying party before any UI work."
+      "proof": "Fido2Provisioner behind the ProvisionFido2Credential step: clientDataJSON byte-exact, attestationObject from the key's own authData and statement bytes, minimum PIN length before and forced change after the provider accepts, FIDO2-labelled prompts, operator-chosen PIN without CTAP 2.1. 38 tests against a software CTAP 2.1 key that refuses a ceremony while a forced change is pending; identical calls under two provider tags.",
+      "gap": "The hardware milestone: no key on the workstation on 2026-10-08, so the Yubico adapter has never run and no mock relying party has seen a credential"
     },
     {
       "id": "0077",

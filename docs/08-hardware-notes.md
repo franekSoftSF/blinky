@@ -61,6 +61,12 @@ Neither of these could fail a unit test: no test creates a window, so 184 green
 tests said nothing about whether anything could be typed into one. Both were
 found by running it and looking.
 
+## FIDO2 over HID
+
+| Finding | Evidence | Where it lives |
+|---|---|---|
+| **The FIDO HID interface is closed to a process that is not elevated, and Yubico's SDK says so by throwing** | 2026-10-08, Yubico.YubiKey 1.18.0, a developer shell on the Blinky workstation: `YubiKeyDevice.FindByTransport(Transport.HidFido)` threw `UnauthorizedAccessException: HidFido is not available on Windows if the process is not elevated.` It is an exception, not an empty list — which is what lets the agent say "elevation" instead of "no key". No key was plugged in at the time, so nothing beyond this was learned | `YubicoFidoKeys.Open`, which turns it into an error naming LocalSystem |
+
 ## Windows, for anyone contributing from one
 
 Neither of these is about Blinky, and both cost an afternoon.

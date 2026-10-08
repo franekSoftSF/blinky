@@ -95,7 +95,8 @@ builder.Services.AddSingleton(services => new JobExecutor(
     services.GetRequiredService<InventoryCollector>(),
     services.GetService<ICardEnrolment>(),
     services.GetService<ICardSlots>(),
-    services.GetRequiredService<ILogger<JobExecutor>>()));
+    services.GetRequiredService<ILogger<JobExecutor>>(),
+    services.GetService<IFido2Step>()));
 
 // LocalSystem, session 0. It owns the reader and executes jobs; it cannot draw
 // a PIN prompt and cannot prove who is at the keyboard - that is Agent.Ui,
@@ -115,6 +116,7 @@ static void AddWindowsOnlyServices(IServiceCollection services)
     // from anywhere, and nothing outside this method needs the concrete class.
     services.AddSingleton<ICardSlots, CardOperations>();
     services.AddSingleton<PukUnblock>();
+    services.AddSingleton<IFido2Step, Fido2Step>();
 
     // The tray's half of the conversation. Windows-only for the same reason
     // everything else here is: it ends at a reader.

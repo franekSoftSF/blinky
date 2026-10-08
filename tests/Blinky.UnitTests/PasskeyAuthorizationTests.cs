@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using Blinky.Contracts;
 using Blinky.Passkeys;
 using Blinky.Passkeys.Okta;
 
@@ -146,7 +147,7 @@ public sealed class PasskeyAuthorizationTests
     [InlineData("  Key  ", null, null, "Key")]
     [InlineData("A name that is far longer than thirty", null, 30, "A name that is far longer than")]
     public void The_serial_survives_a_length_limit(string baseName, long? serial, int? limit, string expected) =>
-        Assert.Equal(expected, PasskeyDisplayName.Compose(baseName, serial, limit));
+        Assert.Equal(expected, Fido2KeyName.Compose(baseName, serial, limit));
 
     private static (JsonElement Header, JsonElement Claims, byte[] Signed, byte[] Signature) Split(string jwt)
     {

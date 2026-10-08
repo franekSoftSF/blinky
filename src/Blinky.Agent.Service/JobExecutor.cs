@@ -21,7 +21,8 @@ public sealed class JobExecutor(
     InventoryCollector collector,
     ICardEnrolment? enrolment,
     ICardSlots? cards,
-    ILogger<JobExecutor> logger)
+    ILogger<JobExecutor> logger,
+    IFido2Step? fido2 = null)
 {
     public async Task<JobResult> ExecuteAsync(JobEnvelope job, BackendClient backend,
         int attempt, CancellationToken ct)
@@ -78,7 +79,7 @@ public sealed class JobExecutor(
     public static readonly IReadOnlySet<string> Supported =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            "ReadAllReaders", "EnrolCredential", "RecycleSlot",
+            "ReadAllReaders", "EnrolCredential", "RecycleSlot", Fido2Provisioning.Op,
         };
 
     private async Task RunAsync(JobEnvelope job, JobStep step, BackendClient backend,
@@ -139,6 +140,19 @@ public sealed class JobExecutor(
                     throw new InvalidOperationException(result.Error ?? "the slot was not cleared");
                 }
 
+                return;
+            }
+
+            case Fido2Provisioning.Op:
+            {
+                if (fido2 is null)
+                {
+                    throw new InvalidOperationException(
+                        "This agent cannot provision a FIDO2 key: it needs the FIDO HID interface and an "
+                        + "interactive session, and this build has neither on this platform.");
+                }
+
+                await fido2.RunAsync(job, step, backend, attempt, ct);
                 return;
             }
 

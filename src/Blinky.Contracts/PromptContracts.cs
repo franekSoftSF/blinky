@@ -37,6 +37,14 @@ public sealed record PromptRequest(
     public const string Fingerprint = "Fingerprint";
     public const string Dismiss = "Dismiss";
 
+    /// <summary>
+    /// Something to read and acknowledge - a provisional FIDO2 PIN, shown once.
+    /// A window that does not know this type already does the right thing with
+    /// it: shows the title and the message with a Close button, and answers when
+    /// it is closed.
+    /// </summary>
+    public const string Notice = "Notice";
+
     /// <param name="title">
     /// Overrides the heading. Worth having because two PIN prompts in a row -
     /// choosing one and confirming it - are the same window with the same
@@ -68,6 +76,9 @@ public sealed record PromptRequest(
     public static PromptRequest ForFingerprint(long serial, int? attemptsRemaining,
         string reason) =>
         new(Fingerprint, "Blinky needs your fingerprint", reason, serial, attemptsRemaining);
+
+    public static PromptRequest ForNotice(long serial, string title, string message) =>
+        new(Notice, title, message, serial);
 
     public static PromptRequest ToDismiss() =>
         new(Dismiss, string.Empty, string.Empty);
