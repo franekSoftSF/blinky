@@ -1201,6 +1201,15 @@ app.MapPost("/api/credentials/issue",
             // have, and the reason belongs in the response.
             return Results.Json(new { error = ex.Message }, statusCode: 422);
         }
+        catch (Blinky.Pki.CertificateAuthorityException ex)
+        {
+            // The CA, or the connector in front of it, could not do it. Said as a
+            // 502 with the CA's own sentence, because the agent copies this body
+            // into the job's result and that is what the console shows: unhandled,
+            // the first enrolment through MS-CONN01 failed as "Issuance refused:
+            // 500" while the log said exactly which setting was missing.
+            return Results.Json(new { error = ex.Message }, statusCode: 502);
+        }
     });
 
 // Unblocking, in the only shape PIV allows. The card takes a PUK and nothing

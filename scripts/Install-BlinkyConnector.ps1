@@ -109,6 +109,37 @@ if (Test-Path $manifest) {
     Ok "$(Split-Path -Leaf $Msi), SHA-256 $hash - compare it with the console's downloads page"
 }
 
+# Which CA to ask. Empty is right only on the CA itself, where the connector asks
+# ICertConfig for the local one; on a separate server it asked for nothing and the
+# first enrolment through MS-CONN01 failed at the CA with "no certification authority
+# is active on this machine". The enterprise CAs are published in the directory, so
+# with exactly one there is nothing to ask a person.
+if (-not $CaConfig -and -not (Get-Service CertSvc -ErrorAction SilentlyContinue)) {
+    try {
+        $configuration = ([ADSI]'LDAP://RootDSE').configurationNamingContext
+        $services = [ADSI]"LDAP://CN=Enrollment Services,CN=Public Key Services,CN=Services,$configuration"
+        $searcher = New-Object DirectoryServices.DirectorySearcher($services, '(objectClass=pKIEnrollmentService)')
+        $authorities = @($searcher.FindAll() | ForEach-Object {
+            "$($_.Properties['dnshostname'][0])\$($_.Properties['cn'][0])"
+        })
+    } catch {
+        Fail "This machine is not a CA and the directory's CAs could not be read: $($_.Exception.Message). Pass -CaConfig 'HOST\CA common name'."
+    }
+
+    switch ($authorities.Count) {
+        0 { Fail 'This machine is not a CA and the directory publishes none. Pass -CaConfig ''HOST\CA common name''.' }
+        1 { $CaConfig = $authorities[0]; Ok "CA from the directory: $CaConfig" }
+        default {
+            Fail ("The directory publishes $($authorities.Count) CAs; say which with -CaConfig: " +
+                  ($authorities -join '; '))
+        }
+    }
+} elseif ($CaConfig) {
+    Ok "CA: $CaConfig"
+} else {
+    Ok 'CA: the one on this machine'
+}
+
 # ------------------------------------------------------------------ 2. the server
 # The server from the package when not given: blinky-server.json beside this
 # script names the server the package was downloaded from.
