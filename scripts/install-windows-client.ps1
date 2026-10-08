@@ -46,9 +46,10 @@
          logon, from HKLM\...\Run.
 
 .PARAMETER BootstrapToken
-    From BOOTSTRAP_TOKEN in .env on the CMS host, which is root-only:
-
-        ssh sysadmin@by-cacms.blinky.lab 'sudo grep ^BOOTSTRAP_TOKEN= ~/blinky/.env'
+    From the console: Administracja / Zetony, "Nowy zeton" - the value is shown
+    once, and the token carries its own term and the number of machines it may
+    enrol (0102). It used to come out of .env on the CMS host, where it was one
+    value for every machine and never expired.
 
 .PARAMETER Minidriver
     Yubico's minidriver MSI, from Yubico's "Smart Card Drivers and Tools" download
@@ -135,12 +136,13 @@ if (-not $BootstrapToken) {
 
     if (-not $BootstrapToken -and -not $enrolled) {
         throw @'
-This machine has no agent identity and no bootstrap token to get one with.
+This machine has no agent identity and no enrolment token to get one with.
 
 Pass -BootstrapToken on the first install. It is remembered afterwards, and an
-upgrade then needs no arguments at all:
+upgrade then needs no arguments at all.
 
-    ssh sysadmin@by-cacms.blinky.lab "sudo grep ^BOOTSTRAP_TOKEN= ~/blinky/.env"
+Make the token in the console: Administracja / Zetony, "Nowy zeton". Give it a
+term and the number of machines it may enrol; the value is shown once.
 '@
     }
 }

@@ -91,6 +91,10 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         "/api/profiles",
         "/api/cardholders",
 
+        // Enrolment tokens: made, listed and withdrawn from the console (0102).
+        "/api/enrol-tokens",
+        "/api/enrol-tokens/{id:guid}/revoke",
+
         // Route patterns, not paths. A help desk request arrives as
         // /api/tokens/12345/helpdesk and matches nothing written literally,
         // which is why these could not be listed at all before the comparison
@@ -232,8 +236,8 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
                     "Refused a certificate on the connector routes that is not a connector's: {Fingerprint}",
                     fingerprint);
 
-                await Deny(context, "this certificate is not an ADCS connector's; add its SHA-256 "
-                                    + "fingerprint to Blinky:Adcs:Connector:ClientFingerprints");
+                await Deny(context, "this certificate is not a registered ADCS connector's; "
+                                    + "enrol the connector with a connector enrolment token");
                 return;
             }
 

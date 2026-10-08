@@ -114,7 +114,7 @@ logs as a possible certificate at the CA that Blinky does not hold.
 because that is the anchor the edge verifies on 9443
 (`scripts/new-connector-request.ps1` makes the key on the CA server, non-exportable;
 `scripts/sign-connector-cert.sh` signs it on the Docker host). The chain therefore says
-only "a machine this deployment issued to". `Blinky:Adcs:Connector:ClientFingerprints`
+only "a machine this deployment issued to". The connector's registration
 says which one is the connector; every workstation certificate is refused on the
 connector routes, and the connector's certificate is refused on every agent route,
 because it has no agent row. The connector authenticates the API by its TLS certificate:
@@ -206,8 +206,18 @@ hierarchy in a Linux trust store, to learn something the CA already knows.
 
 ## How it decides who may call
 
-Mutual TLS, and the authorisation is a **list of SHA-256 fingerprints** —
-`Connector:AllowedClientThumbprints`. Not an issuer, not a subject name.
+Mutual TLS, and the authorisation is a **SHA-256 fingerprint** — not an issuer,
+not a subject name.
+
+> **Which fingerprints those are moved in 0102.** On the API's side a
+> connector is a `connector_registrations` row, written by the enrolment that
+> issued its certificate: the connector presents a token whose purpose is
+> `AdcsConnector`, gets a certificate, and the fingerprint is recorded without
+> anybody typing it. It is listed and withdrawn from the console, and a
+> withdrawal is refused on the next call rather than at the next restart.
+> Before that it was `ADCS_CONNECTOR_FINGERPRINT` in `.env`, copied by hand
+> after running a tool. The connector's own side — which API certificate *it*
+> pins — is unchanged and still configuration.
 
 Trusting an issuer would mean that every certificate that issuer ever signs can
 ask this connector to enrol on a stranger's behalf, and the whole point of the

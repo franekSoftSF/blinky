@@ -155,25 +155,9 @@ public sealed class AdcsConnectorQueueTests
             new AdcsWorkResult(AdcsTransport.SchemaVersion, Guid.NewGuid(), 200, "{}")));
 
     [Fact]
-    public void A_polled_ca_is_refused_without_connector_fingerprints_or_with_a_sha1_one()
-    {
-        var options = new AdcsInstanceOptions { Transport = "ConnectorPolls" };
-
-        var none = Assert.Throws<CertificateAuthorityException>(
-            () => AdcsInstance.Create(options, issues: true, new ConnectorQueue()));
-        Assert.Contains("ClientFingerprints", none.Message, StringComparison.Ordinal);
-
-        options.Connector.ClientFingerprints = [new string('A', 40)];
-        var sha1 = Assert.Throws<CertificateAuthorityException>(
-            () => AdcsInstance.Create(options, issues: true, new ConnectorQueue()));
-        Assert.Contains("40 hex", sha1.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void A_polled_ca_in_a_process_with_no_queue_is_refused_by_name()
     {
         var options = new AdcsInstanceOptions { Transport = "ConnectorPolls" };
-        options.Connector.ClientFingerprints = [new string('A', 64)];
 
         var refusal = Assert.Throws<CertificateAuthorityException>(() => AdcsInstance.Create(options, issues: false));
 
@@ -188,30 +172,37 @@ public sealed class AdcsConnectorQueueTests
     public void The_connector_routes_are_told_apart_from_the_agent_routes(string path, bool connector) =>
         Assert.Equal(connector, Blinky.Api.Security.ConnectorIdentities.IsConnectorRoute(new Microsoft.AspNetCore.Http.PathString(path)));
 
+    /// <summary>
+    /// Every workstation's certificate chains to the agent CA too, so the
+    /// registration is what tells one of them from a connector - and since
+    /// 0102 the registration is a row rather than a line in .env.
+    /// </summary>
     [Fact]
-    public void A_certificate_from_the_same_ca_is_a_connector_only_by_its_fingerprint()
+    public void A_certificate_from_the_same_ca_is_a_connector_only_by_its_registration()
     {
-        // Every workstation's certificate chains to the agent CA too. The list is what
-        // stops one of them collecting PKIData to be signed.
         using var connector = AdcsTestCertificates.Agent();
         using var workstation = AdcsTestCertificates.Agent();
 
-        var identities = new Blinky.Api.Security.ConnectorIdentities(new HashSet<string>
-        {
-            connector.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256),
-        });
+        var registered = Blinky.Api.Security.ConnectorIdentities.FingerprintOf(connector);
 
-        Assert.True(identities.Accepts(connector, out _));
-        Assert.False(identities.Accepts(workstation, out var refused));
-        Assert.Equal(64, refused.Length);
-        Assert.False(Blinky.Api.Security.ConnectorIdentities.None.Accepts(connector, out _));
+        Assert.Equal(64, registered.Length);
+        Assert.NotEqual(registered, Blinky.Api.Security.ConnectorIdentities.FingerprintOf(workstation));
+
+        var row = new Blinky.Domain.Entities.ConnectorRegistration { Fingerprint = registered };
+
+        Assert.True(row.IsActive);
+
+        row.RevokedAt = DateTime.UtcNow;
+
+        // Withdrawn from the console, and refused on the next call rather than
+        // after a restart: that is the whole reason this stopped being config.
+        Assert.False(row.IsActive);
     }
 
     [Fact]
     public void A_polled_ca_builds_without_a_url_or_a_client_certificate()
     {
         var options = new AdcsInstanceOptions { Name = "lab-adcs", Transport = "ConnectorPolls" };
-        options.Connector.ClientFingerprints = ["aa:" + new string('B', 62)];
 
         using var ca = AdcsInstance.Create(options, issues: true, new ConnectorQueue());
 
