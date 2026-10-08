@@ -49,10 +49,18 @@ public static class Theme
 
         // Replaced rather than appended. Appending would leave the old
         // dictionary underneath, and every DynamicResource would keep resolving
-        // to whichever copy happened to be found first.
-        resources.Clear();
-        resources.Add(dictionary);
+        // to whichever copy happened to be found first. Only the colours go:
+        // clearing everything took the control styles from App.xaml with them.
+        foreach (var old in resources.Where(IsColours).ToList())
+        {
+            resources.Remove(old);
+        }
+
+        resources.Insert(0, dictionary);
     }
+
+    private static bool IsColours(ResourceDictionary dictionary) =>
+        dictionary.Source?.OriginalString.StartsWith("Themes/", StringComparison.Ordinal) == true;
 
     /// <summary>
     /// Windows keeps this as <c>AppsUseLightTheme</c>, where 0 means dark. A

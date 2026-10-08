@@ -115,7 +115,7 @@ public sealed class Strings : INotifyPropertyChanged
         ["Pin.RulesCaveat"] = "These rules catch a PIN that is obviously bad. They cannot tell "
                               + "whether yours is a good one.",
 
-        ["Manage.Title"] = "MANAGE",
+        ["Manage.Title"] = "Manage",
         ["Manage.UnblockHint"] = "Sets a new PIN. Needs the backend.",
         ["Pin.UnblockExplained"] = "You are not asked for a PUK: Blinky holds it, spends it "
                                    + "on this unblock and replaces it straight afterwards. "
@@ -245,7 +245,7 @@ public sealed class Strings : INotifyPropertyChanged
         ["Pin.RulesCaveat"] = "Te reguły wyłapują PIN oczywiście zły. Nie potrafią stwierdzić, "
                               + "czy Twój jest dobry.",
 
-        ["Manage.Title"] = "ZARZĄDZANIE",
+        ["Manage.Title"] = "Zarządzanie",
         ["Manage.UnblockHint"] = "Ustawia nowy PIN. Wymaga połączenia z serwerem.",
         ["Pin.UnblockExplained"] = "Nie pytamy o PUK: Blinky go przechowuje, zużywa na to "
                                    + "odblokowanie i zaraz potem wymienia. Wymaga to "

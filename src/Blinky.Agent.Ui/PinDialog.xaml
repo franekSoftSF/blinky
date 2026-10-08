@@ -2,66 +2,27 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Blinky.Agent.Ui"
-        Title="Blinky" Height="580" Width="470"
+        Title="Blinky" Width="540" SizeToContent="Height"
+        Icon="Assets/blinky-agent.ico"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource Background}"
         Foreground="{DynamicResource Text}"
-        FontFamily="Segoe UI">
+        FontFamily="Segoe UI"
+        FontSize="15">
 
     <Window.Resources>
-        <Style TargetType="PasswordBox">
-            <Setter Property="FontSize" Value="16" />
-            <Setter Property="Padding" Value="8,6" />
+        <!-- Big, as BlinkyLite's PIN window: the person typing here is
+             usually not at ease with it, and a PIN mistyped costs an attempt. -->
+        <Style TargetType="PasswordBox" BasedOn="{StaticResource {x:Type PasswordBox}}">
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="Padding" Value="10,8" />
             <Setter Property="MaxLength" Value="8" />
-            <Setter Property="Background" Value="{DynamicResource FieldBackground}" />
-            <Setter Property="Foreground" Value="{DynamicResource Text}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Divider}" />
-            <Setter Property="CaretBrush" Value="{DynamicResource Text}" />
-            <Setter Property="Margin" Value="0,0,0,14" />
-        </Style>
-
-        <Style TargetType="TextBlock" x:Key="Label">
-            <Setter Property="Margin" Value="0,0,0,4" />
-            <Setter Property="Foreground" Value="{DynamicResource TextMuted}" />
-            <Setter Property="FontSize" Value="12" />
-        </Style>
-
-        <Style TargetType="Button">
-            <Setter Property="Padding" Value="14,7" />
-            <Setter Property="MinWidth" Value="110" />
-            <Setter Property="Background" Value="{DynamicResource PanelRaised}" />
-            <Setter Property="Foreground" Value="{DynamicResource Text}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Divider}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chrome" CornerRadius="6"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                              VerticalAlignment="Center" />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chrome" Property="Background"
-                                        Value="{DynamicResource AccentSoft}" />
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.4" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+            <Setter Property="Margin" Value="0,0,0,16" />
         </Style>
     </Window.Resources>
 
-    <Grid Margin="26,22,26,20">
+    <Grid Margin="28">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -70,67 +31,66 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock x:Name="TitleText" FontSize="19" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <DockPanel Grid.Row="0">
+            <Image DockPanel.Dock="Left" Source="Assets/blinky-agent-256.png" Width="32" Height="32"
+                   Margin="0,0,12,0" VerticalAlignment="Center"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+            <TextBlock x:Name="TitleText" FontSize="24" FontWeight="SemiBold" TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+        </DockPanel>
 
-        <TextBlock x:Name="RulesText" Grid.Row="1" Margin="0,0,0,16" TextWrapping="Wrap"
-                   FontSize="12" Foreground="{DynamicResource TextMuted}" />
+        <TextBlock x:Name="RulesText" Grid.Row="1" Margin="0,12,0,20" TextWrapping="Wrap"
+                   Foreground="{DynamicResource TextMuted}" />
 
         <!-- The code to read down a telephone. Shown, not hidden: it is not a
              secret to the person holding the token, and it has to be read out
              character by character. -->
         <Border x:Name="ChallengePanel" Grid.Row="2" Visibility="Collapsed"
-                CornerRadius="8" Padding="14,12" Margin="0,0,0,14"
+                CornerRadius="{StaticResource Radius}" Padding="14,12" Margin="0,0,0,18"
                 Background="{DynamicResource AccentSoft}">
             <StackPanel>
-                <TextBlock x:Name="ChallengeLabel" FontSize="11"
-                           Foreground="{DynamicResource TextMuted}" />
+                <TextBlock x:Name="ChallengeLabel" Style="{StaticResource Hint}" />
                 <TextBox x:Name="ChallengeText" IsReadOnly="True" BorderThickness="0"
-                         Background="Transparent" FontFamily="Consolas" FontSize="20"
-                         Margin="0,6,0,0" Padding="0"
+                         Background="Transparent" FontFamily="{StaticResource Mono}" FontSize="22"
+                         Margin="0,6,0,0" Padding="0" MinHeight="0"
                          Foreground="{DynamicResource AccentText}" />
             </StackPanel>
         </Border>
 
         <!-- The first field is the current PIN when changing, and the code an
              operator read back when unblocking offline. -->
-        <TextBlock x:Name="FirstLabel" Grid.Row="3" Style="{StaticResource Label}"
-                   Margin="0,0,0,4" />
-        <PasswordBox x:Name="FirstBox" Grid.Row="3" Margin="0,22,0,14"
-                     VerticalAlignment="Bottom" />
+        <StackPanel Grid.Row="3">
+            <TextBlock x:Name="FirstLabel" Style="{StaticResource FieldLabel}" />
+            <PasswordBox x:Name="FirstBox" />
 
-        <!-- A code being copied off a telephone call is typed wrong often
-             enough that hiding it would be perverse: the person has to be able
-             to see what they typed. -->
-        <TextBox x:Name="CodeBox" Grid.Row="3" Visibility="Collapsed"
-                 TextChanged="CodeBox_TextChanged"
-                 FontSize="16" FontFamily="Consolas" Padding="8,6" MaxLength="32"
-                 Margin="0,22,0,14" VerticalAlignment="Bottom"
-                 Background="{DynamicResource FieldBackground}"
-                 Foreground="{DynamicResource Text}"
-                 BorderBrush="{DynamicResource Divider}"
-                 CaretBrush="{DynamicResource Text}" />
+            <!-- A code being copied off a telephone call is typed wrong often
+                 enough that hiding it would be perverse: the person has to be
+                 able to see what they typed. -->
+            <TextBox x:Name="CodeBox" Visibility="Collapsed"
+                     TextChanged="CodeBox_TextChanged"
+                     FontSize="20" FontFamily="{StaticResource Mono}" Padding="10,8" MaxLength="32"
+                     Margin="0,0,0,16" />
+        </StackPanel>
 
-        <TextBlock x:Name="NewLabel" Grid.Row="4" Style="{StaticResource Label}" />
-        <PasswordBox x:Name="NewBox" Grid.Row="5" PasswordChanged="Validate" />
+        <StackPanel Grid.Row="4">
+            <TextBlock x:Name="NewLabel" Style="{StaticResource FieldLabel}" />
+            <PasswordBox x:Name="NewBox" PasswordChanged="Validate" />
 
-        <TextBlock x:Name="RepeatLabel" Grid.Row="6" Style="{StaticResource Label}" />
-        <PasswordBox x:Name="RepeatBox" Grid.Row="7" PasswordChanged="Validate" />
+            <TextBlock x:Name="RepeatLabel" Style="{StaticResource FieldLabel}" />
+            <PasswordBox x:Name="RepeatBox" PasswordChanged="Validate" />
+        </StackPanel>
 
-        <TextBlock x:Name="MessageText" Grid.Row="8" TextWrapping="Wrap" VerticalAlignment="Top"
+        <TextBlock x:Name="MessageText" Grid.Row="5" TextWrapping="Wrap" MinHeight="40"
                    Foreground="{DynamicResource Danger}" />
 
-        <StackPanel Grid.Row="9" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button x:Name="CancelButton" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click"
+        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button x:Name="CancelButton" MinWidth="120" Padding="12,8" Margin="0,0,12,0"
+                    IsCancel="True" Click="Cancel_Click"
                     Content="{Binding Path=[Pin.Cancel], Source={x:Static local:Strings.Current}}" />
-            <Button x:Name="OkButton" IsDefault="True" Click="Ok_Click"
-                    Background="{DynamicResource Accent}"
-                    Foreground="{DynamicResource OnAccent}"
-                    BorderBrush="{DynamicResource Accent}"
+            <Button x:Name="OkButton" Style="{StaticResource Primary}" MinWidth="140" Padding="12,8"
+                    IsDefault="True" Click="Ok_Click"
                     Content="{Binding Path=[Pin.Ok], Source={x:Static local:Strings.Current}}" />
         </StackPanel>
     </Grid>
