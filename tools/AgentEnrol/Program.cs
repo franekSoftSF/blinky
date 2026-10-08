@@ -131,7 +131,8 @@ void Configure(HttpClientHandler handler)
 {
     if (!string.IsNullOrWhiteSpace(serverCa))
     {
-        var roots = new X509Certificate2Collection(X509Certificate2.CreateFromPemFile(serverCa));
+        // CreateFromPem: CreateFromPemFile with no key path wants a key in this file.
+        var roots = new X509Certificate2Collection(X509Certificate2.CreateFromPem(File.ReadAllText(serverCa)));
 
         handler.ServerCertificateCustomValidationCallback = (_, certificate, _, errors) =>
         {

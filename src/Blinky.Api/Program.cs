@@ -2920,7 +2920,10 @@ internal static class StackChain
             return null;
         }
 
-        return (System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPemFile(issuer),
-            System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPemFile(anchor));
+        // CreateFromPem, not CreateFromPemFile: the file overload with no key path
+        // looks for the private key in the certificate's own file, and these files
+        // hold none - every /pki/root.crt under ADCS answered 500 for it.
+        return (System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPem(File.ReadAllText(issuer)),
+            System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPem(File.ReadAllText(anchor)));
     }
 }
