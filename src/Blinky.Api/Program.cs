@@ -30,6 +30,13 @@ builder.Services.AddSingleton(_ => AgentCertificateAuthority.Load(
 builder.Services.AddSingleton<TokenInventoryService>();
 builder.Services.AddSingleton<JobService>();
 
+// Passkey providers, when there are any. The only part of this stack that
+// reaches a cloud, and only from this container - see docs/12 §4.6.
+builder.Services.AddSingleton(services => Blinky.Api.Passkeys.PasskeyDirectories.FromConfiguration(
+    builder.Configuration, services.GetRequiredService<ILoggerFactory>().CreateLogger("Passkeys")));
+builder.Services.AddSingleton<Blinky.Api.Passkeys.IPasskeyStore, Blinky.Api.Passkeys.PasskeyStore>();
+builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyProvisioningService>();
+
 // The certificate authority: the built-in one, loaded from what
 // scripts/new-ca.sh produced, or a Microsoft CA through the connector. One
 // value chooses, and nothing downstream of this registration knows which it got
@@ -399,14 +406,37 @@ app.MapPost("/api/jobs/{id:guid}/progress",
     });
 
 app.MapPost("/api/jobs/{id:guid}/result",
-    (Guid id, JobResult result, HttpContext context, JobService jobs) =>
+    async (Guid id, JobResult result, HttpContext context, JobService jobs,
+        Blinky.Api.Passkeys.PasskeyProvisioningService passkeys, CancellationToken ct) =>
     {
         var agent = (Agent)context.Items["agent"]!;
 
-        return jobs.Complete(agent.Id, result with { JobId = id })
-            ? Results.NoContent()
-            : Results.Json(new { error = "this job is not yours to finish" }, statusCode: 403);
+        if (!jobs.Complete(agent.Id, result with { JobId = id }))
+        {
+            return Results.Json(new { error = "this job is not yours to finish" }, statusCode: 403);
+        }
+
+        // A FIDO2 job that ended with its ceremony still open leaves a pending
+        // registration at the provider. Cleaned up here, where the ending is
+        // learned, rather than by a sweep that finds it later.
+        await passkeys.JobEndedAsync(id, result with { JobId = id }, ct);
+
+        return Results.NoContent();
     });
+
+// FIDO2, the agent's half. The key is ready: the provider is asked for a
+// challenge now and not earlier, because its lifetime starts when it is asked.
+app.MapPost("/api/jobs/{id:guid}/fido2/ready",
+    (Guid id, Fido2Ready ready, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyProvisioningService passkeys, CancellationToken ct) =>
+        Passkey(async () => Results.Ok(await passkeys.ReadyAsync(
+            ((Agent)context.Items["agent"]!).Id, id, ready with { JobId = id }, ct))));
+
+app.MapPost("/api/jobs/{id:guid}/fido2/result",
+    (Guid id, Fido2CeremonyResult result, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyProvisioningService passkeys, CancellationToken ct) =>
+        Passkey(async () => Results.Ok(await passkeys.ResultAsync(
+            ((Agent)context.Items["agent"]!).Id, id, result with { JobId = id }, ct))));
 
 // Creating work belongs to an operator, never to an agent: the API creates
 // jobs on request and never decides on its own that work exists.
@@ -908,6 +938,116 @@ app.MapPost("/api/jobs/recycle",
 
         return Results.Ok(new { job.Id, created, state = job.State.ToString() });
     });
+
+// A passkey for somebody, on a key that will be plugged into an agent. The user
+// is resolved at the provider first: a login that does not exist is refused
+// here, before anybody goes to find a key. See docs/12 and patch 0077.
+app.MapPost("/api/jobs/fido2",
+    (Fido2JobRequest request, HttpContext context, JobService jobs, Database database,
+        Blinky.Api.Passkeys.PasskeyProvisioningService passkeys, CancellationToken ct) =>
+        Passkey(async () =>
+        {
+            if (!IsOperator(context))
+            {
+                return Results.Json(new { error = "an operator token is required" }, statusCode: 401);
+            }
+
+            var identifier = request.User;
+            var holder = (string?)null;
+
+            if (request.CardholderId is { } personId)
+            {
+                using var people = database.OpenSession();
+                var person = people.Get<Cardholder>(personId);
+
+                if (person is null)
+                {
+                    return Results.Json(new { error = "there is no cardholder with that id" }, statusCode: 404);
+                }
+
+                identifier ??= person.Upn;
+                holder = person.DisplayName;
+            }
+
+            if (string.IsNullOrWhiteSpace(identifier))
+            {
+                return Results.Json(new { error = "name the user, or a cardholder with a UPN" }, statusCode: 400);
+            }
+
+            var pin = new Fido2PinPolicy(request.PinMode, request.MinPinLength, request.ForceChangePin);
+            passkeys.Check(request.Directory, pin);
+
+            var user = await passkeys.ResolveAsync(request.Directory, identifier, ct);
+            var provisioning = new Fido2Provisioning(request.Directory, holder ?? user.DisplayName, pin,
+                request.KeyName ?? "YubiKey", request.AppendSerial);
+
+            // Directory, user, key and reason: the same request twice is one job,
+            // and a new attempt after a failure is the operator's to ask for.
+            var key = $"fido2:{request.Directory}:{user.Id}:{request.TokenSerial?.ToString() ?? "any"}"
+                      + $":{request.Reason ?? "initial"}";
+
+            var (job, created) = jobs.Create(JobType.ProvisionFido2Credential, key,
+                id => JobEnvelope.ProvisionFido2(id, key, DateTimeOffset.UtcNow.AddHours(1),
+                    request.TokenSerial, provisioning),
+                request.AgentId, cardholderId: request.CardholderId);
+
+            var passkey = passkeys.Record(job.Id, request.Directory, user, request.CardholderId,
+                request.TokenSerial, ActorFor(context));
+
+            return Results.Ok(new
+            {
+                job.Id,
+                created,
+                state = job.State.ToString(),
+                passkey = passkey.Id,
+                user = new { user.Id, user.Login, user.DisplayName },
+            });
+        }));
+
+app.MapGet("/api/passkeys/directories",
+    (HttpContext context, Blinky.Api.Passkeys.PasskeyDirectories directories) =>
+        !IsOperator(context)
+            ? Results.Json(new { error = "an operator token is required" }, statusCode: 401)
+            : Results.Ok(directories.All.Select(d => new { d.Name, d.Capabilities })));
+
+// The database and the provider side by side. Disagreement is shown, not fixed:
+// a method somebody deleted at the provider, or a key the user enrolled alone,
+// is something an operator should see rather than something Blinky decides.
+app.MapGet("/api/passkeys",
+    (string directory, string user, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyProvisioningService passkeys, CancellationToken ct) =>
+        Passkey(async () =>
+        {
+            if (!IsOperator(context))
+            {
+                return Results.Json(new { error = "an operator token is required" }, statusCode: 401);
+            }
+
+            var resolved = await passkeys.ResolveAsync(directory, user, ct);
+            return Results.Ok(new { user = resolved, passkeys = await passkeys.ListAsync(directory, resolved, ct) });
+        }));
+
+// Deleted at the provider first, marked here second. Never the other way round:
+// a row reading Revoked over a credential that still signs somebody in is the
+// one failure this ordering exists to prevent.
+app.MapPost("/api/passkeys/{id:guid}/revoke",
+    (Guid id, PasskeyRevokeRequest request, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyProvisioningService passkeys, CancellationToken ct) =>
+        Passkey(async () =>
+        {
+            if (!IsOperator(context))
+            {
+                return Results.Json(new { error = "an operator token is required" }, statusCode: 401);
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Reason))
+            {
+                return Results.Json(new { error = "a revocation needs a reason" }, statusCode: 400);
+            }
+
+            var revoked = await passkeys.RevokeAsync(id, request.Reason, ActorFor(context), ct);
+            return Results.Ok(new { id, state = revoked.State.ToString(), revoked.RevokedAt });
+        }));
 
 // An agent asking for a certificate. The attestation is verified here, against
 // this server's pinned root - see docs/06-security.md.
@@ -2420,12 +2560,44 @@ static OperatorAccount? SignedInOperator(HttpContext context, Database database,
 /// the revocation-list publisher reads <c>/pki/</c>, which is public.
 /// </para>
 /// </remarks>
+// One shape for every refusal in the passkey flow: a status, a code an agent or
+// a console can branch on, and a sentence for whoever reads the log.
+static async Task<IResult> Passkey(Func<Task<IResult>> handler)
+{
+    try
+    {
+        return await handler();
+    }
+    catch (Blinky.Api.Passkeys.PasskeyFlowException e)
+    {
+        return Results.Json(new { error = e.Message, code = e.Code }, statusCode: e.Status);
+    }
+}
+
 static bool IsOperator(HttpContext context) =>
     context.Items.TryGetValue("operator", out var signedIn) && signedIn is OperatorAccount;
 
 /// <summary>What an agent reports when it checks in.</summary>
 /// <summary>Asks for one token inventory pass on one agent.</summary>
 internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
+
+/// <summary>A passkey for somebody, at a named provider.</summary>
+/// <param name="User">UPN, login or provider id. Optional when a cardholder with a UPN is named.</param>
+/// <param name="TokenSerial">Null when any key plugged into the agent will do.</param>
+internal sealed record Fido2JobRequest(
+    string Directory,
+    string? User = null,
+    Guid? CardholderId = null,
+    Guid? AgentId = null,
+    long? TokenSerial = null,
+    Fido2PinMode PinMode = Fido2PinMode.ProvisionalRandom,
+    int MinPinLength = 6,
+    bool ForceChangePin = true,
+    string? KeyName = null,
+    bool AppendSerial = true,
+    string? Reason = null);
+
+internal sealed record PasskeyRevokeRequest(string Reason);
 
 /// <summary>One credential the backend holds, as an agent needs to see it.</summary>
 /// <summary>An offline code that the card would not take.</summary>

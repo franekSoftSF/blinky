@@ -66,7 +66,17 @@ public sealed record PasskeyExtensions(
 public sealed record PendingRegistration(
     PasskeyUser User,
     PasskeyCreationOptions Options,
-    string? ProviderReference);
+    string? ProviderReference)
+{
+    public RegistrationHandle Handle => new(User, ProviderReference);
+}
+
+/// <summary>
+/// All a provider needs to finish or clean up a ceremony - not the options. The
+/// options go to the key; this is what the API keeps, and what it can rebuild
+/// from a database row after a restart.
+/// </summary>
+public sealed record RegistrationHandle(PasskeyUser User, string? ProviderReference);
 
 /// <summary>What the authenticator produced, exactly as it produced it.</summary>
 /// <remarks>

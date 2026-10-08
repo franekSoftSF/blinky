@@ -102,7 +102,7 @@ public sealed class OktaPasskeyDirectoryTests
         var pending = await directory.BeginRegistrationAsync(Alice);
 
         provider.Answer(new { id = "fwf1", status = "ACTIVE", created = "2026-10-08T10:01:00.000Z" });
-        var registered = await directory.CompleteRegistrationAsync(pending,
+        var registered = await directory.CompleteRegistrationAsync(pending.Handle,
             new AttestationResponse([0xFA], [0xFB, 0xFF, 0xFE, 1], [0xA3, 1, 2, 3, 4]), "ignored");
 
         var call = provider.Calls[1];
@@ -121,7 +121,7 @@ public sealed class OktaPasskeyDirectoryTests
         provider.Answer(new { id = "fwf1", status = "PENDING_ACTIVATION" });
 
         var e = await Assert.ThrowsAsync<PasskeyDirectoryException>(() => directory.CompleteRegistrationAsync(
-            pending, new AttestationResponse([1], [2], [3]), "ignored"));
+            pending.Handle, new AttestationResponse([1], [2], [3]), "ignored"));
 
         Assert.Contains("PENDING_ACTIVATION", e.Message);
     }
@@ -142,7 +142,7 @@ public sealed class OktaPasskeyDirectoryTests
         }
         catch (TimeoutException)
         {
-            await directory.CancelRegistrationAsync(pending);
+            await directory.CancelRegistrationAsync(pending.Handle);
         }
 
         var call = provider.Calls[1];
@@ -158,7 +158,7 @@ public sealed class OktaPasskeyDirectoryTests
         var pending = await directory.BeginRegistrationAsync(Alice);
         provider.Answer(new { errorCode = "E0000007", errorSummary = "Not found" }, HttpStatusCode.NotFound);
 
-        await directory.CancelRegistrationAsync(pending);
+        await directory.CancelRegistrationAsync(pending.Handle);
     }
 
     [Fact]

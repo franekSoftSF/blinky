@@ -122,6 +122,7 @@ create table passkey_credentials (
        ceremony_id uuid unique,
        challenge text,
        challenge_deadline_at timestamptz,
+       origin varchar(255),
        provider_reference varchar(255),
        credential_id varchar(255),
        aaguid uuid,

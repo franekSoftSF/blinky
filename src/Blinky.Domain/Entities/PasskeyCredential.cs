@@ -51,6 +51,12 @@ public class PasskeyCredential
 
     public virtual DateTime? ChallengeDeadlineAt { get; set; }
 
+    /// <summary>
+    /// What <c>clientDataJSON.origin</c> has to say. Kept with the challenge for
+    /// the same reason: the result is checked against what was handed out.
+    /// </summary>
+    public virtual string? Origin { get; set; }
+
     /// <summary>What the provider needs to clean up an unfinished ceremony: Okta's pending factor id.</summary>
     public virtual string? ProviderReference { get; set; }
 

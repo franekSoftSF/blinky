@@ -144,6 +144,7 @@ job_id                 uuid NULL
 ceremony_id            uuid UNIQUE   -- one challenge, one row
 challenge              text NULL     -- a nonce, kept to check clientDataJSON against
 challenge_deadline_at  timestamptz NULL
+origin                 text NULL     -- what clientDataJSON.origin must say
 provider_reference     text NULL     -- Okta's pending factor id, for cleanup
 credential_id          text NULL     -- base64url, as the key produced it
 aaguid                 uuid NULL

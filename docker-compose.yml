@@ -70,6 +70,21 @@ services:
       # One algorithm; the registration check sets it against the template's minimum key size.
       Blinky__Adcs__KeyAlgorithms__0: ${ADCS_KEY_ALGORITHM:-}
 
+      # Passkey providers, Phase 7. Both empty by default, and then nothing in
+      # this stack reaches a cloud; set one and this container, and only this
+      # one, needs egress to it. Secrets are files, like the ADCS password.
+      Blinky__Passkeys__Entra__TenantId: ${ENTRA_TENANT_ID:-}
+      Blinky__Passkeys__Entra__ClientId: ${ENTRA_CLIENT_ID:-}
+      Blinky__Passkeys__Entra__ClientCertificatePath: ${ENTRA_CLIENT_CERTIFICATE:-}
+      Blinky__Passkeys__Entra__ClientCertificatePasswordFile: ${ENTRA_CLIENT_CERTIFICATE_PASSWORD_FILE:-}
+      Blinky__Passkeys__Entra__ClientSecretFile: ${ENTRA_CLIENT_SECRET_FILE:-}
+      Blinky__Passkeys__Okta__OrgUrl: ${OKTA_ORG_URL:-}
+      Blinky__Passkeys__Okta__AuthMode: ${OKTA_AUTH_MODE:-OAuthPrivateKeyJwt}
+      Blinky__Passkeys__Okta__ClientId: ${OKTA_CLIENT_ID:-}
+      Blinky__Passkeys__Okta__PrivateKeyPath: ${OKTA_PRIVATE_KEY:-}
+      Blinky__Passkeys__Okta__KeyId: ${OKTA_KEY_ID:-}
+      Blinky__Passkeys__Okta__ApiTokenFile: ${OKTA_API_TOKEN_FILE:-}
+
       # The directory people are read out of. Unset, the endpoints answer
       # "no directory is configured" and cardholders are entered by hand,
       # which is a normal way to run this.

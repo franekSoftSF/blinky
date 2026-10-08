@@ -182,6 +182,7 @@ public sealed class PasskeyCredentialMapping : ClassMapping<PasskeyCredential>
         // Unique: one ceremony is one row, however many times its result arrives.
         Property(x => x.CeremonyId, m => { m.Column("ceremony_id"); m.Unique(true); });
         Property(x => x.Challenge, m => m.Column(c => { c.Name("challenge"); c.SqlType("text"); }));
+        Property(x => x.Origin, m => m.Column("origin"));
         Property(x => x.ChallengeDeadlineAt,
             m => Conventions.AsTimestamp(m, "challenge_deadline_at", notNull: false));
         Property(x => x.ProviderReference, m => m.Column("provider_reference"));

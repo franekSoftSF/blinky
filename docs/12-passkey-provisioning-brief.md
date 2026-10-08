@@ -96,6 +96,7 @@ Idempotency: `excludeCredentials` prevents duplicate registration of the same ke
 
 ### 4.5 `Blinky.Api` + frontend (Angular)
 
+- As built in 0077: `POST /api/jobs/fido2` (resolves the user at the provider before any job exists), `GET /api/passkeys/directories`, `GET /api/passkeys?directory=&user=` (the drift listing), `POST /api/passkeys/{id}/revoke`, and for the agent `POST /api/jobs/{id}/fido2/ready` and `/fido2/result`. The clientDataJSON is checked against the challenge and origin that were issued before the provider sees it. Originally planned:
 - REST: create/inspect/cancel provisioning jobs; list passkeys per cardholder/card (merge local DB + live provider list for drift detection); revoke (delete at provider, then mark local). All provider calls happen server-side; the agent never talks to Entra or Okta.
 - SignalR orchestration: on `Fido2Ready`, call `IPasskeyDirectory.GetCreationOptionsAsync`, immediately dispatch `Fido2CeremonyRequest`; on `Fido2CeremonyResult`, call `RegisterAsync`, persist, complete job. Enforce the challenge deadline as a job-level timeout.
 - Angular: "Passkey" panel on the token/cardholder view — **provider selector** (only configured providers shown), user picker with resolved provider identity, PIN policy selection (options constrained by provider `Capabilities`), live ceremony status (waiting for key / touch / PIN / registering), result screen. Passkey list with provider badge, revoke action, and drift badge when provider and DB disagree.

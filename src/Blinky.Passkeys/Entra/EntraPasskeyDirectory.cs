@@ -152,7 +152,7 @@ public sealed class EntraPasskeyDirectory : IPasskeyDirectory
         return new PendingRegistration(user, normalised, ProviderReference: null);
     }
 
-    public async Task<RegisteredPasskey> CompleteRegistrationAsync(PendingRegistration pending,
+    public async Task<RegisteredPasskey> CompleteRegistrationAsync(RegistrationHandle pending,
         AttestationResponse response, string displayName, CancellationToken ct = default)
     {
         var name = displayName.Trim() is { Length: > 0 } n ? n : "YubiKey";
@@ -180,7 +180,7 @@ public sealed class EntraPasskeyDirectory : IPasskeyDirectory
             Json.Time(created.RootElement, "createdDateTime"));
     }
 
-    public Task CancelRegistrationAsync(PendingRegistration pending, CancellationToken ct = default) =>
+    public Task CancelRegistrationAsync(RegistrationHandle pending, CancellationToken ct = default) =>
         Task.CompletedTask;
 
     public async Task<IReadOnlyList<ProviderPasskey>> ListAsync(PasskeyUser user, CancellationToken ct = default)

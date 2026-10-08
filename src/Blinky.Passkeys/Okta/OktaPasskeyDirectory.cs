@@ -170,7 +170,7 @@ public sealed class OktaPasskeyDirectory : IPasskeyDirectory
         }
     }
 
-    public async Task<RegisteredPasskey> CompleteRegistrationAsync(PendingRegistration pending,
+    public async Task<RegisteredPasskey> CompleteRegistrationAsync(RegistrationHandle pending,
         AttestationResponse response, string displayName, CancellationToken ct = default)
     {
         var factorId = pending.ProviderReference
@@ -198,7 +198,7 @@ public sealed class OktaPasskeyDirectory : IPasskeyDirectory
         return new RegisteredPasskey(factorId, activated is null ? null : Json.Time(activated.RootElement, "created"));
     }
 
-    public async Task CancelRegistrationAsync(PendingRegistration pending, CancellationToken ct = default)
+    public async Task CancelRegistrationAsync(RegistrationHandle pending, CancellationToken ct = default)
     {
         if (pending.ProviderReference is not { } factorId)
         {

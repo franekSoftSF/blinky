@@ -121,7 +121,7 @@ public sealed class EntraPasskeyDirectoryTests
         provider.Answer(new { id = "m1", createdDateTime = "2026-10-08T10:01:00Z" }, HttpStatusCode.Created);
         var response = new AttestationResponse([0xFA, 0xFB, 0xFC, 0xFD], [0xFB, 0xFF, 0xFE, 1], [0xA3, 1, 2, 3, 4]);
 
-        var registered = await directory.CompleteRegistrationAsync(pending, response,
+        var registered = await directory.CompleteRegistrationAsync(pending.Handle, response,
             "A name that is far longer than thirty characters");
 
         var call = provider.Calls[1];

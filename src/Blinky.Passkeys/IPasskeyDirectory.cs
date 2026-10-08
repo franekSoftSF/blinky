@@ -41,11 +41,11 @@ public interface IPasskeyDirectory
     /// </summary>
     Task<PendingRegistration> BeginRegistrationAsync(PasskeyUser user, CancellationToken ct = default);
 
-    Task<RegisteredPasskey> CompleteRegistrationAsync(PendingRegistration pending,
+    Task<RegisteredPasskey> CompleteRegistrationAsync(RegistrationHandle handle,
         AttestationResponse response, string displayName, CancellationToken ct = default);
 
     /// <summary>Removes whatever the provider kept for a ceremony that did not finish.</summary>
-    Task CancelRegistrationAsync(PendingRegistration pending, CancellationToken ct = default);
+    Task CancelRegistrationAsync(RegistrationHandle handle, CancellationToken ct = default);
 
     Task<IReadOnlyList<ProviderPasskey>> ListAsync(PasskeyUser user, CancellationToken ct = default);
 

@@ -1299,9 +1299,10 @@
       "id": "0077",
       "phase": 7,
       "title": "Api orchestration, REST, drift and revocation",
-      "state": "open",
+      "state": "done-unverified",
       "owner": "cloud-ai",
-      "proof": "Not started. The challenge TTL becomes a job deadline, and the agent never speaks to a provider."
+      "proof": "PasskeyProvisioningService behind POST /api/jobs/fido2, GET /api/passkeys/directories, GET /api/passkeys, POST /api/passkeys/{id}/revoke and the agent's /api/jobs/{id}/fido2/ready and /fido2/result. User resolved before a job exists; challenge asked for only on Ready, deadline the sooner of provider's and job's; a repeated Ready cancels the challenge it replaces; clientDataJSON checked against issued challenge and origin before the provider sees it; row saved Provisioned before registration; refusal cancels and fails; expiry is a retryable 409 back to KeyReady; same result twice registers once; job ending with an open ceremony cancels it; revocation deletes at the provider first, 404 recorded as already gone; drift listing with MissingAtProvider, StillAtProvider and ProviderOnly. 19 tests.",
+      "gap": "API started on 2026-10-08 against a throwaway PostgreSQL 17 (schema valid, Okta built from configuration, new routes refuse unauthenticated calls), but no ceremony has run end to end and no tenant or org has been reached; the flow is tested with an in-memory store and a scripted provider. A job expired by the watchdog does not cancel its ceremony - the worker has no provider access - and the leftover shows in the drift listing instead"
     },
     {
       "id": "0077a",

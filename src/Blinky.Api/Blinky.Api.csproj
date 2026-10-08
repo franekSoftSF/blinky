@@ -16,6 +16,7 @@
     <ProjectReference Include="..\Blinky.Domain\Blinky.Domain.csproj" />
     <ProjectReference Include="..\Blinky.Infrastructure\Blinky.Infrastructure.csproj" />
     <ProjectReference Include="..\Blinky.Directory\Blinky.Directory.csproj" />
+    <ProjectReference Include="..\Blinky.Passkeys\Blinky.Passkeys.csproj" />
     <ProjectReference Include="..\Blinky.Pki\Blinky.Pki.csproj" />
     <ProjectReference Include="..\Blinky.Piv\Blinky.Piv.csproj" />
     <ProjectReference Include="..\Blinky.Secrets\Blinky.Secrets.csproj" />
