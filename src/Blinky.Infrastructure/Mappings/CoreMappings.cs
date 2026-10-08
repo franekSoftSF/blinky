@@ -205,6 +205,43 @@ public sealed class PasskeyCredentialMapping : ClassMapping<PasskeyCredential>
     }
 }
 
+/// <summary>
+/// Configuration with a sealed credential. The three secret columns are opaque to
+/// everything but <c>ProviderSecrets</c> in the API.
+/// </summary>
+public sealed class PasskeyProviderMapping : ClassMapping<PasskeyProvider>
+{
+    public PasskeyProviderMapping()
+    {
+        Table("passkey_providers");
+        Id(x => x.Id, m => { m.Column("id"); m.Generator(Generators.GuidComb); });
+        Property(x => x.Name, m => { m.Column("name"); m.NotNullable(true); m.Unique(true); });
+        Property(x => x.Kind, m => Conventions.AsEnumString<PasskeyProviderKind>(m, "kind"));
+        Property(x => x.IsEnabled, m => { m.Column("is_enabled"); m.NotNullable(true); });
+        Property(x => x.TenantId, m => m.Column("tenant_id"));
+        Property(x => x.ClientId, m => m.Column("client_id"));
+        Property(x => x.OrgUrl, m => m.Column("org_url"));
+        Property(x => x.KeyId, m => m.Column("key_id"));
+        Property(x => x.Authority, m => m.Column("authority"));
+        Property(x => x.GraphUrl, m => m.Column("graph_url"));
+        Property(x => x.ChallengeMinutes, m => { m.Column("challenge_minutes"); m.NotNullable(true); });
+        Property(x => x.CredentialKind,
+            m => Conventions.AsEnumString<PasskeyProviderCredential>(m, "credential_kind", notNull: false));
+        Property(x => x.SecretCiphertext, m => m.Column("secret_ciphertext"));
+        Property(x => x.SecretNonce, m => m.Column("secret_nonce"));
+        Property(x => x.SecretTag, m => m.Column("secret_tag"));
+        Property(x => x.SecretKeyVersion, m => m.Column("secret_key_version"));
+        Property(x => x.PublicMaterial, m => m.Column(c => { c.Name("public_material"); c.SqlType("text"); }));
+        Property(x => x.CredentialHint, m => m.Column("credential_hint"));
+        Property(x => x.CredentialExpiresAt,
+            m => Conventions.AsTimestamp(m, "credential_expires_at", notNull: false));
+        Property(x => x.CredentialSetAt, m => Conventions.AsTimestamp(m, "credential_set_at", notNull: false));
+        Property(x => x.CredentialSetBy, m => m.Column("credential_set_by"));
+        Property(x => x.CreatedAt, m => Conventions.AsTimestamp(m, "created_at"));
+        Property(x => x.UpdatedAt, m => Conventions.AsTimestamp(m, "updated_at"));
+    }
+}
+
 public sealed class CaInstanceMapping : ClassMapping<CaInstance>
 {
     public CaInstanceMapping()

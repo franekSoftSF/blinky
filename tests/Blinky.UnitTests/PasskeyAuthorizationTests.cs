@@ -113,12 +113,12 @@ public sealed class PasskeyAuthorizationTests
     }
 
     [Fact]
-    public void Okta_refuses_to_start_without_the_credential_its_mode_needs()
+    public void Okta_with_a_private_key_refuses_to_start_without_a_client_id()
     {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
         Assert.Throws<PasskeyAuthorizationException>(() =>
-            OktaPasskeyDirectory.Create(new OktaOptions("acme.okta.com", OktaAuthMode.ApiToken), new HttpClient()));
-        Assert.Throws<PasskeyAuthorizationException>(() =>
-            OktaPasskeyDirectory.Create(new OktaOptions("acme.okta.com", ClientId: "C"), new HttpClient()));
+            OktaPasskeyDirectory.WithPrivateKey(new OktaOptions("acme.okta.com"), key, new HttpClient()));
     }
 
     [Theory]

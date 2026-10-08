@@ -30,10 +30,13 @@ builder.Services.AddSingleton(_ => AgentCertificateAuthority.Load(
 builder.Services.AddSingleton<TokenInventoryService>();
 builder.Services.AddSingleton<JobService>();
 
-// Passkey providers, when there are any. The only part of this stack that
+// Passkey providers, when there are any: rows in the database, configured in the
+// console (0107), never variables in .env. The only part of this stack that
 // reaches a cloud, and only from this container - see docs/12 §4.6.
-builder.Services.AddSingleton(services => Blinky.Api.Passkeys.PasskeyDirectories.FromConfiguration(
-    builder.Configuration, services.GetRequiredService<ILoggerFactory>().CreateLogger("Passkeys")));
+builder.Services.AddSingleton<Blinky.Api.Passkeys.IPasskeyProviderStore, Blinky.Api.Passkeys.PasskeyProviderStore>();
+builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyProviders>();
+builder.Services.AddSingleton(services =>
+    services.GetRequiredService<Blinky.Api.Passkeys.PasskeyProviders>().Directories);
 builder.Services.AddSingleton<Blinky.Api.Passkeys.IPasskeyStore, Blinky.Api.Passkeys.PasskeyStore>();
 builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyProvisioningService>();
 
@@ -206,6 +209,11 @@ builder.Services.AddSingleton(services => new PukEscrow(
     secrets.PukKekVersion,
     secrets.LegacyPukKek,
     services.GetRequiredService<ILogger<PukEscrow>>()));
+
+// Passkey provider credentials are sealed under the PUK KEK's root, in a domain
+// of their own - see ProviderSecrets.
+builder.Services.AddSingleton(services => new Blinky.Api.Passkeys.ProviderSecrets(
+    services.GetRequiredService<IKeyProvider>(), secrets.PukKekVersion));
 
 builder.Services.AddSingleton(services => new EnrolmentTokens(
     services.GetRequiredService<Database>(),
@@ -1068,6 +1076,63 @@ app.MapGet("/api/passkeys/directories",
                 directories = directories.All.Select(d => new { d.Name, d.Capabilities }),
                 analysisOnly = Blinky.Api.Passkeys.AnalysisOnlyDirectory.All,
             }));
+
+// The providers themselves (0107). Reading is any operator's; changing one is an
+// administrator's, because it decides where a credential is registered and holds
+// the secret that lets Blinky do it.
+app.MapGet("/api/passkeys/providers",
+    (HttpContext context, Blinky.Api.Passkeys.PasskeyProviders providers) =>
+        !IsOperator(context)
+            ? Results.Json(new { error = "an operator token is required" }, statusCode: 401)
+            : Results.Ok(providers.List()));
+
+app.MapPost("/api/passkeys/providers",
+    (Blinky.Api.Passkeys.PasskeyProviderRequest request, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyProviders providers) =>
+        Passkey(() => Task.FromResult(!IsAdministrator(context)
+            ? Results.Json(new { error = "an administrator is required" }, statusCode: 403)
+            : Results.Ok(providers.Create(request, ActorFor(context))))));
+
+app.MapPut("/api/passkeys/providers/{id:guid}",
+    (Guid id, Blinky.Api.Passkeys.PasskeyProviderRequest request, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyProviders providers) =>
+        Passkey(() => Task.FromResult(!IsAdministrator(context)
+            ? Results.Json(new { error = "an administrator is required" }, statusCode: 403)
+            : Results.Ok(providers.Update(id, request, ActorFor(context))))));
+
+app.MapDelete("/api/passkeys/providers/{id:guid}",
+    (Guid id, HttpContext context, Blinky.Api.Passkeys.PasskeyProviders providers) =>
+        Passkey(() =>
+        {
+            if (!IsAdministrator(context))
+            {
+                return Task.FromResult(Results.Json(new { error = "an administrator is required" }, statusCode: 403));
+            }
+
+            providers.Delete(id, ActorFor(context));
+            return Task.FromResult(Results.NoContent());
+        }));
+
+// Blinky makes the key and keeps it; the answer carries the public half only.
+app.MapPost("/api/passkeys/providers/{id:guid}/generate-credential",
+    (Guid id, HttpContext context, Blinky.Api.Passkeys.PasskeyProviders providers) =>
+        Passkey(() => Task.FromResult(!IsAdministrator(context)
+            ? Results.Json(new { error = "an administrator is required" }, statusCode: 403)
+            : Results.Ok(providers.GenerateCredential(id, ActorFor(context))))));
+
+// A credential the administrator brought: sealed on arrival, never sent back.
+app.MapPost("/api/passkeys/providers/{id:guid}/credential",
+    (Guid id, Blinky.Api.Passkeys.PasskeyCredentialImport import, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyProviders providers) =>
+        Passkey(() => Task.FromResult(!IsAdministrator(context)
+            ? Results.Json(new { error = "an administrator is required" }, statusCode: 403)
+            : Results.Ok(providers.ImportCredential(id, import, ActorFor(context))))));
+
+app.MapPost("/api/passkeys/providers/{id:guid}/test",
+    (Guid id, HttpContext context, Blinky.Api.Passkeys.PasskeyProviders providers, CancellationToken ct) =>
+        Passkey(async () => !IsAdministrator(context)
+            ? Results.Json(new { error = "an administrator is required" }, statusCode: 403)
+            : Results.Ok(new { message = await providers.TestAsync(id, ct) })));
 
 // One passkey, for the console following a ceremony. The row's state is the step.
 app.MapGet("/api/passkeys/{id:guid}",
@@ -2823,6 +2888,10 @@ static async Task<IResult> Passkey(Func<Task<IResult>> handler)
         return Results.Json(new { error = e.Message, code = e.Code }, statusCode: e.Status);
     }
 }
+
+static bool IsAdministrator(HttpContext context) =>
+    context.Items.TryGetValue("operator", out var signedIn)
+    && signedIn is OperatorAccount { Role: Blinky.Domain.OperatorRole.Administrator };
 
 static bool IsOperator(HttpContext context) =>
     context.Items.TryGetValue("operator", out var signedIn) && signedIn is OperatorAccount;

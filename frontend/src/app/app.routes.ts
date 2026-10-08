@@ -9,6 +9,7 @@ import { EnrolTokens } from './pages/enrol-tokens';
 import { Downloads } from './pages/downloads';
 import { SignIn } from './pages/sign-in';
 import { Passkeys } from './pages/passkeys';
+import { PasskeyProviders } from './pages/passkey-providers';
 import { signedIn } from './core/signed-in.guard';
 
 export const routes: Routes = [
@@ -28,6 +29,7 @@ export const routes: Routes = [
   { path: 'agents', component: Inventory, data: { kind: 'agents' }, canActivate: [signedIn] },
   { path: 'jobs', component: Inventory, data: { kind: 'jobs' }, canActivate: [signedIn] },
   { path: 'passkeys', component: Passkeys, canActivate: [signedIn] },
+  { path: 'passkey-providers', component: PasskeyProviders, canActivate: [signedIn] },
   { path: 'system', component: SystemStatusPage, canActivate: [signedIn] },
   { path: 'directory', component: DirectoryDiagnostics, canActivate: [signedIn] },
   { path: 'enrol-tokens', component: EnrolTokens, canActivate: [signedIn] },

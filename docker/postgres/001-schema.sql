@@ -140,6 +140,33 @@ create table passkey_credentials (
        primary key (id)
     );
 
+create table passkey_providers (
+        id uuid not null,
+       name varchar(255) not null unique,
+       kind text not null,
+       is_enabled boolean not null,
+       tenant_id varchar(255),
+       client_id varchar(255),
+       org_url varchar(255),
+       key_id varchar(255),
+       authority varchar(255),
+       graph_url varchar(255),
+       challenge_minutes int4 not null,
+       credential_kind text,
+       secret_ciphertext bytea,
+       secret_nonce bytea,
+       secret_tag bytea,
+       secret_key_version int4,
+       public_material text,
+       credential_hint varchar(255),
+       credential_expires_at timestamptz,
+       credential_set_at timestamptz,
+       credential_set_by varchar(255),
+       created_at timestamptz not null,
+       updated_at timestamptz not null,
+       primary key (id)
+    );
+
 create table ca_instances (
         id uuid not null,
        name varchar(255) not null unique,

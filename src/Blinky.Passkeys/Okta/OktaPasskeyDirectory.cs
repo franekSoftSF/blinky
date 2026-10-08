@@ -4,21 +4,12 @@ using System.Text.Json;
 
 namespace Blinky.Passkeys.Okta;
 
-public enum OktaAuthMode
-{
-    /// <summary>An SSWS API token. Acts as the admin who created it, and never expires on its own.</summary>
-    ApiToken,
-
-    /// <summary>A service app with <c>private_key_jwt</c>. For anything that is not a lab.</summary>
-    OAuthPrivateKeyJwt,
-}
-
 /// <param name="OrgUrl">
 /// The org's URL - <c>https://acme.okta.com</c> or its custom domain. Credentials
 /// are bound to the domain they were created on, so this has to be the domain users
 /// sign in at, not the admin one.
 /// </param>
-/// <param name="PrivateKeyPath">PEM, RSA or P-256, PKCS#8 or traditional.</param>
+/// <param name="ClientId">The service app's client id; unused with an API token.</param>
 /// <param name="KeyId">The <c>kid</c> Okta shows for the key; needed once an app has two.</param>
 /// <param name="ChallengeMinutes">
 /// Okta does not say when an activation expires. This is Blinky's own deadline for
@@ -26,10 +17,7 @@ public enum OktaAuthMode
 /// </param>
 public sealed record OktaOptions(
     string OrgUrl,
-    OktaAuthMode AuthMode = OktaAuthMode.OAuthPrivateKeyJwt,
-    string? ApiToken = null,
     string? ClientId = null,
-    string? PrivateKeyPath = null,
     string? KeyId = null,
     string Name = "okta",
     int ChallengeMinutes = 5);
@@ -61,45 +49,29 @@ public sealed class OktaPasskeyDirectory : IPasskeyDirectory
         http = new ProviderHttp(client, authorization, Label, ErrorDetail, this.time);
     }
 
-    public static OktaPasskeyDirectory Create(OktaOptions options, HttpClient client, TimeProvider? time = null)
+    /// <summary>
+    /// With an SSWS API token, for a lab - it acts as the admin who made it and does
+    /// not expire on its own.
+    /// </summary>
+    public static OktaPasskeyDirectory WithApiToken(OktaOptions options, string token, HttpClient client,
+        TimeProvider? time = null) =>
+        new(options, client, new StaticAuthorization("SSWS", token), time);
+
+    /// <summary>A service app with <c>private_key_jwt</c>. For anything that is not a lab.</summary>
+    public static OktaPasskeyDirectory WithPrivateKey(OktaOptions options, AsymmetricAlgorithm key,
+        HttpClient client, TimeProvider? time = null)
     {
-        IProviderAuthorization authorization = options.AuthMode switch
+        if (options.ClientId is not { Length: > 0 } clientId)
         {
-            OktaAuthMode.ApiToken when options.ApiToken is { Length: > 0 } token =>
-                new StaticAuthorization("SSWS", token),
-            OktaAuthMode.ApiToken =>
-                throw new PasskeyAuthorizationException("Okta is set to ApiToken and no token is configured."),
-            _ when options is { ClientId.Length: > 0, PrivateKeyPath.Length: > 0 } =>
-                new ClientCredentialsAuthorization(client,
-                    new Uri(OrgUri(options.OrgUrl), "/oauth2/v1/token"),
-                    options.ClientId,
-                    "okta.users.read okta.users.manage",
-                    ClientCredential.PrivateKey(LoadKey(options.PrivateKeyPath), options.KeyId),
-                    time),
-            _ => throw new PasskeyAuthorizationException(
-                "Okta is set to OAuthPrivateKeyJwt and needs both a client id and a private key."),
-        };
-
-        return new OktaPasskeyDirectory(options, client, authorization, time);
-    }
-
-    private static AsymmetricAlgorithm LoadKey(string path)
-    {
-        var pem = File.ReadAllText(path);
-
-        // PKCS#8 does not say which algorithm it holds until it is parsed.
-        try
-        {
-            var rsa = RSA.Create();
-            rsa.ImportFromPem(pem);
-            return rsa;
+            throw new PasskeyAuthorizationException("Okta with a private key needs the service app's client id.");
         }
-        catch (Exception e) when (e is CryptographicException or ArgumentException)
-        {
-            var ec = ECDsa.Create();
-            ec.ImportFromPem(pem);
-            return ec;
-        }
+
+        return new OktaPasskeyDirectory(options, client, new ClientCredentialsAuthorization(client,
+            new Uri(OrgUri(options.OrgUrl), "/oauth2/v1/token"),
+            clientId,
+            "okta.users.read okta.users.manage",
+            ClientCredential.PrivateKey(key, options.KeyId),
+            time), time);
     }
 
     private static Uri OrgUri(string value)

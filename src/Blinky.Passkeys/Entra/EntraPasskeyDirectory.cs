@@ -1,11 +1,9 @@
 using System.Globalization;
-using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 
 namespace Blinky.Passkeys.Entra;
 
-/// <summary>Where the Entra tenant is and how Blinky proves it is the registered app.</summary>
-/// <param name="ClientCertificatePath">PFX/P12, or PEM holding certificate and key. Preferred over a secret.</param>
+/// <summary>Where the Entra tenant is. How Blinky proves it is the app is handed in separately.</summary>
 /// <param name="Authority">Changed only for a national cloud.</param>
 /// <param name="Graph">Changed only for a national cloud.</param>
 /// <param name="ChallengeTimeoutMinutes">
@@ -15,9 +13,6 @@ namespace Blinky.Passkeys.Entra;
 public sealed record EntraOptions(
     string TenantId,
     string ClientId,
-    string? ClientCertificatePath = null,
-    string? ClientCertificatePassword = null,
-    string? ClientSecret = null,
     string Name = "entra",
     string Authority = "https://login.microsoftonline.com",
     string Graph = "https://graph.microsoft.com",
@@ -59,37 +54,20 @@ public sealed class EntraPasskeyDirectory : IPasskeyDirectory
         http = new ProviderHttp(client, authorization, Label, ErrorDetail, this.time);
     }
 
-    /// <summary>The directory with its own client-credentials token, from configuration.</summary>
-    public static EntraPasskeyDirectory Create(EntraOptions options, HttpClient client, TimeProvider? time = null)
+    /// <summary>
+    /// The directory with its own client-credentials token. The credential comes
+    /// from the database, opened from its envelope for as long as it takes to build
+    /// this - never from a file on the server or a variable in its environment.
+    /// </summary>
+    public static EntraPasskeyDirectory Create(EntraOptions options, ClientCredential credential,
+        HttpClient client, TimeProvider? time = null)
     {
         var tokenEndpoint = new Uri(
             $"{options.Authority.TrimEnd('/')}/{Uri.EscapeDataString(options.TenantId)}/oauth2/v2.0/token");
         var authorization = new ClientCredentialsAuthorization(client, tokenEndpoint, options.ClientId,
-            $"{options.Graph.TrimEnd('/')}/.default", Credential(options), time);
+            $"{options.Graph.TrimEnd('/')}/.default", credential, time);
 
         return new EntraPasskeyDirectory(options, client, authorization, time);
-    }
-
-    private static ClientCredential Credential(EntraOptions options)
-    {
-        // Certificate first when both are set: a lab that added a certificate and
-        // forgot to remove the secret should be running on the certificate.
-        if (options.ClientCertificatePath is { Length: > 0 } path)
-        {
-            var certificate = path.EndsWith(".pem", StringComparison.OrdinalIgnoreCase)
-                ? X509Certificate2.CreateFromPemFile(path)
-                : X509CertificateLoader.LoadPkcs12FromFile(path, options.ClientCertificatePassword);
-
-            return ClientCredential.Certificate(certificate);
-        }
-
-        if (options.ClientSecret is { Length: > 0 } secret)
-        {
-            return ClientCredential.Secret(secret);
-        }
-
-        throw new PasskeyAuthorizationException(
-            "Entra has neither a client certificate nor a client secret configured.");
     }
 
     public string Name => options.Name;

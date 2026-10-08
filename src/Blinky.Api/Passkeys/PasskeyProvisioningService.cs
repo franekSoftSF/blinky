@@ -545,6 +545,8 @@ public sealed class PasskeyFlowException(int status, string code, string message
     public string Code { get; } = code;
 }
 
+/// <summary>By name on the wire; the console compares the word, and a number here read as no drift at all.</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<PasskeyDrift>))]
 public enum PasskeyDrift
 {
     InSync,

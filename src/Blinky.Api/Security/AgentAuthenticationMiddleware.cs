@@ -70,6 +70,11 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         "/api/jobs/fido2",
         "/api/passkeys",
         "/api/passkeys/directories",
+        "/api/passkeys/providers",
+        "/api/passkeys/providers/{id:guid}",
+        "/api/passkeys/providers/{id:guid}/generate-credential",
+        "/api/passkeys/providers/{id:guid}/credential",
+        "/api/passkeys/providers/{id:guid}/test",
         "/api/passkeys/{id:guid}",
         "/api/passkeys/{id:guid}/revoke",
 

@@ -163,6 +163,31 @@ History, like `Credential`: created and moved, never edited, never deleted.
 There is no column a PIN fits in — `pin_set_by_agent` is a boolean, and a test
 on the mapping fails if any other column with "pin" in its name appears.
 
+### `PasskeyProvider`
+
+```
+id                     uuid
+name                   text UNIQUE   -- fixed once created; passkey rows name their provider by it
+kind                   text          -- Entra | Okta, fixed once created
+is_enabled             boolean
+tenant_id, client_id   text NULL     -- Entra; client_id is also Okta's service app
+org_url, key_id        text NULL     -- Okta
+authority, graph_url   text NULL     -- Entra national clouds
+challenge_minutes      int
+credential_kind        text NULL     -- Certificate | ClientSecret | PrivateKey | ApiToken
+secret_ciphertext, secret_nonce, secret_tag  bytea NULL   -- AES-GCM, see ProviderSecrets
+secret_key_version     int NULL      -- PUK KEK generation the key was derived from
+public_material        text NULL     -- the certificate or JWK the provider is given
+credential_hint        text NULL     -- thumbprint or kid, never the secret
+credential_expires_at, credential_set_at timestamptz NULL
+credential_set_by      text NULL
+created_at, updated_at timestamptz
+```
+
+Configuration, so full CRUD in the console (0107) - with two limits that come
+from `PasskeyCredential` naming its provider by `name`: the name and kind do not
+change, and a provider with registered passkeys is disabled rather than deleted.
+
 ## Four state machines
 
 Keeping them separate is deliberate. A token can be perfectly healthy while a

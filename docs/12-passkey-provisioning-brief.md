@@ -103,9 +103,7 @@ Idempotency: `excludeCredentials` prevents duplicate registration of the same ke
 
 ### 4.6 Configuration & deployment
 
-- `.env.example`:
-  - Entra: `ENTRA__TENANTID`, `ENTRA__CLIENTID`, `ENTRA__CLIENTCERTPATH` / `ENTRA__CLIENTSECRET`, `ENTRA__CHALLENGETIMEOUTMINUTES`.
-  - Okta: `OKTA__ORGURL` (e.g. `https://acme.okta.com` — also the source of rpId/origin unless overridden), `OKTA__AUTHMODE` (`ApiToken` | `OAuthPrivateKeyJwt`), `OKTA__APITOKEN` (secret ref) or `OKTA__CLIENTID` + `OKTA__PRIVATEKEYPATH`, `OKTA__USEPREREGISTRATIONAPI` (bool, default false).
+- **Superseded by 0107.** This section first put the providers in `.env` (`ENTRA__*`, `OKTA__*`) and 0077 built it that way. Configuration in this project lives in the database and is changed from the console, and a client secret in an environment variable is in every `docker inspect`; so providers are now `PasskeyProvider` rows with full CRUD under Administration → Passkey providers, administrators only. Blinky generates the credential by default - an RSA certificate for Entra, an RSA key with a JWK for Okta - seals it in the database (AES-GCM under a key derived from the PUK KEK, bound to the row) and shows only the public half for the administrator to give the provider. A credential can also be imported; it is sealed on arrival and never sent back. Nothing about providers is in `.env` or `docker-compose.yml`.
 - Either provider may be absent; the feature degrades gracefully (provider hidden in UI with reason).
 - Docker: `api` (and only `api`) needs egress to `graph.microsoft.com` + `login.microsoftonline.com` and/or the Okta org URL. Note this in the network docs — the rest of the stack remains fully on-prem.
 
