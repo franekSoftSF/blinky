@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthStore } from './core/auth.store';
@@ -73,9 +73,16 @@ export class App {
     // session - including after somebody signed in, because nothing ever asked
     // again. The console looked broken while its own logs showed a live
     // session doing nothing.
+    //
+    // Untracked, because load() reads its own loading signal before it sets it.
+    // Read inside the effect, that signal became a dependency: every load ended
+    // by setting loading to false, which ran the effect again, which loaded
+    // again - thousands of /api/console/overview a minute from one open tab,
+    // until the API and PostgreSQL were too busy to answer anything else and the
+    // console said "API offline" about a server that was up (2026-10-09).
     effect(() => {
       if (this.auth.signedIn()) {
-        void this.store.load(true);
+        untracked(() => void this.store.load(true));
       }
     });
 
