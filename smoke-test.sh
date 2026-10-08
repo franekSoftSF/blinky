@@ -75,8 +75,12 @@ check "SQL injection in the query string is blocked" 403 \
     "$(status --get --data-urlencode "id=1' OR '1'='1" "$CONSOLE/health")"
 check "path traversal is blocked" 403 \
     "$(status "$CONSOLE/health?f=../../etc/passwd")"
+# Not /api/agents/whoami: "whoami" is a Unix command, the CRS rule set blocks
+# the path on this listener whatever the headers say, and the check passed or
+# failed on that word without ever reaching the API it is about. /api/jobs/next
+# is just as agent-only and gets to the API, which is what has to refuse it.
 check "agent identity cannot be forged from the console" 401 \
-    "$(status -H 'X-Client-Verify: SUCCESS' "$CONSOLE/api/agents/whoami")"
+    "$(status -H 'X-Client-Verify: SUCCESS' "$CONSOLE/api/jobs/next")"
 
 echo
 echo "agent listener - mTLS"
