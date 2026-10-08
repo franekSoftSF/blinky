@@ -99,6 +99,10 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         "/api/enrol-tokens",
         "/api/enrol-tokens/{id:guid}/revoke",
 
+        // Installers and scripts, to a signed-in operator only (0105).
+        "/api/downloads",
+        "/api/downloads/{name}",
+
         // Route patterns, not paths. A help desk request arrives as
         // /api/tokens/12345/helpdesk and matches nothing written literally,
         // which is why these could not be listed at all before the comparison

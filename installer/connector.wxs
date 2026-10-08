@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Blinky ADCS connector, as an MSI (0105).
+
+  Built by scripts/build-connector-msi.sh, which publishes the connector
+  self-contained and hands the directory to the <Files> element below. Installed
+  by Install-BlinkyConnector.ps1 from the console's downloads, or by hand:
+
+      msiexec /i blinky-adcs-connector.msi /qn ^
+              APIURL=https://blinky-cms.ad.digitalworkspace.pl:9443 ^
+              JOINTOKEN=... ^
+              SERVICEDOMAIN=AD SERVICEUSER=svc_blinky SERVICEPASSWORD=...
+
+  A gMSA is SERVICEUSER=gmsa-blinky$ with no password. There is no LocalSystem
+  default, unlike the agent: as LocalSystem the connector would ask the CA as the
+  computer account, which is not an identity anybody means to grant Enroll on a
+  smart-card template to - see ConnectorPaths.
+
+  The connector dials out to APIURL and listens on nothing, so there is no
+  firewall rule. At its first start it makes its own key, spends JOINTOKEN on a
+  certificate from the API and deletes the token from the registry. An upgrade
+  without JOINTOKEN keeps the certificate it has.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="Blinky ADCS connector"
+           Manufacturer="Blinky"
+           Version="$(var.Version)"
+           UpgradeCode="0c5e7a2d-94b1-4f63-a8d0-3e7b1c6f9a52"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of the Blinky ADCS connector is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Hidden: MSI writes every property it knows into its log, and logging is on
+         precisely when something went wrong and somebody is going to share the file. -->
+    <Property Id="MSIHIDDENPROPERTIES" Value="JOINTOKEN;SERVICEPASSWORD" />
+
+    <Property Id="APIURL" Secure="yes" />
+    <Property Id="APIFINGERPRINT" Secure="yes" />
+    <Property Id="CACONFIG" Secure="yes" />
+    <Property Id="JOINTOKEN" Secure="yes" Hidden="yes" />
+    <Property Id="SERVICEDOMAIN" Secure="yes" />
+    <Property Id="SERVICEUSER" Secure="yes" />
+    <Property Id="SERVICEPASSWORD" Secure="yes" Hidden="yes" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <Launch Condition="Privileged"
+            Message="The Blinky ADCS connector has to be installed by an administrator." />
+    <Launch Condition="Installed OR APIURL"
+            Message="APIURL is required - the agents' address of the Blinky server, https://...:9443. Install with Install-BlinkyConnector.ps1 from the console's downloads, which asks for everything this needs." />
+    <Launch Condition="Installed OR (SERVICEDOMAIN AND SERVICEUSER)"
+            Message="SERVICEDOMAIN and SERVICEUSER are required. The connector asks the CA and reads the directory as a domain account or gMSA; as LocalSystem it would be the computer account, which nobody means to grant Enroll to." />
+
+    <SetProperty Id="SVCACCOUNT" Value="[SERVICEDOMAIN]\[SERVICEUSER]"
+                 Before="InstallInitialize" Sequence="execute" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="ROOTFOLDER" Name="Blinky">
+        <Directory Id="INSTALLFOLDER" Name="AdcsConnector" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DATAROOT" Name="Blinky">
+        <Directory Id="DATAFOLDER" Name="AdcsConnector" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Blinky ADCS connector" Level="1">
+      <ComponentGroupRef Id="ConnectorFiles" />
+      <ComponentGroupRef Id="ConnectorSettings" />
+    </Feature>
+
+    <ComponentGroup Id="ConnectorFiles" Directory="INSTALLFOLDER">
+      <!-- Everything but the executable, which carries the service: InstallServices
+           takes the image path from the key file of the component it is in, and a
+           ServiceInstall anywhere else installs nothing and fails later with 1603. -->
+      <Files Include="$(var.ConnectorPublish)\**">
+        <Exclude Files="$(var.ConnectorPublish)\Blinky.AdcsConnector.exe" />
+      </Files>
+
+      <Component Id="ConnectorService" Guid="5a8e3c71-0d2f-4b96-9e14-7c3b2a6d8f05">
+        <File Id="ConnectorExe" Source="$(var.ConnectorPublish)\Blinky.AdcsConnector.exe" KeyPath="yes" />
+
+        <ServiceInstall Id="ConnectorServiceInstall"
+                        Name="BlinkyAdcsConnector"
+                        DisplayName="Blinky ADCS connector"
+                        Description="Hands Blinky's certificate requests to the Microsoft CA and reads Active Directory for it, as the integration account."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Account="[SVCACCOUNT]"
+                        Password="[SERVICEPASSWORD]"
+                        Vital="yes">
+          <!-- No delayed start: MSI's own ServiceConfig is documented not to work as
+               expected, and the connector retries enrolment and polling by itself
+               while the domain controller and the API come up. -->
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart"
+                              RestartServiceDelayInSeconds="60"
+                              ResetPeriodInDays="1" />
+        </ServiceInstall>
+
+        <ServiceControl Id="ConnectorServiceControl"
+                        Name="BlinkyAdcsConnector"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="ConnectorSettings" Directory="DATAFOLDER">
+      <Component Id="Settings" Guid="9d4b1e60-7a3c-4f28-b5e9-2c8f0a6d3e17">
+        <RegistryKey Root="HKLM" Key="SOFTWARE\Blinky\AdcsConnector" Id="SettingsKey"
+                     ForceCreateOnInstall="yes">
+          <RegistryValue Name="ApiUrl" Type="string" Value="[APIURL]" KeyPath="yes" />
+          <RegistryValue Name="ServiceAccount" Type="string" Value="[SVCACCOUNT]" />
+
+          <!-- SYSTEM, Administrators and the service account, inheritance dropped: the
+               token sits here until the first start, and HKLM\SOFTWARE is readable by
+               every user by default. The service account deletes the token once spent. -->
+          <util:PermissionEx User="SYSTEM" GenericAll="yes" />
+          <util:PermissionEx User="Administrators" GenericAll="yes" />
+          <util:PermissionEx User="[SERVICEUSER]" Domain="[SERVICEDOMAIN]" GenericAll="yes" />
+        </RegistryKey>
+      </Component>
+
+      <!-- Only with a new token: an upgrade without one keeps the enrolled certificate. -->
+      <Component Id="JoinToken" Guid="e2f7a9c4-1b6d-4e83-9a05-8d3c6b2f1e74" Condition="JOINTOKEN">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Blinky\AdcsConnector"
+                       Name="EnrolmentToken" Type="string" Value="[JOINTOKEN]" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ApiFingerprint" Guid="3c9e6b18-5f2a-4d71-8b40-6e1a9d7c2f53" Condition="APIFINGERPRINT">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Blinky\AdcsConnector"
+                       Name="ApiServerFingerprint" Type="string" Value="[APIFINGERPRINT]" KeyPath="yes" />
+      </Component>
+
+      <Component Id="CaConfig" Guid="7b2d5f94-3e8c-4a16-9c71-0f4e8b3a6d29" Condition="CACONFIG">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Blinky\AdcsConnector"
+                       Name="CaConfig" Type="string" Value="[CACONFIG]" KeyPath="yes" />
+      </Component>
+
+      <!-- The data folder is the service's own, with no inherited Users read: it holds
+           the log of who asked the CA for whom. The service narrows it further at start. -->
+      <Component Id="DataFolder" Guid="b6a1d3e8-4c9f-4705-8e2b-1f7d5c3a9e60">
+        <CreateFolder>
+          <util:PermissionEx User="SYSTEM" GenericAll="yes" />
+          <util:PermissionEx User="Administrators" GenericAll="yes" />
+          <util:PermissionEx User="[SERVICEUSER]" Domain="[SERVICEDOMAIN]" GenericAll="yes" />
+        </CreateFolder>
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Blinky\AdcsConnector"
+                       Name="DataFolder" Type="string" Value="[DATAFOLDER]" KeyPath="yes" />
+      </Component>
+
+      <Component Id="ServiceAccountRights" Guid="f4c8e2a1-6d3b-4917-a5e0-9b2c7d1f4e38">
+        <util:User Id="ServiceAccount" Name="[SERVICEUSER]" Domain="[SERVICEDOMAIN]"
+                   CreateUser="no" UpdateIfExists="no" RemoveOnUninstall="no" LogonAsService="yes" />
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Blinky\AdcsConnector"
+                       Name="LogonAsServiceGranted" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Package>
+</Wix>

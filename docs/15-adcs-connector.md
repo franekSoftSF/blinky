@@ -603,10 +603,31 @@ because that encoding packs several name–type–value triples into one string.
   impersonate the API to the connector would be able to enrol on anybody's
   behalf. A separate pair, its fingerprint in `AllowedClientThumbprints`, and
   eventually behind PKCS#11 for the same reason the master secrets are.
-- **`installer/`** — holds `agent.wxs` and nothing else. The connector needs
-  its own: service registration under a named account, the `%ProgramData%`
-  directory, the firewall rule for `ListenUrl`, and the private-key grant that
-  is otherwise the first thing to go wrong.
+- **`installer/connector.wxs`** — **written in 0105, built, not installed
+  anywhere yet.** The service under a named domain account or gMSA (no
+  LocalSystem default: that would be the computer asking the CA), *log on as a
+  service*, `%ProgramData%\Blinky\AdcsConnector` and `HKLM\SOFTWARE\Blinky\AdcsConnector`
+  locked to SYSTEM, Administrators and that account. No firewall rule: the MSI
+  installs a connector that dials the API and listens on nothing. Properties
+  `APIURL`, `JOINTOKEN`, `SERVICEDOMAIN`, `SERVICEUSER`, `SERVICEPASSWORD`,
+  optional `APIFINGERPRINT` and `CACONFIG`; the token and password are hidden from
+  the MSI log. Built by `scripts/build-connector-msi.sh`, self-contained.
+- **The connector enrols itself (0105).** With no client certificate configured it
+  makes an RSA 3072 key, sends a CSR with the token from the registry to
+  `/api/agents/enroll` as `purpose: connector`, stores the certificate
+  non-exportable (`LocalMachine\My` if it may write there, otherwise the service
+  account's own store) and deletes the token. A failure is retried, not fatal. Until
+  0105 nothing on this side spent a connector token, and the CSR was made and
+  signed by hand with `new-connector-request.ps1` and `sign-connector-cert.sh`.
+- **Delivery (0105).** `scripts/build-downloads.sh` drops both MSIs, the install
+  scripts and `downloads.json` (SHA-256 per file) into `downloads/` and copies it
+  to the server, where the API serves it read-only at `/api/downloads` to a
+  signed-in operator and the console lists it under *Pobieranie*.
+  `scripts/Install-BlinkyConnector.ps1` checks the MSI against that manifest and
+  the server's certificate against the machine's trust, finds or requests the
+  computer-bound enrolment agent certificate and grants the service account its
+  key - the arrangement the lab ran on, section 7 - installs, and waits for the
+  connector to say it is polling.
 - **`docs/09-lab.md`** — a Windows AD + ADCS lab, an enrolment agent template
   and a copy of *Smartcard User*. The phase gate is the same enrolment against
   ADCS that already works against the built-in CA, and none of it can be

@@ -27,6 +27,7 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 // Deployment settings beside the connector's other state rather than in the
 // installation directory: this file names the CA and the callers allowed to
 // reach it, and %ProgramFiles% grants BUILTIN\Users read.
+builder.Configuration.AddInMemoryCollection(RegistrySettings.Read());
 builder.Configuration.AddJsonFile(
     Path.Combine(ConnectorPaths.Root, "connector.json"), optional: true, reloadOnChange: false);
 
@@ -95,6 +96,7 @@ if (options.DialsApi)
     // No socket at all. The calls the API hands over are made through the endpoints
     // below in memory, so the two directions share every refusal and log line.
     builder.WebHost.UseTestServer();
+    builder.Services.AddSingleton<ConnectorIdentity>();
     builder.Services.AddHostedService<ApiPoller>();
 }
 else

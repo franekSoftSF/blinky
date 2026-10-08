@@ -18,7 +18,7 @@
     ]
   },
   "status": {
-    "updated": "2026-10-08",
+    "updated": "2026-10-09",
     "phase": 2,
     "phaseTitle": "Issue something",
     "state": "gate-met",
@@ -1157,6 +1157,15 @@
       "owner": "cloud-ai",
       "proof": "The API read Active Directory with a bind DN and svc_blinky's password in .env on a Linux host, the only process in the deployment with no domain identity; the password went with that host's .env when BY-CACMS was wiped on 2026-10-08. The ADCS connector already runs as the integration account on a domain member, so it now answers six directory routes (/connector/directory/probe, search, find, members, write-access, netbios) over the same channel as the CA, POST with the value in the body. It runs the API's own LdapDirectory with no bind DN - Negotiate from the service's Kerberos ticket, DC from the locator, naming context from RootDSE, LDAPS 636 - and drops the connection after any failure. The API's ConnectorDirectory is chosen with DIRECTORY_VIA=Connector and refuses to start without CA_BACKEND=Adcs; a pre-0104 connector's 404 is reported as too old, not as nobody found. ConnectorDirectoryTests (11) drive the API client through the polling queue into the connector's routes in memory, including LogonNames resolving AD\\s.frankiewicz end to end; 821 tests pass.",
       "gap": "Never run against a real domain: no bind from a real service account on a member has happened. First run is MS-CONN01.ad.digitalworkspace.pl with the connector as AD\\svc_blinky; the console's directory test and one enrolment through ADCS are the check"
+    },
+    {
+      "id": "0105",
+      "phase": 3,
+      "title": "The connector installs and enrols itself, from the console's downloads",
+      "state": "done-unverified",
+      "owner": "cloud-ai",
+      "proof": "A connector token could be made in the console since 0102 and nothing spent one: the connector had no enrolment client, no MSI and no way to reach the CA's neighbour but scp from a developer's checkout. Now the connector enrols itself - RSA 3072, CSR, POST /api/agents/enroll with purpose connector, certificate into the store non-exportable, token deleted from the registry, retried rather than fatal - and reads its settings from HKLM\\SOFTWARE\\Blinky\\AdcsConnector under connector.json. installer/connector.wxs installs it under a domain account or gMSA with log-on-as-a-service and a locked key and data folder; built warning-free by scripts/build-connector-msi.sh (42 MB, self-contained). scripts/build-downloads.sh writes downloads/ with both MSIs, the install scripts and downloads.json (SHA-256 per file) and publishes it; the API serves it at /api/downloads to an operator session only, by manifest name only, and the console lists it under Pobieranie. Install-BlinkyConnector.ps1 checks the hash and the server's trust, finds or requests the computer-bound enrolment agent certificate and grants the account its key, installs and waits for polling. Published to BY-CACMS on 2026-10-08: 6 files, hashes match inside the API container, unauthenticated /api/downloads answers 401. ConnectorEnrolmentContractTests and DownloadsTests; 832 tests pass.",
+      "gap": "Nothing installed yet: the MSI has not run on MS-CONN01, so self-enrolment, the registry ACL for the service account and the enrolment-agent key grant are unproved. The Pobieranie page was built in the console image but not opened signed in, and a download through the edge with a session has not been made. The MSIs are unsigned"
     },
     {
       "id": "0080",

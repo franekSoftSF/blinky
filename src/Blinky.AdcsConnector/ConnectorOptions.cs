@@ -135,6 +135,14 @@ public sealed class ApiOptions
     /// </summary>
     public ServerCertificateOptions ClientCertificate { get; set; } = new();
 
+    /// <summary>
+    /// A connector enrolment token from the console, for a connector with no
+    /// <see cref="ClientCertificate"/> configured: it enrols itself at start and keeps the
+    /// certificate in the store (0105). The MSI writes it to the registry instead, which
+    /// wins, and from where it is deleted once spent.
+    /// </summary>
+    public string? EnrolmentToken { get; set; }
+
     /// <summary>How long one poll may be held open by the API. Capped by the API at 25.</summary>
     public int WaitSeconds { get; set; } = 25;
 }

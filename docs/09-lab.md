@@ -278,6 +278,26 @@ on BY-CACMS on 2026-10-08 with `blinky-cms.ad.digitalworkspace.pl` from
 *DigitalWorkspace Issuing CA - homelab*; Windows trusted 8443 and 9443 with no
 exception. Shred the PFX afterwards: it carries the key.
 
+## The connector from the console's downloads (0105)
+
+```
+bash scripts/build-downloads.sh 0.5.0 --publish sysadmin@172.16.5.11
+```
+
+Builds both MSIs on a Windows machine with `wix`, writes `downloads.json`, and
+copies the lot to `~/blinky/downloads`, which the API serves under *Pobieranie*.
+On the CA's neighbour, from a folder holding the MSI, `Install-BlinkyConnector.ps1`
+and `downloads.json`, elevated:
+
+```
+.\Install-BlinkyConnector.ps1 -ApiUrl https://blinky-cms.ad.digitalworkspace.pl:9443 `
+    -ServiceAccount AD\svc_blinky -EnrolmentAgentTemplate <the enrolment agent template>
+```
+
+It asks for a connector token (console, *Zetony*, purpose *Konektor ADCS*) and the
+account's password. With `DIRECTORY_VIA=Connector` on the server the same
+connector reads Active Directory too (0104), and the server holds no LDAP password.
+
 ## The ADCS connector on a Windows member server, through a tunnel
 
 HZCS01 (`172.16.2.40`), Windows Server 2022, joined to `ad.digitalworkspace.pl`.

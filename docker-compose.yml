@@ -212,6 +212,11 @@ services:
       # something that is not this container.
       - ./pki:/var/lib/blinky/pki
 
+      # What the console offers for download, with downloads.json listing it
+      # (0105). Read-only: scripts/build-downloads.sh writes it on a build
+      # machine and it is copied here, never written by the API.
+      - ./downloads:/var/lib/blinky/downloads:ro
+
       # The token store, and the thing to back up separately from the database.
       # A named volume rather than a bind mount, so that its ownership comes
       # from the image and the service can read its own token.

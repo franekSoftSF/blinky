@@ -47,6 +47,10 @@ pki/
 # Build output: a 67 MB MSI does not belong in git history.
 artifacts/
 
+# What the console offers for download, written by scripts/build-downloads.sh
+# from artifacts/ and copied to the server. Build output too.
+downloads/
+
 # Worktrees for parallel work. A worktree is not content: committed, it lands
 # as an embedded repository that no clone can resolve.
 .worktrees/

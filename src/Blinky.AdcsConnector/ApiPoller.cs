@@ -32,13 +32,19 @@ namespace Blinky.AdcsConnector;
 /// </para>
 /// </remarks>
 public sealed class ApiPoller(
-    IServer server, ConnectorOptions options, ILogger<ApiPoller> logger) : BackgroundService
+    IServer server, ConnectorOptions options, ConnectorIdentity enrolled, ILogger<ApiPoller> logger)
+    : BackgroundService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var client = CreateClient(options.Api, out var identity);
+        if (await IdentityAsync(stoppingToken) is not { } identity)
+        {
+            return;
+        }
+
+        using var client = CreateClient(options.Api, identity);
         var memory = (TestServer)server;
         var caller = $"API at {options.Api.Url}";
         var wait = Math.Clamp(options.Api.WaitSeconds, 1, AdcsQueue.MaximumWaitSeconds);
@@ -122,6 +128,63 @@ public sealed class ApiPoller(
         }
     }
 
+    /// <summary>
+    /// The certificate to poll with: the one configured, else the one this connector
+    /// enrolled, else enrol now with the token the MSI left (0105).
+    /// </summary>
+    /// <remarks>
+    /// An enrolment that fails is retried rather than fatal. The API may be down while
+    /// the CA server boots, and a service that stops on that is a service somebody has to
+    /// notice and start again; one that keeps trying and says why is not.
+    /// </remarks>
+    private async Task<X509Certificate2?> IdentityAsync(CancellationToken stoppingToken)
+    {
+        if (options.Api.ClientCertificate.Path is { Length: > 0 }
+            || options.Api.ClientCertificate.Thumbprint is { Length: > 0 })
+        {
+            return ServerCertificate.Load(options.Api.ClientCertificate, "Connector:Api:ClientCertificate").Certificate;
+        }
+
+        for (var attempt = 1; !stoppingToken.IsCancellationRequested; attempt++)
+        {
+            if (enrolled.Find() is { } existing)
+            {
+                return existing;
+            }
+
+            if (ConnectorIdentity.Token(options.Api) is not { } token)
+            {
+                if (attempt == 1)
+                {
+                    logger.LogError(
+                        "This connector has no certificate and no enrolment token. Make a connector token in the "
+                        + "console (Administracja / Zetony) and reinstall with JOINTOKEN=..., or set "
+                        + @"HKLM\{Key}\{Value}; checked again every minute", ConnectorIdentity.RegistryKey,
+                        ConnectorIdentity.TokenValue);
+                }
+
+                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                continue;
+            }
+
+            try
+            {
+                return await enrolled.EnrolAsync(options.Api, token, stoppingToken);
+            }
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested
+                                       && ex is HttpRequestException or TaskCanceledException
+                                           or InvalidOperationException or JsonException or CryptographicException)
+            {
+                logger.LogWarning("Enrolment attempt {Attempt} with {Url} failed: {Reason}", attempt, options.Api.Url,
+                    ex.InnerException is { } inner ? $"{ex.Message} ({inner.Message})" : ex.Message);
+
+                await Task.Delay(TimeSpan.FromSeconds(Math.Min(300, 15 * attempt)), stoppingToken);
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>One call, through this connector's own endpoints, as the API asked for it.</summary>
     internal static async Task<AdcsWorkResult> Make(
         TestServer memory, AdcsWorkItem item, string caller, CancellationToken ct)
@@ -192,7 +255,8 @@ public sealed class ApiPoller(
     /// A client that presents the connector's certificate and believes only the API it
     /// was told about: a pinned SHA-256, or a chain this machine trusts naming the host.
     /// </summary>
-    internal static HttpClient CreateClient(ApiOptions api, out X509Certificate2 identity)
+    /// <param name="certificate">Null only for enrolment, which is how a connector gets one.</param>
+    internal static HttpClient CreateClient(ApiOptions api, X509Certificate2? certificate)
     {
         if (!Uri.TryCreate(api.Url, UriKind.Absolute, out var url) || url.Scheme != Uri.UriSchemeHttps)
         {
@@ -200,9 +264,6 @@ public sealed class ApiPoller(
                 "Connector:Api:Url has to be an absolute https address. What comes back on it is "
                 + "PKIData to sign as the enrolment agent.");
         }
-
-        var (certificate, _) = ServerCertificate.Load(api.ClientCertificate, "Connector:Api:ClientCertificate");
-        identity = certificate;
 
         var pinned = api.ServerFingerprint is { Length: > 0 } configured
             ? ClientCertificateGate.Normalise(configured)
@@ -226,7 +287,10 @@ public sealed class ApiPoller(
                     : string.Equals(presented.GetCertHashString(HashAlgorithmName.SHA256), pinned, StringComparison.Ordinal)),
         };
 
-        handler.ClientCertificates.Add(certificate);
+        if (certificate is not null)
+        {
+            handler.ClientCertificates.Add(certificate);
+        }
 
         return new HttpClient(handler)
         {

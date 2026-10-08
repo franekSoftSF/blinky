@@ -271,3 +271,10 @@ td strong {
   color: var(--bl-warning);
   font-size: 0.9rem;
 }
+
+/* A SHA-256 is one word of 64 characters; without this it widens the table past
+   the screen on anything narrower than a desktop. */
+code.hash {
+  word-break: break-all;
+  font-size: 0.8em;
+}

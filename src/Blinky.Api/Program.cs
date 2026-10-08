@@ -111,6 +111,11 @@ builder.Services.AddSingleton(services =>
 // endpoints exist and answer "there is no directory here" rather than failing
 // to resolve a service - a deployment without one is a normal deployment, with
 // cardholders entered by hand.
+// What the console offers for download: the connector and agent MSIs and the scripts
+// that install them, with a manifest the install scripts check against (0105).
+builder.Services.AddSingleton(new Blinky.Api.Distribution.Downloads(
+    builder.Configuration["Blinky:Downloads:Path"] ?? "/var/lib/blinky/downloads"));
+
 // Via=Connector reads Active Directory through the ADCS connector, as the domain account
 // it runs as, so this host keeps no bind password for the domain (0104). Refused at
 // start without ADCS, because then there is no connector to ask and every read would
@@ -1728,6 +1733,36 @@ app.MapPost("/api/enrol-tokens",
         {
             return Results.BadRequest(new { error = ex.Message });
         }
+    });
+
+app.MapGet("/api/downloads",
+    (HttpContext context, Blinky.Api.Distribution.Downloads downloads) =>
+    {
+        if (!IsOperator(context))
+        {
+            return Results.Json(new { error = "an operator session is required" }, statusCode: 401);
+        }
+
+        // Empty rather than 404: "nothing has been published here yet" is a state the
+        // console should show as such, with the command that publishes.
+        return Results.Ok(downloads.Manifest()
+                          ?? new Blinky.Api.Distribution.DownloadManifest(null, null, []));
+    });
+
+app.MapGet("/api/downloads/{name}",
+    (string name, HttpContext context, Blinky.Api.Distribution.Downloads downloads) =>
+    {
+        // A session, not a public URL: an installer that carries this deployment's
+        // address is not something to hand to whoever finds the link.
+        if (!IsOperator(context))
+        {
+            return Results.Json(new { error = "an operator session is required" }, statusCode: 401);
+        }
+
+        return downloads.Resolve(name) is { } found
+            ? Results.File(found.Path, Blinky.Api.Distribution.Downloads.ContentType(found.Entry.File),
+                found.Entry.File, enableRangeProcessing: true)
+            : Results.Json(new { error = "no such download" }, statusCode: 404);
     });
 
 app.MapGet("/api/enrol-tokens",
