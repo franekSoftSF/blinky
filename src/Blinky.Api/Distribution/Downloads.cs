@@ -95,7 +95,12 @@ public sealed class Downloads(string folder)
 
 /// <param name="Built">When the build that wrote it ran, ISO 8601.</param>
 /// <param name="Revision">The commit it was built from, with -dirty for an uncommitted tree.</param>
-public sealed record DownloadManifest(string? Built, string? Revision, IReadOnlyList<DownloadEntry> Files);
+/// <param name="Server">
+/// The name the packages were built for - what the install commands on the console's
+/// page say, rather than whatever name the page happened to be opened by (0110).
+/// </param>
+public sealed record DownloadManifest(string? Built, string? Revision, IReadOnlyList<DownloadEntry> Files,
+    string? Server = null);
 
 /// <param name="Kind">connector, agent, script.</param>
 /// <param name="Description">One line for the console, in the console's language.</param>
