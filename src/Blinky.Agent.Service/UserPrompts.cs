@@ -94,11 +94,17 @@ public sealed class UserPrompts(ILogger<UserPrompts> logger, TimeSpan timeout,
     /// Throws when nobody saw it. A PIN that was set on a key and shown to no one
     /// is a key only a reset recovers, and the job must say so rather than succeed.
     /// </remarks>
+    /// <param name="wait">
+    /// How long to wait for the acknowledgement, when it is not the ordinary
+    /// prompt timeout. A provisional PIN is already on the key when it is shown,
+    /// so giving up early is the worst outcome at once: a key with a PIN nobody
+    /// kept and no passkey on it.
+    /// </param>
     public async Task ShowNoticeAsync(long serial, string title, string message, CancellationToken ct,
-        string? applet = null)
+        string? applet = null, TimeSpan? wait = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        deadline.CancelAfter(timeout);
+        deadline.CancelAfter(wait ?? timeout);
 
         await using var pipe = await ConnectAsync(deadline.Token);
         await SendAsync(pipe, PromptRequest.ForNotice(serial, title, message, applet), deadline.Token);

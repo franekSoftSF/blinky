@@ -33,7 +33,8 @@ public sealed class Fido2Step(UserPrompts prompts, ILogger<Fido2Step> logger, Fu
         using var key = openKey(job.TokenSerial);
         var serial = key.Info().Serial ?? 0;
 
-        var engine = new Fido2Provisioner(new WindowPrompts(prompts, serial, provisioning.Holder),
+        var engine = new Fido2Provisioner(new WindowPrompts(prompts, serial, provisioning.Holder,
+                (state, detail) => ReportAsync(backend, job, attempt, state, detail, ct)),
             new Fido2BackendCalls(backend), TimeProvider.System);
 
         try
@@ -66,8 +67,33 @@ public sealed class Fido2Step(UserPrompts prompts, ILogger<Fido2Step> logger, Fu
     /// for logon and is asked for "your PIN" types that one, burns a FIDO2 retry,
     /// and nothing on screen tells them why it was wrong.
     /// </summary>
-    private sealed class WindowPrompts(UserPrompts prompts, long serial, string holder) : IFido2Prompts
+    /// <summary>
+    /// Progress that must not fail the job. The PIN may already be on the key
+    /// when this is called, and a refused progress report is no reason to
+    /// abandon a ceremony the person is in the middle of.
+    /// </summary>
+    private async Task ReportAsync(BackendClient backend, JobEnvelope job, int attempt, JobState state,
+        string detail, CancellationToken ct)
     {
+        try
+        {
+            await backend.ReportProgressAsync(new JobProgress(job.JobId, attempt, state, "ProvisionalPin", detail), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Job {JobId}: progress '{Detail}' not reported: {Message}", job.JobId, detail, ex.Message);
+        }
+    }
+
+    private sealed class WindowPrompts(UserPrompts prompts, long serial, string holder,
+        Func<JobState, string, Task> report) : IFido2Prompts
+    {
+        /// <summary>
+        /// As long as the API's AwaitingUser lease (JobService.AwaitingUserLease),
+        /// so neither side gives up on a person who is still writing the PIN down.
+        /// </summary>
+        private static readonly TimeSpan NoticeWait = TimeSpan.FromMinutes(30);
+
         private const string Title = "Security key PIN (FIDO2)";
         private const string NotPiv = "This is the security key's FIDO2 PIN, not the smart card PIN used to sign in to Windows.";
 
@@ -91,11 +117,21 @@ public sealed class Fido2Step(UserPrompts prompts, ILogger<Fido2Step> logger, Fu
                 + $"Choose a FIDO2 PIN for {Holder}, at least {minLength} characters. {NotPiv}", ct, "Choose a FIDO2 PIN",
                 minLength, 63, PromptRequest.Fido2);
 
-        public Task ShowProvisionalPinAsync(string pin, CancellationToken ct) =>
-            prompts.ShowNoticeAsync(serial, "Write down this FIDO2 PIN",
+        public async Task ShowProvisionalPinAsync(string pin, CancellationToken ct)
+        {
+            // AwaitingUser first: the ordinary lease is five minutes, and the
+            // watchdog would take the job back from somebody still holding a pen.
+            // The challenge is not fetched yet - the PIN is set before Ready - so
+            // no provider deadline runs while this window waits.
+            await report(JobState.AwaitingUser, "waiting for the provisional FIDO2 PIN to be written down");
+
+            await prompts.ShowNoticeAsync(serial, "Write down this FIDO2 PIN",
                 $"The FIDO2 PIN for {Holder}'s key is {pin}\n\nIt is shown once and stored nowhere. "
                 + "Give it to the holder with the key; they will be asked to change it the first time they use it.", ct,
-                PromptRequest.Fido2);
+                PromptRequest.Fido2, NoticeWait);
+
+            await report(JobState.Running, "provisional FIDO2 PIN acknowledged");
+        }
 
         public Task TouchAsync(CancellationToken ct) =>
             prompts.ShowTouchAsync(serial, $"Touch the key to create the passkey for {Holder}.", ct);

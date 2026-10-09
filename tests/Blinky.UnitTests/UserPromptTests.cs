@@ -119,6 +119,40 @@ public sealed class UserPromptTests
     private static string UniquePipe() => $"Blinky.Test.{Guid.NewGuid():N}";
 
     /// <summary>Stands in for the UI: connects, reads one prompt, answers it.</summary>
+    [Fact]
+    public async Task A_provisional_pin_waits_longer_than_an_ordinary_prompt()
+    {
+        // The PIN is on the key by the time it is shown. Giving up at the
+        // ordinary timeout would leave a key with a PIN nobody kept and no
+        // passkey; the notice waits as long as it is told to instead.
+        var pipe = UniquePipe();
+        var prompts = new UserPrompts(NullLogger<UserPrompts>.Instance,
+            TimeSpan.FromMilliseconds(500), pipe);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var showing = prompts.ShowNoticeAsync(29177301, "Write down this FIDO2 PIN", "1234-5678",
+            cancellation.Token, PromptRequest.Fido2, TimeSpan.FromSeconds(10));
+
+        await using var client = new NamedPipeClientStream(".", pipe, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await client.ConnectAsync(cancellation.Token);
+
+        using var reader = new StreamReader(client, Encoding.UTF8, false, 1024, leaveOpen: true);
+        var request = JsonSerializer.Deserialize<PromptRequest>(
+            (await reader.ReadLineAsync(cancellation.Token))!, Json)!;
+
+        // Three times the ordinary timeout, as somebody finding a pen.
+        await Task.Delay(TimeSpan.FromMilliseconds(1500), cancellation.Token);
+
+        await client.WriteAsync(Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(PromptResponse.Cancel(), Json) + "\n"), cancellation.Token);
+        await client.FlushAsync(cancellation.Token);
+
+        await showing;
+
+        Assert.Equal(PromptRequest.Notice, request.Type);
+        Assert.Equal(PromptRequest.Fido2, request.Applet);
+    }
+
     private static async Task<PromptRequest> AnswerAsync(string pipeName,
         PromptResponse response, CancellationToken ct)
     {
