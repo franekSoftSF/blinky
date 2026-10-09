@@ -45,6 +45,8 @@ for the user whose Kerberos ticket it can produce.
 | 11 | Silent replacement of a Blinky-issued credential | Inventory compares slot contents against the recorded public-key hash; a mismatch marks the slot `Stale` and raises it rather than overwriting |
 | 12 | PUK disclosure by an insider | Every decryption of an escrowed PUK writes an audit event exempt from retention, and is a designed alerting trigger |
 | 13 | Browser claiming an agent identity | The edge overwrites `X-Client-Verify` and `X-Client-Cert` with empty values on the console listener; only the mTLS listener sets them from a verified certificate |
+| 15 | A passkey provider's credential stolen from the database | Sealed with AES-GCM under a key derived from the PUK KEK in its own domain, the provider's id and credential kind authenticated; generated on the server by default so the private half never reaches a browser; returned by no route. See [13](13-passkey-provisioning.md#configuring-a-provider) |
+| 16 | A provisioned key intercepted in transit with its PIN | The provisional FIDO2 PIN is shown once on the workstation and stored nowhere; key and PIN ship by different channels; forced PIN change on first use; revocation deletes at the provider first. See [13](13-passkey-provisioning.md#chain-of-custody) |
 | 14 | Denial of service by PIN blocking | PIN retry counters are read on every contact and surfaced before they reach zero; the unblock workflow is deliberately cheap |
 
 ## Where the management key and the PUK actually stand
@@ -239,6 +241,18 @@ the raw configured KEK and stays readable**, because the alternative is a
 migration that strands every PUK escrowed before the upgrade. That means
 `Blinky:Puk:Kek` has to stay configured for as long as any generation-one
 envelope exists, and the status endpoint says whether it is.
+
+## Passkeys and the network
+
+Phase 7 is the one part of Blinky that reaches a cloud. Only the `api`
+container does, only to the Entra or Okta endpoints of a provider an
+administrator configured, and only server to server: the agent is told the
+relying party, origin and challenge and never calls a provider itself, so a
+compromised workstation holds no provider credential and can register nothing
+the API did not hand it a challenge for. The API checks the returned
+clientDataJSON against the challenge and origin it issued before the provider
+sees it. The egress table and the rest are in
+[13](13-passkey-provisioning.md#what-leaves-the-network).
 
 ## What is deliberately not protected
 

@@ -1391,9 +1391,10 @@
       "id": "0079",
       "phase": 7,
       "title": "docs/13-passkey-provisioning.md and the updates around it",
-      "state": "open",
+      "state": "done-unverified",
       "owner": "cloud-ai",
-      "proof": "Not started. Includes the Google gap and the federation alternative, stated plainly."
+      "proof": "docs/13-passkey-provisioning.md: flow, provider configuration in the console, Entra and Okta prerequisites, egress limited to the api container, chain of custody, the Google gap beside federation, troubleshooting and what is not built; 05, 06, 12 and the README point at it.",
+      "gap": "Prerequisites written from documentation, not from a walk through a tenant or an org"
     },
     {
       "id": "0091",

@@ -190,6 +190,9 @@ refuses, where a renumbering would have it read a FIDO2 job as one it knows.
 
 ## FIDO2 provisioning
 
+The operator's view of the same flow - providers, prerequisites, egress, what
+to do when it fails - is [13](13-passkey-provisioning.md).
+
 Four messages, all in `Blinky.Contracts/Fido2Contracts.cs`, and the agent
 starts every exchange — the same shape as `/api/credentials/issue`, not a push:
 

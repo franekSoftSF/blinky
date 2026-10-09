@@ -66,6 +66,11 @@ Samba4.
   diversified value, the PUK is escrowed encrypted.
 - **Runs the boring lifecycle.** Expiry scanning, scheduled renewal, revocation
   with CRL/OCSP publication, PIN unblock, retirement and key archival policy.
+- **Puts a passkey on the same key.** Registers a FIDO2 credential at Microsoft
+  Entra ID or Okta on the holder's behalf, through the workstation agent, with
+  the provisional PIN shown once on the workstation and nowhere else - see
+  [13](docs/13-passkey-provisioning.md). Built and deployed, not yet run
+  against a real tenant.
 - **Keeps an audit trail** that survives the card being lost.
 
 ## Components
@@ -210,6 +215,8 @@ SoftHSM2 / PKCS#11 · WPF for the workstation UI · Serilog · Docker Compose
 | [07 — Roadmap](docs/07-roadmap.md) | Phases, numbered patches, definition of done |
 | [08 — What the hardware changed](docs/08-hardware-notes.md) | Every rule that came from a measurement rather than from reading |
 | [09 — The test lab](docs/09-lab.md) | The four machines, what each one proves, and the traps in advance |
+| [12 — Passkey brief](docs/12-passkey-provisioning-brief.md) | The FIDO2 design, with what building it corrected |
+| [13 — Passkey provisioning](docs/13-passkey-provisioning.md) | Providers, tenant prerequisites, egress, chain of custody, Google |
 | [Status](docs/STATUS.md) | What is done, what is only written, and what is blocked |
 
 ## Why "Blinky"
