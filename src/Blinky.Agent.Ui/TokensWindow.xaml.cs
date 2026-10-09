@@ -348,12 +348,13 @@ public partial class TokensWindow : Window
             return;
         }
 
-        var confirm = MessageBox.Show(
+        var confirmed = NoticeWindow.Confirm(
+            Strings.Current["Cert.Delete"],
             string.Format(CultureInfo.CurrentCulture, Strings.Current["Cert.DeleteConfirm"],
                 slot.ToUpperInvariant(), token.Serial),
-            Strings.Current["Cert.Delete"], MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            Strings.Current["Cert.Delete"]);
 
-        if (confirm != MessageBoxResult.Yes)
+        if (!confirmed)
         {
             return;
         }
@@ -363,8 +364,7 @@ public partial class TokensWindow : Window
 
         if (!response.Succeeded)
         {
-            MessageBox.Show(response.Error ?? Strings.Current["Error.NoService"],
-                Strings.Current["App.Name"], MessageBoxButton.OK, MessageBoxImage.Warning);
+            NoticeWindow.Show(response.Error ?? Strings.Current["Error.NoService"], NoticeKind.Warning);
         }
 
         await LoadAsync();

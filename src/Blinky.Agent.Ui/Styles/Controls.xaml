@@ -19,9 +19,12 @@
 
     <!-- Text -->
 
-    <Style TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource Text}" />
-    </Style>
+    <!-- No implicit TextBlock style, though BlinkyLite has one. An implicit
+         TextBlock style in the application's resources reaches the TextBlock a
+         ContentPresenter makes for a button's text, and outranks the colour the
+         button passes down: OK on the accent came out light grey on cyan in the
+         dark theme, and Delete lost its red. Every window sets Foreground to
+         Text itself, which is all that style was for. -->
 
     <Style x:Key="FieldLabel" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource Text}" />

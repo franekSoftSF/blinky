@@ -1,0 +1,45 @@
+<Window x:Class="Blinky.Agent.Ui.NoticeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Blinky" Width="460" SizeToContent="Height"
+        Icon="Assets/blinky-agent.ico"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource Background}"
+        Foreground="{DynamicResource Text}"
+        FontFamily="Segoe UI"
+        FontSize="15">
+
+    <!-- In place of MessageBox. The stock box is drawn by Windows in its own
+         colours, with the blue "i" of a system error, and it was the one
+         thing left in the agent that looked like a different program. -->
+    <Grid Margin="28,26,28,24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0">
+            <!-- A mark in a ring, as BlinkyLite marks a step: shape as well as
+                 colour, for whoever at this desk does not tell red from green. -->
+            <Border x:Name="Ring" DockPanel.Dock="Left" Width="40" Height="40" CornerRadius="20"
+                    VerticalAlignment="Top" Margin="0,0,16,0"
+                    Background="{DynamicResource Panel}" BorderThickness="2">
+                <TextBlock x:Name="Mark" FontFamily="{StaticResource Icons}" FontSize="18"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock x:Name="Heading" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"
+                           Visibility="Collapsed" Margin="0,0,0,6" />
+                <TextBlock x:Name="Body" TextWrapping="Wrap" />
+            </StackPanel>
+        </DockPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+            <Button x:Name="CancelButton" MinWidth="110" Padding="12,8" Margin="0,0,12,0"
+                    IsCancel="True" Visibility="Collapsed" Click="Cancel_Click" />
+            <Button x:Name="OkButton" Style="{StaticResource Primary}" MinWidth="110" Padding="12,8"
+                    IsDefault="True" Click="Ok_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

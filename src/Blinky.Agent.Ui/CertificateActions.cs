@@ -130,6 +130,5 @@ public static class CertificateActions
     }
 
     private static void Say(string message, bool error = false) =>
-        MessageBox.Show(message, Strings.Current["App.Name"], MessageBoxButton.OK,
-            error ? MessageBoxImage.Warning : MessageBoxImage.Information);
+        NoticeWindow.Show(message, error ? NoticeKind.Warning : NoticeKind.Success);
 }

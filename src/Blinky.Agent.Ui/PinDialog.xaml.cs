@@ -286,9 +286,9 @@ public partial class PinDialog : Window
 
         if (response.Succeeded)
         {
-            MessageBox.Show(
+            NoticeWindow.Show(
                 Strings.Current[kind == PinDialogKind.ChangePin ? "Pin.Changed" : "Pin.Unblocked"],
-                Strings.Current["App.Name"], MessageBoxButton.OK, MessageBoxImage.Information);
+                NoticeKind.Success);
 
             DialogResult = true;
             return;

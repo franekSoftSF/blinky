@@ -71,6 +71,7 @@ public sealed class Strings : INotifyPropertyChanged
     private static readonly Dictionary<string, string> English = new()
     {
         ["App.Name"] = "Blinky",
+        ["Notice.Ok"] = "OK",
         ["Tray.Open"] = "Open Blinky",
         ["Tray.Refresh"] = "Refresh",
         ["Tray.Language"] = "Język / Language",
@@ -203,6 +204,7 @@ public sealed class Strings : INotifyPropertyChanged
     private static readonly Dictionary<string, string> Polish = new()
     {
         ["App.Name"] = "Blinky",
+        ["Notice.Ok"] = "OK",
         ["Tray.Open"] = "Otwórz Blinky",
         ["Tray.Refresh"] = "Odśwież",
         ["Tray.Language"] = "Język / Language",

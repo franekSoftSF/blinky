@@ -111,11 +111,10 @@ public partial class App : Application
         var response = await window!.ShowPromptAsync(
             PromptRequest.ForPin(29177301, 3, "Self test - nothing is sent anywhere."));
 
-        MessageBox.Show(
+        NoticeWindow.Show(
             response.Cancelled
                 ? "Cancelled."
-                : $"A PIN of {response.Pin!.Length} characters was entered and discarded.",
-            "Blinky self test");
+                : $"A PIN of {response.Pin!.Length} characters was entered and discarded.");
 
         Shutdown();
     }
