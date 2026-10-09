@@ -3,6 +3,10 @@ name: blinky
 services:
   postgres:
     image: postgres:17-alpine
+    # Every service, not only the console: on 2026-10-09 BY-CACMS rebooted and
+    # came back with the console up and nothing behind it - no edge, no API, no
+    # database - so every page and all eleven smoke checks failed.
+    restart: unless-stopped
     ports:
       # Published so the schema tool and psql can reach it from the host. The
       # API is deliberately not published; the database is, because inspecting
@@ -24,6 +28,7 @@ services:
       retries: 20
 
   api:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/dotnet/Dockerfile
@@ -217,6 +222,7 @@ services:
       - "8080"
 
   worker:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/dotnet/Dockerfile
@@ -268,6 +274,7 @@ services:
     # whoami check went from 401 to 403 that way. Moving it is a change with a
     # smoke test run, like any other.
     image: owasp/modsecurity-crs:4.30.0-nginx-202610051210@sha256:133267aa811e1a57a23b52ef04b3c30e802bcbe5454588f6d6af1f69f4b2b667
+    restart: unless-stopped
     ports:
       # Plain HTTP, for the CRL and the CA certificate only. See the pki
       # server block in docker/edge: a client fetching revocation cannot be
