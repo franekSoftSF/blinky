@@ -20,6 +20,11 @@ public partial class MainWindow : Window
 {
     private TaskCompletionSource<PromptResponse>? pending;
 
+    // PIV's six to eight unless the service says otherwise: a FIDO2 PIN is
+    // four to 63, and the box once refused its ninth character.
+    private int minLength = 6;
+    private int maxLength = 8;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -40,7 +45,11 @@ public partial class MainWindow : Window
 
             var wantsPin = request.Type == PromptRequest.Pin;
 
+            minLength = request.MinLength ?? 6;
+            maxLength = request.MaxLength ?? 8;
+
             PinBox.Password = string.Empty;
+            PinBox.MaxLength = maxLength;
             PinBox.Visibility = wantsPin ? Visibility.Visible : Visibility.Collapsed;
             OkButton.Visibility = wantsPin ? Visibility.Visible : Visibility.Collapsed;
             CancelButton.Content = Strings.Current[wantsPin ? "Pin.Cancel" : "Tokens.Close"];
@@ -103,11 +112,12 @@ public partial class MainWindow : Window
     {
         var pin = PinBox.Password;
 
-        if (pin.Length is < 6 or > 8)
+        if (pin.Length < minLength || pin.Length > maxLength)
         {
             // Refused here rather than on the card: a short PIN sent to the
             // token would still cost an attempt.
-            AttemptsText.Text = Strings.Current["Prompt.PinLength"];
+            AttemptsText.Text = string.Format(CultureInfo.CurrentCulture,
+                Strings.Current["Prompt.PinLength"], minLength, maxLength);
             return;
         }
 

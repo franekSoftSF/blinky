@@ -25,12 +25,20 @@ public static class AgentPipe
 }
 
 /// <summary>Something the service wants the user to see.</summary>
+/// <param name="MinLength">
+/// How long the PIN asked for may be. Absent means a PIV PIN, six to eight -
+/// which is what a window older than these fields assumes. A FIDO2 PIN is four
+/// to 63, and the window refusing the ninth character locked out every holder
+/// whose FIDO2 PIN was longer than their smart card's.
+/// </param>
 public sealed record PromptRequest(
     string Type,
     string Title,
     string Message,
     long? TokenSerial = null,
-    int? AttemptsRemaining = null)
+    int? AttemptsRemaining = null,
+    int? MinLength = null,
+    int? MaxLength = null)
 {
     public const string Pin = "Pin";
     public const string Touch = "Touch";
@@ -53,9 +61,9 @@ public sealed record PromptRequest(
     /// being asked.
     /// </param>
     public static PromptRequest ForPin(long serial, int? attemptsRemaining, string reason,
-        string? title = null) =>
+        string? title = null, int? minLength = null, int? maxLength = null) =>
         new(Pin, title ?? "Blinky needs your PIN",
-            reason, serial, attemptsRemaining);
+            reason, serial, attemptsRemaining, minLength, maxLength);
 
     /// <summary>
     /// A token with a touch policy blinks and waits. Nothing is typed here —

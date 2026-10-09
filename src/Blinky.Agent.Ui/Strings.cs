@@ -197,7 +197,7 @@ public sealed class Strings : INotifyPropertyChanged
         ["Prompt.PinTitle"] = "Blinky needs your PIN",
         ["Prompt.TouchTitle"] = "Touch your token",
         ["Prompt.Unlock"] = "Unlock",
-        ["Prompt.PinLength"] = "A PIN is between six and eight characters",
+        ["Prompt.PinLength"] = "A PIN here is {0} to {1} characters",
         ["Error.NoService"] = "The Blinky agent service is not answering on this machine.",
     };
 
@@ -328,7 +328,7 @@ public sealed class Strings : INotifyPropertyChanged
         ["Prompt.PinTitle"] = "Blinky prosi o PIN",
         ["Prompt.TouchTitle"] = "Dotknij tokenu",
         ["Prompt.Unlock"] = "Odblokuj",
-        ["Prompt.PinLength"] = "PIN ma od sześciu do ośmiu znaków",
+        ["Prompt.PinLength"] = "Ten PIN ma od {0} do {1} znaków",
         ["Error.NoService"] = "Usługa agenta Blinky nie odpowiada na tej maszynie.",
     };
 }

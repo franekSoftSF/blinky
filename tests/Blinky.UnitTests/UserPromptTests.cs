@@ -39,6 +39,40 @@ public sealed class UserPromptTests
     }
 
     [Fact]
+    public async Task A_fido2_pin_prompt_says_how_long_the_pin_may_be()
+    {
+        // The window used to assume PIV's six to eight and refused the ninth
+        // character of a FIDO2 PIN, which CTAP allows up to 63.
+        var pipe = UniquePipe();
+        var prompts = new UserPrompts(NullLogger<UserPrompts>.Instance,
+            TimeSpan.FromSeconds(10), pipe);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var asking = prompts.AskForPinAsync(29177301, 8, "creating a passkey",
+            cancellation.Token, "Security key PIN (FIDO2)", 4, 63);
+
+        var request = await AnswerAsync(pipe, PromptResponse.WithPin("a-long-fido2-pin"),
+            cancellation.Token);
+
+        Assert.Equal(4, request.MinLength);
+        Assert.Equal(63, request.MaxLength);
+        Assert.Equal("a-long-fido2-pin", await asking);
+    }
+
+    [Fact]
+    public void A_prompt_from_before_the_length_fields_reads_as_a_piv_pin()
+    {
+        // Additive, so no version bump: what an older service sends has no
+        // lengths, and the window falls back to six to eight.
+        var request = JsonSerializer.Deserialize<PromptRequest>(
+            """{"type":"Pin","title":"Blinky needs your PIN","message":"signing","tokenSerial":1}""",
+            Json)!;
+
+        Assert.Null(request.MinLength);
+        Assert.Null(request.MaxLength);
+    }
+
+    [Fact]
     public async Task Cancelling_yields_no_pin_rather_than_an_empty_one()
     {
         // An empty string would be sent to the card and cost an attempt.

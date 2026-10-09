@@ -73,12 +73,13 @@ public sealed class Fido2Step(UserPrompts prompts, ILogger<Fido2Step> logger, Fu
 
         public Task<string?> AskCurrentPinAsync(int? retries, bool wrong, CancellationToken ct) =>
             prompts.AskForPinAsync(serial, retries,
-                (wrong ? "That FIDO2 PIN was wrong. " : "") + $"Enter the key's current FIDO2 PIN. {NotPiv}", ct, Title);
+                (wrong ? "That FIDO2 PIN was wrong. " : "") + $"Enter the key's current FIDO2 PIN. {NotPiv}", ct, Title, 4, 63);
 
         public Task<string?> AskNewPinAsync(int minLength, bool rejected, CancellationToken ct) =>
             prompts.AskForPinAsync(serial, null,
                 (rejected ? "The key did not accept that PIN. " : "")
-                + $"Choose a FIDO2 PIN for {Holder}, at least {minLength} characters. {NotPiv}", ct, "Choose a FIDO2 PIN");
+                + $"Choose a FIDO2 PIN for {Holder}, at least {minLength} characters. {NotPiv}", ct, "Choose a FIDO2 PIN",
+                minLength, 63);
 
         public Task ShowProvisionalPinAsync(string pin, CancellationToken ct) =>
             prompts.ShowNoticeAsync(serial, "Write down this FIDO2 PIN",

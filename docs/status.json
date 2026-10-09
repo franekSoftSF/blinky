@@ -1128,8 +1128,8 @@
       "title": "The service's prompt speaks the station's language",
       "state": "done-unverified",
       "owner": "cloud-ai",
-      "proof": "MainWindow hard-coded Cancel, Unlock and the PIN-length message; they now come from Strings (Pin.Cancel, Tokens.Close, new Prompt.Unlock, Prompt.PinLength). Commit 45eafff, whose subject says 0103 by mistake - 0103 was already the console's look.",
-      "gap": "Not seen on a Polish station"
+      "proof": "MainWindow hard-coded Cancel, Unlock and the PIN-length message; they now come from Strings (Pin.Cancel, Tokens.Close, new Prompt.Unlock, Prompt.PinLength). Commit 45eafff, whose subject says 0103 by mistake - 0103 was already the console's look. On 2026-10-09 every MessageBox in the agent (PIN changed or unblocked, certificate export and install, delete confirmation and failure, self test) became NoticeWindow: themed, a mark in a ring for success, information or warning, Cancel as the default on the delete question; and the implicit TextBlock style taken from BlinkyLite was removed, because it overrode the colour a button passes to its text - OK on the accent was light grey on cyan in the dark theme. Rendered off-screen in both themes.",
+      "gap": "Not seen on a Polish station; the notices have been rendered, not raised by a real PIN change"
     },
     {
       "id": "0107",
@@ -1349,7 +1349,7 @@
       "title": "The makeCredential ceremony in the agent",
       "state": "done-unverified",
       "owner": "cloud-ai",
-      "proof": "Fido2Provisioner behind the ProvisionFido2Credential step: clientDataJSON byte-exact, attestationObject from the key's own authData and statement bytes, minimum PIN length before and forced change after the provider accepts, FIDO2-labelled prompts, operator-chosen PIN without CTAP 2.1. 38 tests against a software CTAP 2.1 key that refuses a ceremony while a forced change is pending; identical calls under two provider tags.",
+      "proof": "Fido2Provisioner behind the ProvisionFido2Credential step: clientDataJSON byte-exact, attestationObject from the key's own authData and statement bytes, minimum PIN length before and forced change after the provider accepts, FIDO2-labelled prompts, operator-chosen PIN without CTAP 2.1. The PIN prompts carry 4-63 as MinLength/MaxLength (additive PromptRequest fields, 2026-10-09): the window had applied PIV's six to eight and refused the ninth character of a FIDO2 PIN. 38 tests against a software CTAP 2.1 key that refuses a ceremony while a forced change is pending; identical calls under two provider tags.",
       "gap": "The hardware milestone: no key on the workstation on 2026-10-08, so the Yubico adapter has never run and no mock relying party has seen a credential"
     },
     {

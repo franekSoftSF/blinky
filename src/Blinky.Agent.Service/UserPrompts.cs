@@ -39,8 +39,8 @@ public sealed class UserPrompts(ILogger<UserPrompts> logger, TimeSpan timeout,
 
     /// <summary>Asks the user for their PIN. Null means they cancelled or nobody answered.</summary>
     public Task<string?> AskForPinAsync(long serial, int? attemptsRemaining, string reason,
-        CancellationToken ct, string? title = null) =>
-        AskAsync(PromptRequest.ForPin(serial, attemptsRemaining, reason, title), ct);
+        CancellationToken ct, string? title = null, int? minLength = null, int? maxLength = null) =>
+        AskAsync(PromptRequest.ForPin(serial, attemptsRemaining, reason, title, minLength, maxLength), ct);
 
     /// <summary>
     /// Tells the user the token is waiting for a finger, and returns as soon as
