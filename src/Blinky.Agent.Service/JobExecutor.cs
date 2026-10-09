@@ -65,6 +65,10 @@ public sealed class JobExecutor(
             }
             catch (Exception ex)
             {
+                // The stack, here and only here: the result goes to the API and
+                // into jobs.result, and carries the message alone. Without this
+                // the agent's own log said nothing about a step that failed.
+                logger.LogError(ex, "Job {JobId}: step {Op} failed", job.JobId, step.Op);
                 return new JobResult(job.JobId, attempt, false, step.Op, ex.Message);
             }
         }

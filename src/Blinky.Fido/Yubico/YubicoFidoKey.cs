@@ -66,18 +66,28 @@ internal sealed class YubicoFidoKey : IFidoKey
     private byte[]? pin;
     private Action? touch;
 
+    // What the key said it can do the last time it was asked. A token with
+    // permissions is CTAP 2.1's; a key without pinUvAuthToken, or without
+    // authnrCfg, refuses a request for one it does not know, and Yubico's SDK
+    // reports that as nothing more than "The command failed to complete" - which
+    // is what the first ceremony on PC-0001 ended with.
+    private bool tokens;
+    private bool configurable;
+
     public YubicoFidoKey(IYubiKeyDevice device)
     {
         this.device = device;
         session = new Fido2Session(device) { KeyCollector = Collect };
     }
 
-    public FidoKeyInfo Info()
+    public FidoKeyInfo Info() => Ctap("reading the key's FIDO2 info", () =>
     {
         // Asked of the key, not of the session: the session's copy is read once,
         // and after a PIN is set or a minimum length changed it is wrong.
         var info = session.Connection.SendCommand(new GetInfoCommand()).GetData();
         var options = info.Options ?? new Dictionary<string, bool>();
+        tokens = options.GetValueOrDefault("pinUvAuthToken");
+        configurable = options.GetValueOrDefault("authnrCfg");
         var firmware = device.FirmwareVersion;
 
         return new FidoKeyInfo(
@@ -92,7 +102,7 @@ internal sealed class YubicoFidoKey : IFidoKey
             SupportsConfig: options.GetValueOrDefault("authnrCfg"),
             SupportsMinPinLength: options.GetValueOrDefault("setMinPINLength"),
             info.RemainingDiscoverableCredentials);
-    }
+    });
 
     public int? PinRetries()
     {
@@ -100,7 +110,7 @@ internal sealed class YubicoFidoKey : IFidoKey
         return response.Status == ResponseStatus.Success ? response.GetData().Item1 : null;
     }
 
-    public void SetPin(string value) => Ctap(() =>
+    public void SetPin(string value) => Ctap("setting the FIDO2 PIN", () =>
     {
         if (!session.TrySetPin(Encoding.UTF8.GetBytes(value)))
         {
@@ -110,7 +120,7 @@ internal sealed class YubicoFidoKey : IFidoKey
         pin = Encoding.UTF8.GetBytes(value);
     });
 
-    public void ChangePin(string current, string next) => Ctap(() =>
+    public void ChangePin(string current, string next) => Ctap("changing the FIDO2 PIN", () =>
     {
         if (!session.TryChangePin(Encoding.UTF8.GetBytes(current), Encoding.UTF8.GetBytes(next)))
         {
@@ -120,9 +130,16 @@ internal sealed class YubicoFidoKey : IFidoKey
         pin = Encoding.UTF8.GetBytes(next);
     });
 
-    public void VerifyPin(string value) => Ctap(() =>
+    public void VerifyPin(string value) => Ctap("verifying the FIDO2 PIN", () =>
     {
-        if (!session.TryVerifyPin(Encoding.UTF8.GetBytes(value), PinUvAuthTokenPermissions.AuthenticatorConfiguration,
+        // authenticatorConfig only where the key has it; otherwise the legacy
+        // token, which every CTAP 2 key still issues and which proves the PIN all
+        // the same.
+        PinUvAuthTokenPermissions? permissions = tokens && configurable
+            ? PinUvAuthTokenPermissions.AuthenticatorConfiguration
+            : null;
+
+        if (!session.TryVerifyPin(Encoding.UTF8.GetBytes(value), permissions,
                 null, out var retries, out var powerCycle))
         {
             throw powerCycle == true
@@ -135,7 +152,7 @@ internal sealed class YubicoFidoKey : IFidoKey
         pin = Encoding.UTF8.GetBytes(value);
     });
 
-    public void SetMinPinLength(int length) => Ctap(() =>
+    public void SetMinPinLength(int length) => Ctap("setting the minimum FIDO2 PIN length", () =>
     {
         if (!session.TrySetPinConfig(length, null, null))
         {
@@ -143,7 +160,7 @@ internal sealed class YubicoFidoKey : IFidoKey
         }
     });
 
-    public void ForceChangePin() => Ctap(() =>
+    public void ForceChangePin() => Ctap("forcing a FIDO2 PIN change", () =>
     {
         if (!session.TrySetPinConfig(null, null, true))
         {
@@ -151,7 +168,7 @@ internal sealed class YubicoFidoKey : IFidoKey
         }
     });
 
-    public void Reset() => Ctap(() =>
+    public void Reset() => Ctap("resetting the FIDO application", () =>
     {
         var response = session.Connection.SendCommand(new ResetCommand());
 
@@ -161,13 +178,15 @@ internal sealed class YubicoFidoKey : IFidoKey
         }
     });
 
-    public FidoMadeCredential MakeCredential(FidoCredentialRequest request, string value, Action onTouch) => Ctap(() =>
+    public FidoMadeCredential MakeCredential(FidoCredentialRequest request, string value, Action onTouch) =>
+        Ctap("creating the credential", () =>
     {
         pin = Encoding.UTF8.GetBytes(value);
         touch = onTouch;
 
-        // A token for this rpId, so the SDK does not go looking for one.
-        session.VerifyPin(PinUvAuthTokenPermissions.MakeCredential, request.RpId);
+        // A token for this rpId, so the SDK does not go looking for one - with the
+        // makeCredential permission where the key has permissions at all.
+        session.VerifyPin(tokens ? PinUvAuthTokenPermissions.MakeCredential : null, request.RpId);
 
         var parameters = new MakeCredentialParameters(
             new RelyingParty(request.RpId) { Name = request.RpName },
@@ -243,23 +262,43 @@ internal sealed class YubicoFidoKey : IFidoKey
         }
     }
 
-    private static T Ctap<T>(Func<T> call)
+    /// <summary>
+    /// Every call to the key, named. The SDK's own messages are generic - "The
+    /// command failed to complete" says nothing about which command - and they are
+    /// what reaches the console as the job's reason.
+    /// </summary>
+    private static T Ctap<T>(string operation, Func<T> call)
     {
         try
         {
             return call();
         }
+        catch (FidoException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Fido2Exception e)
         {
-            throw new FidoException(e.Status is { } s ? Map(s) : FidoError.Other, e.Message, e);
+            throw new FidoException(e.Status is { } s ? Map(s) : FidoError.Other,
+                $"{Capital(operation)} failed: {e.Message}{(e.Status is { } c ? $" (CTAP {c})" : "")}", e);
+        }
+        catch (Exception e)
+        {
+            throw new FidoException(FidoError.Other, $"{Capital(operation)} failed: {e.Message} ({e.GetType().Name})", e);
         }
     }
 
-    private static void Ctap(Action call) => Ctap<bool>(() =>
+    private static void Ctap(string operation, Action call) => Ctap<bool>(operation, () =>
     {
         call();
         return true;
     });
+
+    private static string Capital(string text) => char.ToUpperInvariant(text[0]) + text[1..];
 
     private static FidoError Map(CtapStatus status) => status switch
     {
