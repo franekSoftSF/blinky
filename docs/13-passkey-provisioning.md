@@ -119,7 +119,10 @@ What the org needs (Okta Identity Engine; Classic Engine is out of scope):
    custom one. Credentials are bound to the domain they are created on, so this
    is the sign-in domain, not the admin one.
 2. **An API service app** with client credentials and *public key / private
-   key* client authentication, holding the JWK Blinky generated. **DPoP off**
+   key* client authentication, holding the JWK Blinky generated. Okta now asks
+   for a *client definition* when the app is created: choose **Use
+   Okta-generated client ID**; Blinky does not publish a Client ID Metadata
+   Document (CIMD). **DPoP off**
    ("Require Demonstrating Proof of Possession"): Blinky does not send DPoP
    proofs, and a token refused for that reason says so.
 3. **Granted scopes**: `okta.users.read` and `okta.users.manage`, the pair
@@ -195,6 +198,8 @@ from Blinky.
 | *Test connection*: `AADSTS7000215` / `invalid_client` | The secret or certificate is not the one the app registration holds |
 | *Test connection*: Graph `403 Authorization_RequestDenied` | Permissions missing or admin consent not granted |
 | *Test connection*: Okta token refused mentioning DPoP | Turn off "Require Demonstrating Proof of Possession" on the service app |
+| A ceremony fails with `Okta: HTTP 400 - Api validation failed: factorEnrollRequest (Factor not enabled.)` | The FIDO2 (WebAuthn) authenticator is not added, or no enrolment policy covering the user allows it: *Security → Authenticators → Add authenticator → FIDO2 (WebAuthn)*, then *Enrollment* → the user's policy → FIDO2 *Optional*. Seen on the first Okta org, 2026-10-09 |
+| A provider refused with `okta-admin-url` | The org URL was the admin console's (`…-admin.okta.com`); use the one users sign in at |
 | A ceremony fails with `challenge-expired` | The person took longer than the challenge lifetime; the agent asks for a new one on the next attempt |
 | *Missing at provider* on a passkey | Registered by Blinky, deleted at the provider since - by an administrator there, or a UPN change in Entra |
 | *Provider only* on a passkey | At the provider, not made by Blinky - a key the user enrolled themselves |
