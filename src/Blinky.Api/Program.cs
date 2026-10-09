@@ -39,6 +39,7 @@ builder.Services.AddSingleton(services =>
     services.GetRequiredService<Blinky.Api.Passkeys.PasskeyProviders>().Directories);
 builder.Services.AddSingleton<Blinky.Api.Passkeys.IPasskeyStore, Blinky.Api.Passkeys.PasskeyStore>();
 builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyProvisioningService>();
+builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyJobs>();
 
 // The certificate authority: the built-in one, loaded from what
 // scripts/new-ca.sh produced, or a Microsoft CA through the connector. One
@@ -1006,8 +1007,8 @@ app.MapPost("/api/jobs/recycle",
 // is resolved at the provider first: a login that does not exist is refused
 // here, before anybody goes to find a key. See docs/12 and patch 0077.
 app.MapPost("/api/jobs/fido2",
-    (Fido2JobRequest request, HttpContext context, JobService jobs, Database database,
-        Blinky.Api.Passkeys.PasskeyProvisioningService passkeys, CancellationToken ct) =>
+    (Blinky.Api.Passkeys.PasskeyJobRequest request, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyJobs passkeyJobs, CancellationToken ct) =>
         Passkey(async () =>
         {
             if (!IsOperator(context))
@@ -1015,55 +1016,15 @@ app.MapPost("/api/jobs/fido2",
                 return Results.Json(new { error = "an operator token is required" }, statusCode: 401);
             }
 
-            var identifier = request.User;
-            var holder = (string?)null;
-
-            if (request.CardholderId is { } personId)
-            {
-                using var people = database.OpenSession();
-                var person = people.Get<Cardholder>(personId);
-
-                if (person is null)
-                {
-                    return Results.Json(new { error = "there is no cardholder with that id" }, statusCode: 404);
-                }
-
-                identifier ??= person.Upn;
-                holder = person.DisplayName;
-            }
-
-            if (string.IsNullOrWhiteSpace(identifier))
-            {
-                return Results.Json(new { error = "name the user, or a cardholder with a UPN" }, statusCode: 400);
-            }
-
-            var pin = new Fido2PinPolicy(request.PinMode, request.MinPinLength, request.ForceChangePin);
-            passkeys.Check(request.Directory, pin);
-
-            var user = await passkeys.ResolveAsync(request.Directory, identifier, ct);
-            var provisioning = new Fido2Provisioning(request.Directory, holder ?? user.DisplayName, pin,
-                request.KeyName ?? "YubiKey", request.AppendSerial);
-
-            // Directory, user, key and reason: the same request twice is one job,
-            // and a new attempt after a failure is the operator's to ask for.
-            var key = $"fido2:{request.Directory}:{user.Id}:{request.TokenSerial?.ToString() ?? "any"}"
-                      + $":{request.Reason ?? "initial"}";
-
-            var (job, created) = jobs.Create(JobType.ProvisionFido2Credential, key,
-                id => JobEnvelope.ProvisionFido2(id, key, DateTimeOffset.UtcNow.AddHours(1),
-                    request.TokenSerial, provisioning),
-                request.AgentId, cardholderId: request.CardholderId);
-
-            var passkey = passkeys.Record(job.Id, request.Directory, user, request.CardholderId,
-                request.TokenSerial, ActorFor(context));
+            var made = await passkeyJobs.CreateAsync(request, ActorFor(context), ct);
 
             return Results.Ok(new
             {
-                job.Id,
-                created,
-                state = job.State.ToString(),
-                passkey = passkey.Id,
-                user = new { user.Id, user.Login, user.DisplayName },
+                made.Job.Id,
+                created = made.Created,
+                state = made.Job.State.ToString(),
+                passkey = made.Passkey.Id,
+                user = new { made.User.Id, made.User.Login, made.User.DisplayName },
             });
         }));
 
@@ -2924,22 +2885,6 @@ internal sealed record RevokeEnrolTokenRequest(string? Reason);
 
 /// <summary>Asks for one token inventory pass on one agent.</summary>
 internal sealed record InventoryJobRequest(Guid AgentId, string? Reason);
-
-/// <summary>A passkey for somebody, at a named provider.</summary>
-/// <param name="User">UPN, login or provider id. Optional when a cardholder with a UPN is named.</param>
-/// <param name="TokenSerial">Null when any key plugged into the agent will do.</param>
-internal sealed record Fido2JobRequest(
-    string Directory,
-    string? User = null,
-    Guid? CardholderId = null,
-    Guid? AgentId = null,
-    long? TokenSerial = null,
-    Fido2PinMode PinMode = Fido2PinMode.ProvisionalRandom,
-    int MinPinLength = 6,
-    bool ForceChangePin = true,
-    string? KeyName = null,
-    bool AppendSerial = true,
-    string? Reason = null);
 
 internal sealed record PasskeyRevokeRequest(string Reason);
 
