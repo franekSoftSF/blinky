@@ -38,8 +38,21 @@ public sealed record PromptRequest(
     long? TokenSerial = null,
     int? AttemptsRemaining = null,
     int? MinLength = null,
-    int? MaxLength = null)
+    int? MaxLength = null,
+    string? Applet = null)
 {
+    /// <summary>
+    /// Which PIN is asked for. Absent means PIV, as everything before this field
+    /// did. FIDO2 changes the window's words, not its behaviour: there is nothing
+    /// to unlock, so the button says Continue, and a provisional PIN's notice
+    /// waits for "I have written it down" rather than a Close anybody can click
+    /// past - a holder who did not keep it was asked for it at the next attempt
+    /// and had nothing to type.
+    /// </summary>
+    public const string Piv = "Piv";
+
+    public const string Fido2 = "Fido2";
+
     public const string Pin = "Pin";
     public const string Touch = "Touch";
     public const string Fingerprint = "Fingerprint";
@@ -61,9 +74,9 @@ public sealed record PromptRequest(
     /// being asked.
     /// </param>
     public static PromptRequest ForPin(long serial, int? attemptsRemaining, string reason,
-        string? title = null, int? minLength = null, int? maxLength = null) =>
+        string? title = null, int? minLength = null, int? maxLength = null, string? applet = null) =>
         new(Pin, title ?? "Blinky needs your PIN",
-            reason, serial, attemptsRemaining, minLength, maxLength);
+            reason, serial, attemptsRemaining, minLength, maxLength, applet);
 
     /// <summary>
     /// A token with a touch policy blinks and waits. Nothing is typed here —
@@ -85,8 +98,8 @@ public sealed record PromptRequest(
         string reason) =>
         new(Fingerprint, "Blinky needs your fingerprint", reason, serial, attemptsRemaining);
 
-    public static PromptRequest ForNotice(long serial, string title, string message) =>
-        new(Notice, title, message, serial);
+    public static PromptRequest ForNotice(long serial, string title, string message, string? applet = null) =>
+        new(Notice, title, message, serial, Applet: applet);
 
     public static PromptRequest ToDismiss() =>
         new(Dismiss, string.Empty, string.Empty);

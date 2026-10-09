@@ -71,20 +71,31 @@ public sealed class Fido2Step(UserPrompts prompts, ILogger<Fido2Step> logger, Fu
         private const string Title = "Security key PIN (FIDO2)";
         private const string NotPiv = "This is the security key's FIDO2 PIN, not the smart card PIN used to sign in to Windows.";
 
+        // Said on the current-PIN prompt because of what happened on PC-0001 with
+        // Okta on 2026-10-09: Blinky set a provisional PIN, showed it once, the
+        // provider refused the factor and the job failed - and the next attempt
+        // asked the holder for a "current PIN" they had no reason to know.
+        private const string MaybeOurs =
+            "If an earlier attempt by Blinky failed, the PIN may be the one it showed then. "
+            + "Without it, the key's FIDO2 part has to be reset, which removes its passkeys "
+            + "and leaves the smart card (PIV) untouched.";
+
         public Task<string?> AskCurrentPinAsync(int? retries, bool wrong, CancellationToken ct) =>
             prompts.AskForPinAsync(serial, retries,
-                (wrong ? "That FIDO2 PIN was wrong. " : "") + $"Enter the key's current FIDO2 PIN. {NotPiv}", ct, Title, 4, 63);
+                (wrong ? "That FIDO2 PIN was wrong. " : "") + $"Enter the key's current FIDO2 PIN. {NotPiv} {MaybeOurs}",
+                ct, Title, 4, 63, PromptRequest.Fido2);
 
         public Task<string?> AskNewPinAsync(int minLength, bool rejected, CancellationToken ct) =>
             prompts.AskForPinAsync(serial, null,
                 (rejected ? "The key did not accept that PIN. " : "")
                 + $"Choose a FIDO2 PIN for {Holder}, at least {minLength} characters. {NotPiv}", ct, "Choose a FIDO2 PIN",
-                minLength, 63);
+                minLength, 63, PromptRequest.Fido2);
 
         public Task ShowProvisionalPinAsync(string pin, CancellationToken ct) =>
             prompts.ShowNoticeAsync(serial, "Write down this FIDO2 PIN",
                 $"The FIDO2 PIN for {Holder}'s key is {pin}\n\nIt is shown once and stored nowhere. "
-                + "Give it to the holder with the key; they will be asked to change it the first time they use it.", ct);
+                + "Give it to the holder with the key; they will be asked to change it the first time they use it.", ct,
+                PromptRequest.Fido2);
 
         public Task TouchAsync(CancellationToken ct) =>
             prompts.ShowTouchAsync(serial, $"Touch the key to create the passkey for {Holder}.", ct);

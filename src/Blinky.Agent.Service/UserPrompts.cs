@@ -39,8 +39,9 @@ public sealed class UserPrompts(ILogger<UserPrompts> logger, TimeSpan timeout,
 
     /// <summary>Asks the user for their PIN. Null means they cancelled or nobody answered.</summary>
     public Task<string?> AskForPinAsync(long serial, int? attemptsRemaining, string reason,
-        CancellationToken ct, string? title = null, int? minLength = null, int? maxLength = null) =>
-        AskAsync(PromptRequest.ForPin(serial, attemptsRemaining, reason, title, minLength, maxLength), ct);
+        CancellationToken ct, string? title = null, int? minLength = null, int? maxLength = null,
+        string? applet = null) =>
+        AskAsync(PromptRequest.ForPin(serial, attemptsRemaining, reason, title, minLength, maxLength, applet), ct);
 
     /// <summary>
     /// Tells the user the token is waiting for a finger, and returns as soon as
@@ -93,13 +94,14 @@ public sealed class UserPrompts(ILogger<UserPrompts> logger, TimeSpan timeout,
     /// Throws when nobody saw it. A PIN that was set on a key and shown to no one
     /// is a key only a reset recovers, and the job must say so rather than succeed.
     /// </remarks>
-    public async Task ShowNoticeAsync(long serial, string title, string message, CancellationToken ct)
+    public async Task ShowNoticeAsync(long serial, string title, string message, CancellationToken ct,
+        string? applet = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
         deadline.CancelAfter(timeout);
 
         await using var pipe = await ConnectAsync(deadline.Token);
-        await SendAsync(pipe, PromptRequest.ForNotice(serial, title, message), deadline.Token);
+        await SendAsync(pipe, PromptRequest.ForNotice(serial, title, message, applet), deadline.Token);
 
         using var reader = new StreamReader(pipe, Encoding.UTF8, false, 1024, leaveOpen: true);
 

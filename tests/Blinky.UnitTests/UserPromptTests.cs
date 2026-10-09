@@ -49,13 +49,16 @@ public sealed class UserPromptTests
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 
         var asking = prompts.AskForPinAsync(29177301, 8, "creating a passkey",
-            cancellation.Token, "Security key PIN (FIDO2)", 4, 63);
+            cancellation.Token, "Security key PIN (FIDO2)", 4, 63, PromptRequest.Fido2);
 
         var request = await AnswerAsync(pipe, PromptResponse.WithPin("a-long-fido2-pin"),
             cancellation.Token);
 
         Assert.Equal(4, request.MinLength);
         Assert.Equal(63, request.MaxLength);
+
+        // Said, so the window does not offer to "unlock" anything.
+        Assert.Equal(PromptRequest.Fido2, request.Applet);
         Assert.Equal("a-long-fido2-pin", await asking);
     }
 
@@ -70,6 +73,7 @@ public sealed class UserPromptTests
 
         Assert.Null(request.MinLength);
         Assert.Null(request.MaxLength);
+        Assert.Null(request.Applet);
     }
 
     [Fact]

@@ -25,9 +25,26 @@ public partial class MainWindow : Window
     private int minLength = 6;
     private int maxLength = 8;
 
+    // A provisional FIDO2 PIN on screen: closed only by saying it was written down.
+    private bool mustAcknowledge;
+
     public MainWindow()
     {
         InitializeComponent();
+
+        // Hidden, never closed. A window closed with the X is gone for good, and
+        // the next prompt the service sent - the PIN at the next sign-in - threw
+        // on Show() and never appeared, until somebody restarted the tray.
+        Closing += (_, e) =>
+        {
+            e.Cancel = true;
+
+            if (!mustAcknowledge)
+            {
+                pending?.TrySetResult(PromptResponse.Cancel());
+                Finish();
+            }
+        };
     }
 
     /// <summary>Shows a prompt and waits for the user to answer it.</summary>
@@ -44,6 +61,9 @@ public partial class MainWindow : Window
             MessageText.Text = request.Message;
 
             var wantsPin = request.Type == PromptRequest.Pin;
+            var fido2 = request.Applet == PromptRequest.Fido2;
+
+            mustAcknowledge = fido2 && request.Type == PromptRequest.Notice;
 
             minLength = request.MinLength ?? 6;
             maxLength = request.MaxLength ?? 8;
@@ -52,8 +72,14 @@ public partial class MainWindow : Window
             PinBox.MaxLength = maxLength;
             PinBox.Visibility = wantsPin ? Visibility.Visible : Visibility.Collapsed;
             OkButton.Visibility = wantsPin ? Visibility.Visible : Visibility.Collapsed;
-            CancelButton.Content = Strings.Current[wantsPin ? "Pin.Cancel" : "Tokens.Close"];
-            OkButton.Content = Strings.Current["Prompt.Unlock"];
+            CancelButton.Content = Strings.Current[
+                wantsPin ? "Pin.Cancel" : mustAcknowledge ? "Prompt.WrittenDown" : "Tokens.Close"];
+
+            // Escape is a cancel, and a provisional PIN must not go away on one.
+            CancelButton.IsCancel = !mustAcknowledge;
+
+            // Nothing is unlocked by a FIDO2 PIN: it lets a passkey be made.
+            OkButton.Content = Strings.Current[fido2 ? "Prompt.Continue" : "Prompt.Unlock"];
 
             // On a fingerprint prompt the count is worth showing from the
             // start rather than at two: three is all there is, and a Bio has no
@@ -129,6 +155,7 @@ public partial class MainWindow : Window
     {
         PinBox.Password = string.Empty;
         pending = null;
+        mustAcknowledge = false;
         Hide();
     }
 }
