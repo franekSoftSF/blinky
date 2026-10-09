@@ -1150,6 +1150,15 @@
       "gap": "Proved on PC-0001 on 2026-10-09: irm .../install/workstation.ps1 | iex fetched the manifest and blinky-workstation-0.5.7.zip with the enrolled agent's certificate from Windows PowerShell 5.1 and upgraded the agent from 0.5.3 to 0.5.7+e83e503, which then reported in. Still unproved: a new workstation with an agent token, the -Schedule task as SYSTEM, and a connector upgrade with a spent token."
     },
     {
+      "id": "0111",
+      "phase": 2,
+      "title": "Only the CMS changes a card: the management key is no longer behind the PIN",
+      "state": "open",
+      "owner": "cloud-ai",
+      "proof": "Decided by the owner on 2026-10-09 after ykman deleted the key and certificate in 9A on YubiKey 29051525 with nothing but the PIN, outside any job: Blinky kept the slot as Stale and recorded nothing. The cause is SetManagementKey(derived, alsoBehindPin: true) in personalisation (0025), done so the YubiKey minidriver would not take the card; PC-0001 logs on without that minidriver.",
+      "gap": "Not written. To do: stop writing the key behind the PIN in new personalisations; clear the PIN-protected copy on existing cards at their next job; decide, on a workstation with the YubiKey minidriver installed, what happens when it meets a key it does not know. Spelled out in docs/06, Only the CMS changes a card."
+    },
+    {
       "id": "0107",
       "phase": 7,
       "title": "Passkey providers in the database, configured in the console",

@@ -77,6 +77,47 @@ deployment, not something an enrolment should do quietly.
 misconfiguration — it leaves every card on the factory key, which is where they
 all are today. It is visible in the system status rather than silently fine.
 
+## Only the CMS changes a card - decided 2026-10-09, not yet true
+
+**Decided by the owner on 2026-10-09: a card Blinky manages is changed by Blinky
+and by nothing else.** Not by `ykman`, not by YubiKey Manager, not by the holder,
+and not by an administrator with the PIN. Every change to a slot - a key, a
+certificate, a deletion - goes through a job, so it has an operator, a reason and
+an audit event, and the server's record of the card stays true.
+
+**It is not true today, and that was shown on the card that proved everything
+else.** On 2026-10-09 the certificate on YubiKey 29051525 (5.7.1) was revoked from
+the console, and the key and certificate in 9A were then deleted by hand with
+`ykman piv certificates delete 9a` and `ykman piv keys delete 9a`. `ykman` asked
+for the PIN and nothing else, and it worked. Blinky learnt nothing: slot 9A stayed
+`Stale` in the database, and no audit event says who cleared it.
+
+**The cause is a choice made in 0025 for a reason that has since weakened.**
+Personalisation writes the derived management key to the card *also behind the
+PIN* (`CardEnrolment.cs`, `SetManagementKey(derived, alsoBehindPin: true)`), in the
+protected object Yubico's tools and minidriver read. That was done so the YubiKey
+minidriver would recognise the key instead of taking ownership of the card, which
+it does to any card whose management key it does not know (see *Off the vendor
+minidriver* in [07](07-roadmap.md)). The cost is that the PIN - which the holder
+knows by design - unlocks every write to the card, and so does any tool that reads
+that object. On 2026-10-09 PC-0001 logged on with no Yubico minidriver installed at
+all ([08](08-hardware-notes.md)), so the reason for the copy is no longer a
+requirement everywhere.
+
+**What has to change** - patch 0111, open:
+
+- New personalisation stops writing the key behind the PIN. The derived key exists
+  only as HKDF over the master and the serial, on the server's side, and is handed
+  to the agent for one job at a time.
+- A card already carrying the copy loses it at its next job: the agent clears the
+  PIN-protected object after opening the card with the derived key, and records it.
+- The YubiKey minidriver on a workstation then meets a key it does not know. Whether
+  it takes the card, and what Blinky does when it has, is the open question to settle
+  on a workstation that has it installed before this lands - the agent already
+  reports a card whose management key is not Blinky's.
+- The holder keeps what is theirs: the PIN, changed through the agent's window (0047),
+  and the PUK through the console's unblock. Neither opens the management key.
+
 ## Key custody
 
 Four secrets, in descending order of how bad it is to lose them:
