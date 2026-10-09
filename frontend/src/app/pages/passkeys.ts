@@ -1,9 +1,10 @@
-import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, inject, signal, viewChild } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { DatePipe } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 import { I18n, MessageKey } from '../core/i18n';
 import { ConsoleStore } from '../core/console.store';
+import { EnrolDialog } from '../enrol/enrol-dialog';
 
 interface Capabilities {
   supportsRegistration: boolean;
@@ -79,7 +80,7 @@ const FINAL = ['Registered', 'Failed', 'Revoked'];
  */
 @Component({
   selector: 'app-passkeys',
-  imports: [DatePipe],
+  imports: [DatePipe, EnrolDialog],
   template: `
     <section class="settings-hero">
       <div>
@@ -202,6 +203,51 @@ const FINAL = ['Registered', 'Failed', 'Revoked'];
           </div>
         }
       </article>
+
+      <!-- The same key carries a PIV certificate for Windows sign-in and the
+           passkey for the cloud; issuing both for one person belongs on one page.
+           The issuance itself is 0052's dialog, unchanged: token, slot, agent,
+           profile, and the person found in the directory, starting from this
+           user's login rather than trusting it. -->
+      <article class="panel setting-section">
+        <header>
+          <div class="section-number">▣</div>
+          <div>
+            <h2>{{ i18n.t('pkCard') }}</h2>
+            <p>{{ i18n.t('pkCardLede') }}</p>
+          </div>
+        </header>
+        @if (tokens().length === 0) {
+          <div class="setting-body"><p>{{ i18n.t('pkCardNoTokens') }}</p></div>
+        } @else {
+          <form class="probe-form pk-form" (submit)="openCard($event)">
+            <label>
+              {{ i18n.t('pkCardToken') }}
+              <select name="cardToken" [value]="cardSerial()" (change)="cardSerial.set(value($event))">
+                <option value="">{{ i18n.t('pkCardChoose') }}</option>
+                @for (t of tokens(); track t.serial) {
+                  <option [value]="t.serial" [selected]="String(t.serial) === cardSerial()">
+                    {{ t.serial }} · {{ t.formFactor ?? 'YubiKey' }} · {{ t.state }}{{ agentName(t.lastSeenAgentId) }}
+                  </option>
+                }
+              </select>
+            </label>
+            <button class="primary" type="submit" [disabled]="!cardSerial()">{{ i18n.t('enrolOpen') }}</button>
+          </form>
+        }
+        @if (cardIssued()) {
+          <p class="pk-reason pk-done">{{ i18n.t('pkCardIssued') }}</p>
+        }
+      </article>
+
+      @if (cardToken(); as t) {
+        <app-enrol-dialog
+          [serial]="t.serial"
+          [lastSeenAgentId]="t.lastSeenAgentId"
+          [initialQuery]="person.login"
+          (closed)="cardClosed($event)"
+        />
+      }
 
       <article class="panel setting-section">
         <header>
@@ -407,6 +453,17 @@ export class Passkeys implements OnDestroy {
   protected readonly appendSerial = signal(true);
 
   protected readonly status = signal<Status | null>(null);
+
+  protected readonly cardSerial = signal('');
+  protected readonly cardIssued = signal(false);
+  protected readonly String = String;
+  private readonly enrolDialog = viewChild(EnrolDialog);
+
+  /** Tokens the inventory knows, the one most recently seen first. */
+  protected readonly tokens = computed(() =>
+    [...this.console.snapshot().tokens].sort((a, b) => (b.lastSeenAt ?? '').localeCompare(a.lastSeenAt ?? '')));
+  protected readonly cardToken = computed(
+    () => this.tokens().find((t) => String(t.serial) === this.cardSerial()) ?? null);
   private poll: ReturnType<typeof setInterval> | null = null;
 
   protected readonly capabilities = computed(
@@ -435,6 +492,23 @@ export class Passkeys implements OnDestroy {
 
   protected checked(event: Event): boolean {
     return (event.target as HTMLInputElement).checked;
+  }
+
+  protected agentName(id: string | null | undefined): string {
+    const agent = id ? this.console.snapshot().agents.find((a) => a.id === id) : undefined;
+    return agent ? ` · ${agent.hostname}` : '';
+  }
+
+  /** Opens 0052's dialog once Angular has drawn it for the chosen token. */
+  protected openCard(event: Event): void {
+    event.preventDefault();
+    this.cardIssued.set(false);
+    setTimeout(() => void this.enrolDialog()?.open('9A'));
+  }
+
+  protected cardClosed(succeeded: boolean): void {
+    this.cardIssued.set(succeeded);
+    void this.console.load(true);
   }
 
   protected pick(name: string): void {
@@ -509,6 +583,10 @@ export class Passkeys implements OnDestroy {
         // first one, finished or not.
         reason: new Date().toISOString(),
       }));
+
+      if (Number.isFinite(serial) && !this.cardSerial()) {
+        this.cardSerial.set(String(serial));
+      }
 
       await this.follow(created.passkey);
     } catch (error) {

@@ -183,6 +183,12 @@ export class EnrolDialog {
   readonly serial = input.required<number>();
   readonly initialSlot = input('9A');
   readonly lastSeenAgentId = input<string | null | undefined>(null);
+  /**
+   * A name to search for as the dialog opens - the passkey panel's user, so the
+   * person on the card is the person the passkey was for unless the operator
+   * chooses otherwise. Searched, never assumed: the directory still decides.
+   */
+  readonly initialQuery = input<string | null | undefined>(null);
   readonly closed = output<boolean>();
 
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
@@ -261,6 +267,12 @@ export class EnrolDialog {
     );
 
     this.dialog().nativeElement.showModal();
+
+    const query = this.initialQuery()?.trim();
+    if (query) {
+      this.search(query);
+    }
+
     try {
       this.profiles.set(await this.store.profiles());
     } catch (e) {
