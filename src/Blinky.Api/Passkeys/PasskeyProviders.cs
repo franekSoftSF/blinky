@@ -279,7 +279,18 @@ public sealed partial class PasskeyProviders
     public async Task<string> TestAsync(Guid id, CancellationToken ct)
     {
         var row = Find(id);
-        var directory = BuildOne(row);
+        IPasskeyDirectory directory;
+
+        try
+        {
+            directory = BuildOne(row);
+        }
+        catch (PasskeyAuthorizationException e)
+        {
+            // Not a fault: a provider saved before its client id was known. Said
+            // in words, where it used to be an empty 500.
+            throw new PasskeyFlowException(409, "not-configured", e.Message);
+        }
 
         try
         {
@@ -405,6 +416,16 @@ public sealed partial class PasskeyProviders
             {
                 throw new PasskeyFlowException(400, "bad-okta",
                     "Okta needs the https URL users sign in at - the org's own domain or its custom one.");
+            }
+
+            // The admin console's host. Credentials are bound to the domain they
+            // are made on, and a passkey made for the admin domain is one the
+            // user's sign-in page will not offer - the first org on BY-CACMS was
+            // saved this way.
+            if (org.Host.Contains("-admin.", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new PasskeyFlowException(400, "okta-admin-url",
+                    $"That is the admin console's address. Use the one users sign in at: https://{org.Host.Replace("-admin.", ".", StringComparison.OrdinalIgnoreCase)}");
             }
         }
 

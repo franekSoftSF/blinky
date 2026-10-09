@@ -178,6 +178,28 @@ public sealed class PasskeyProviderTests : IDisposable
     }
 
     [Fact]
+    public void An_okta_admin_console_url_is_refused_with_the_one_to_use()
+    {
+        var e = Assert.Throws<PasskeyFlowException>(() =>
+            providers.Create(Okta() with { OrgUrl = "https://integrator-7249259-admin.okta.com/" }, "admin"));
+
+        Assert.Equal("okta-admin-url", e.Code);
+        Assert.Contains("https://integrator-7249259.okta.com", e.Message);
+    }
+
+    [Fact]
+    public async Task Testing_an_okta_provider_without_a_client_id_says_so()
+    {
+        var created = providers.Create(Okta() with { ClientId = null }, "admin");
+        providers.GenerateCredential(created.Id, "admin");
+
+        var e = await Assert.ThrowsAsync<PasskeyFlowException>(() => providers.TestAsync(created.Id, default));
+
+        Assert.Equal(409, e.Status);
+        Assert.Contains("client id", e.Message);
+    }
+
+    [Fact]
     public void The_kind_is_fixed_once_created()
     {
         var created = providers.Create(Entra(), "admin");

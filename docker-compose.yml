@@ -284,6 +284,13 @@ services:
       - "${AGENT_PORT:-9443}:9443"
     environment:
       MODSEC_RULE_ENGINE: "On"
+      # CRS 911100 allows GET, HEAD, POST and OPTIONS unless told otherwise, and
+      # answers anything else with "Method is not allowed by policy" before the
+      # API sees it. The console edits and deletes configuration with PUT and
+      # DELETE (0107, 0108): on 2026-10-09 an administrator could create an Okta
+      # provider on BY-CACMS and neither correct nor remove it. The smoke test
+      # now checks both methods reach the API.
+      ALLOWED_METHODS: "GET HEAD POST OPTIONS PUT DELETE"
       BLOCKING_PARANOIA: "1"
       DETECTION_PARANOIA: "1"
       ANOMALY_INBOUND: "5"

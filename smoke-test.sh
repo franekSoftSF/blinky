@@ -81,6 +81,12 @@ check "path traversal is blocked" 403 \
 # is just as agent-only and gets to the API, which is what has to refuse it.
 check "agent identity cannot be forged from the console" 401 \
     "$(status -H 'X-Client-Verify: SUCCESS' "$CONSOLE/api/jobs/next")"
+# 401 from the API, not 403 from CRS 911100: the console edits with PUT and
+# deletes with DELETE, and the rule set's default method list has neither.
+check "PUT reaches the API, not the method policy" 401 \
+    "$(status -X PUT "$CONSOLE/api/jobs/next")"
+check "DELETE reaches the API, not the method policy" 401 \
+    "$(status -X DELETE "$CONSOLE/api/jobs/next")"
 
 echo
 echo "agent listener - mTLS"
