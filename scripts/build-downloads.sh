@@ -106,6 +106,18 @@ with open(config_path, 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n')
 files.append(('config', config_path, f'Adres serwera dla skryptow instalacji: {server}'))
 
+# The bootstrap scripts the server hands to a machine at /install/<name> (0110), with
+# this deployment's name written into them: run through `irm | iex` a script has no
+# file beside it to read the name from.
+for name, description in (
+        ('workstation.ps1', f'Automat stacji: irm https://{server}:9443/install/workstation.ps1 | iex'),
+        ('connector.ps1', f'Automat konektora: irm https://{server}:9443/install/connector.ps1 | iex')):
+    template = open(os.path.join(root, 'scripts', 'bootstrap', name), encoding='utf-8').read()
+    target = os.path.join(out, name)
+    with open(target, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(template.replace('__BLINKY_SERVER__', server))
+    files.append(('bootstrap', target, description))
+
 def entry(kind, path, description):
     with open(path, 'rb') as f:
         digest = hashlib.sha256(f.read()).hexdigest().upper()

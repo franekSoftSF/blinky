@@ -1845,6 +1845,40 @@ app.MapGet("/api/downloads/{name}",
             : Results.Json(new { error = "no such download" }, statusCode: 404);
     });
 
+// A workstation or a CA's neighbour fetching its own package (0110), on the agents'
+// listener: the bootstrap script first, anonymous because it holds nothing but the
+// server's name, then the package, by agent certificate or enrolment token. Until this
+// an installer reached a machine only through an operator's browser.
+app.MapGet("/install/{name}",
+    (string name, Blinky.Api.Distribution.Downloads downloads) =>
+        downloads.Resolve(name) is { Entry.Kind: "bootstrap" } found
+            ? Results.File(found.Path, "text/plain; charset=utf-8")
+            : Results.NotFound());
+
+app.MapGet(AgentAuthenticationMiddleware.MachineDownloadsPath + "/{purpose}",
+    (string purpose, HttpContext context, Blinky.Api.Distribution.Downloads downloads,
+        Blinky.Api.Agents.EnrolmentTokens tokens) =>
+        MachineAdmitted(context, purpose, tokens) is not { } set
+            ? Results.Json(new { error = "an enrolled agent's certificate or an enrolment token for it is required" },
+                statusCode: 401)
+            : Results.Ok(new
+            {
+                manifest = downloads.Manifest() is { } m
+                    ? m with { Files = m.Files.Where(f => Blinky.Api.Distribution.Downloads.Belongs(f.File, set)).ToList() }
+                    : null,
+            }));
+
+app.MapGet(AgentAuthenticationMiddleware.MachineDownloadsPath + "/{purpose}/{name}",
+    (string purpose, string name, HttpContext context, Blinky.Api.Distribution.Downloads downloads,
+        Blinky.Api.Agents.EnrolmentTokens tokens) =>
+        MachineAdmitted(context, purpose, tokens) is not { } set
+            ? Results.Json(new { error = "an enrolled agent's certificate or an enrolment token for it is required" },
+                statusCode: 401)
+            : Blinky.Api.Distribution.Downloads.Belongs(name, set) && downloads.Resolve(name) is { } found
+                ? Results.File(found.Path, Blinky.Api.Distribution.Downloads.ContentType(found.Entry.File),
+                    found.Entry.File, enableRangeProcessing: true)
+                : Results.Json(new { error = "no such download" }, statusCode: 404));
+
 app.MapGet("/api/enrol-tokens",
     (HttpContext context, EnrolmentTokens tokens) =>
     {
@@ -3003,6 +3037,23 @@ static async Task<IResult> Passkey(Func<Task<IResult>> handler)
     {
         return Results.Json(new { error = e.Message, code = e.Code }, statusCode: e.Status);
     }
+}
+
+/// <summary>
+/// Which package set a machine may fetch: a workstation's by its agent certificate or an
+/// agent token, a connector's by a connector token. Null when neither was shown.
+/// </summary>
+static string? MachineAdmitted(HttpContext context, string purpose, Blinky.Api.Agents.EnrolmentTokens tokens)
+{
+    var token = context.Request.Headers["X-Blinky-Enrolment-Token"].ToString();
+
+    return purpose switch
+    {
+        "workstation" when context.Items.ContainsKey("agent")
+                           || tokens.Admits(token, Blinky.Domain.Entities.EnrolmentPurpose.Agent) => "workstation",
+        "connector" when tokens.Admits(token, Blinky.Domain.Entities.EnrolmentPurpose.AdcsConnector) => "connector",
+        _ => null,
+    };
 }
 
 static bool IsAdministrator(HttpContext context) =>

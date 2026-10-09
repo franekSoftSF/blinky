@@ -60,5 +60,23 @@ public sealed class DownloadsTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData("blinky-workstation-0.5.6.zip", "workstation", true)]
+    [InlineData("blinky-agent-0.5.6.msi", "workstation", true)]
+    [InlineData("install-windows-client.ps1", "workstation", true)]
+    [InlineData("blinky-connector-0.5.6.zip", "workstation", false)]
+    [InlineData("blinky-adcs-connector-0.5.6.msi", "workstation", false)]
+    [InlineData("blinky-connector-0.5.6.zip", "connector", true)]
+    [InlineData("Install-BlinkyConnector.ps1", "connector", true)]
+    [InlineData("blinky-agent-0.5.6.msi", "connector", false)]
+    [InlineData("downloads.json", "workstation", false)]
+    [InlineData("blinky-agent-0.5.6.msi", "anything", false)]
+    public void A_machine_fetches_its_own_set_and_not_the_other(string file, string set, bool belongs)
+    {
+        // 0110: a workstation's agent certificate or agent token reaches the agent and
+        // its scripts, never the connector that signs as the enrolment agent.
+        Assert.Equal(belongs, Downloads.Belongs(file, set));
+    }
+
     public void Dispose() => System.IO.Directory.Delete(folder, recursive: true);
 }

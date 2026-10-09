@@ -22,6 +22,9 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
     /// </summary>
     public const string EnrolmentPath = "/api/agents/enroll";
 
+    /// <summary>A machine's own installer, by its agent certificate or an enrolment token (0110).</summary>
+    public const string MachineDownloadsPath = "/api/machine-downloads";
+
     /// <summary>
     /// Routes an operator reaches rather than an agent. They are exempt from
     /// mTLS because the caller is a person at a console, not a machine - and
@@ -243,6 +246,28 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         }
 
         var certificate = ClientCertificate.From(context.Request);
+
+        // A machine fetching its own installer (0110): an enrolled agent by its
+        // certificate, or a machine not yet enrolled by its enrolment token, which the
+        // route checks. Both go through here, so neither needs an operator session.
+        if (path.StartsWithSegments(MachineDownloadsPath))
+        {
+            if (certificate is not null)
+            {
+                using var lookup = database.OpenSession();
+                var known = lookup.Query<Agent>()
+                    .SingleOrDefault(a => a.ClientCertificateThumbprint == certificate.Thumbprint);
+
+                if (known is { State: Blinky.Domain.AgentState.Enrolled })
+                {
+                    context.Items["agent"] = known;
+                }
+            }
+
+            await next(context);
+            return;
+        }
+
         if (certificate is null)
         {
             await Deny(context, "a verified client certificate is required");

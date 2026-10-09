@@ -66,6 +66,22 @@ public sealed class Downloads(string folder)
         return path.StartsWith(root, StringComparison.Ordinal) && File.Exists(path) ? (entry, path) : null;
     }
 
+    /// <summary>
+    /// Whether a file is part of a machine's set (0110). By name, because the names are
+    /// the build's and fixed: a workstation gets the agent and its scripts, a connector's
+    /// server the connector and its script, and neither the other's.
+    /// </summary>
+    public static bool Belongs(string file, string set) => set switch
+    {
+        "workstation" => file.StartsWith("blinky-workstation-", StringComparison.Ordinal)
+                         || file.StartsWith("blinky-agent-", StringComparison.Ordinal)
+                         || file is "install-windows-client.ps1" or "enable-ecc-smartcard-logon.ps1" or "blinky-server.json",
+        "connector" => file.StartsWith("blinky-connector-", StringComparison.Ordinal)
+                       || file.StartsWith("blinky-adcs-connector-", StringComparison.Ordinal)
+                       || file is "Install-BlinkyConnector.ps1" or "blinky-server.json",
+        _ => false,
+    };
+
     public static string ContentType(string file) =>
         System.IO.Path.GetExtension(file).ToLowerInvariant() switch
         {

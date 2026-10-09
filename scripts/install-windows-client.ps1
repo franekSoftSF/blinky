@@ -437,7 +437,12 @@ if ($BootstrapToken -and
 Write-Host "`n5/5  starting the tray for this session"
 
 $tray = "$env:ProgramFiles\Blinky\ui\Blinky.Agent.Ui.exe"
-if (Test-Path $tray) { Start-Process $tray }
+# Not as SYSTEM: the daily update task runs this in session 0, where a tray is a
+# process nobody can see. It starts at the next logon from HKLM\...\Run anyway.
+if ([Security.Principal.WindowsIdentity]::GetCurrent().IsSystem) {
+    Write-Host "     not from a SYSTEM task - it starts at the next logon"
+}
+elseif (Test-Path $tray) { Start-Process $tray }
 
 Start-Sleep -Seconds 6
 

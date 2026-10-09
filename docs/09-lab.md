@@ -310,6 +310,26 @@ On a workstation, in the unpacked workstation package, elevated:
 `.\install-windows-client.ps1` - it asks for an agent token and takes the server
 from the package, which wins over an address remembered from an earlier install.
 
+## A workstation or a connector fetching its own package (0110)
+
+Elevated, on the machine - nothing copied by hand, no operator's browser:
+
+```
+irm https://blinky-cms.ad.digitalworkspace.pl:9443/install/workstation.ps1 | iex
+irm https://blinky-cms.ad.digitalworkspace.pl:9443/install/connector.ps1 | iex
+```
+
+The script is the server's own, with its name written in by `build-downloads.sh`.
+A workstation with an enrolled agent fetches with that agent's certificate and is
+asked for nothing; a new one is asked for an agent token, and enrols with the same
+one. A connector's server is always asked for a connector token, because the
+connector's certificate is in its service account's store; a token whose uses are
+spent still fetches until it expires, so the token that enrolled a connector also
+upgrades it. Either way the package is checked against the listed SHA-256 and
+handed to the install script inside it. Saved and run with `-Schedule`, the
+workstation script leaves a daily task, as SYSTEM, that updates the agent when the
+server holds a newer one.
+
 ## The ADCS connector on a Windows member server, through a tunnel
 
 HZCS01 (`172.16.2.40`), Windows Server 2022, joined to `ad.digitalworkspace.pl`.

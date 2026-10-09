@@ -130,6 +130,37 @@ public sealed class EnrolmentTokens(Database database, Func<DateTime> clock, ILo
     }
 
     /// <summary>
+    /// Whether a token may fetch its machine's installer: right purpose, not
+    /// withdrawn, not expired - and not spent by asking (0110).
+    /// </summary>
+    /// <remarks>
+    /// Uses are not counted, because downloading is not joining: the install script
+    /// fetches the package with the same token the agent enrols with a minute later,
+    /// and a one-use token spent on the download would refuse the enrolment. A token
+    /// whose uses are gone still downloads until it expires, which is what lets the
+    /// same token upgrade a connector; the MSI is not a secret, and the token only
+    /// keeps a deployment's packages from being public.
+    /// </remarks>
+    public bool Admits(string? presented, EnrolmentPurpose purpose)
+    {
+        if (string.IsNullOrWhiteSpace(presented))
+        {
+            return false;
+        }
+
+        var hash = EnrolmentToken.Fingerprint(presented);
+        var now = clock();
+
+        using var session = database.OpenSession();
+        var row = session.Query<EnrolmentToken>().SingleOrDefault(t => t.TokenHash == hash);
+
+        return row is not null
+               && row.Purpose == purpose
+               && row.RevokedAt is null
+               && (row.ExpiresAt is null || row.ExpiresAt > now);
+    }
+
+    /// <summary>
     /// Spends one use of a token, or refuses.
     /// </summary>
     /// <remarks>
