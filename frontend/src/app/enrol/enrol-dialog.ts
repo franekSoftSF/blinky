@@ -82,16 +82,17 @@ const finished = ['Succeeded', 'Failed', 'Expired', 'Cancelled'];
         <section>
           <p class="eyebrow">2. {{ i18n.t('enrolProfile') }}</p>
           <div class="enrol-row">
-            <select [value]="profileName()" (change)="profileName.set(value($event))">
+            <select [value]="profileName()" (change)="chooseProfile(value($event))">
               @for (p of profiles(); track p.name) {
-                <option [value]="p.name">{{ p.name }}</option>
+                <option [value]="p.name">{{ p.name }}{{ p.description ? ' - ' + p.description : '' }}</option>
               }
             </select>
-            <select [value]="keyAlgorithm()" (change)="keyAlgorithm.set(value($event))">
-              <option value="Rsa2048">RSA 2048</option>
-              <option value="EccP256">ECC P-256</option>
-            </select>
+            <!-- The profile decides the key since 0108; shown, not chosen. -->
+            <span class="enrol-fact">{{ profile()?.keyAlgorithm ?? '-' }}</span>
           </div>
+          @if (profile(); as chosen) {
+            <p class="muted">{{ chosen.ca }} · {{ chosen.slotId }}</p>
+          }
         </section>
 
         <section>
@@ -137,6 +138,8 @@ const finished = ['Succeeded', 'Failed', 'Expired', 'Cancelled'];
               <dd>{{ who.distinguishedName ?? '—' }}</dd>
               <dt>{{ i18n.t('enrolValidity') }}</dt>
               <dd>{{ profile()?.days ?? '—' }} {{ i18n.t('days') }}</dd>
+              <dt>CA</dt>
+              <dd>{{ profile()?.ca ?? '—' }}</dd>
             </dl>
           </section>
         }
@@ -204,7 +207,6 @@ export class EnrolDialog {
   protected readonly agentId = signal<string | null>(null);
   protected readonly profiles = signal<ProfileRow[]>([]);
   protected readonly profileName = signal('smartcard-logon');
-  protected readonly keyAlgorithm = signal('Rsa2048');
   protected readonly query = signal('');
   protected readonly searching = signal(false);
   protected readonly candidates = signal<Candidate[]>([]);
@@ -283,6 +285,12 @@ export class EnrolDialog {
   protected close(): void {
     this.stopFollowing();
     this.dialog().nativeElement.close();
+  }
+
+  protected chooseProfile(name: string): void {
+    this.profileName.set(name);
+    const chosen = this.profiles().find((p) => p.name === name);
+    if (chosen?.slotId) this.slot.set(chosen.slotId);
   }
 
   protected value(event: Event): string {
@@ -379,7 +387,9 @@ export class EnrolDialog {
         profileName: this.profileName(),
         displayName: who.displayName,
         cardholderId: who.id,
-        keyAlgorithm: this.keyAlgorithm(),
+        // The server takes the key from the profile; sent as the profile says so an
+        // older API, which still reads this field, does the same.
+        keyAlgorithm: this.profile()?.keyAlgorithm ?? null,
         // A new attempt each time: the server keys a job on its reason, and a
         // retried enrolment must not come back as the job that already failed.
         reason: `console-${new Date().toISOString()}`,

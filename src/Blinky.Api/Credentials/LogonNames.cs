@@ -23,9 +23,17 @@ namespace Blinky.Api.Credentials;
 /// </remarks>
 public sealed class LogonNames(IDirectory directory, bool required)
 {
-    public async Task<string?> ResolveAsync(Blinky.Contracts.CardholderRequest cardholder, CancellationToken ct)
+    public Task<string?> ResolveAsync(Blinky.Contracts.CardholderRequest cardholder, CancellationToken ct) =>
+        ResolveAsync(cardholder, required, ct);
+
+    /// <param name="needed">
+    /// Whether the CA this issuance goes to needs the name - decided per profile since
+    /// 0108, when one deployment can issue from a Microsoft CA and the built-in one.
+    /// </param>
+    public async Task<string?> ResolveAsync(Blinky.Contracts.CardholderRequest cardholder, bool needed,
+        CancellationToken ct)
     {
-        if (!required)
+        if (!needed)
         {
             return null;
         }

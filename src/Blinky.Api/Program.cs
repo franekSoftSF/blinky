@@ -41,68 +41,19 @@ builder.Services.AddSingleton<Blinky.Api.Passkeys.IPasskeyStore, Blinky.Api.Pass
 builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyProvisioningService>();
 builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyJobs>();
 
-// The certificate authority: the built-in one, loaded from what
-// scripts/new-ca.sh produced, or a Microsoft CA through the connector. One
-// value chooses, and nothing downstream of this registration knows which it got
-// - that is the promise docs/04 makes about the two backends, kept here rather
-// than in every caller. CA instances and profiles read from the database are
-// the open half of patch 0022; until then the choice is configuration.
-var caBackend = Blinky.Pki.Adcs.AdcsInstance.Backend(builder.Configuration["Blinky:Ca:Backend"]);
-
-// Only a connector that dials this API collects from it.
-Blinky.Pki.Adcs.ConnectorQueue? connectorQueue = null;
-
-if (caBackend == CaBackend.Adcs)
-{
-    var adcs = new Blinky.Pki.Adcs.AdcsInstanceOptions();
-    builder.Configuration.GetSection("Blinky:Adcs").Bind(adcs);
-
-    if (string.Equals(adcs.Transport, "ConnectorPolls", StringComparison.OrdinalIgnoreCase))
-    {
-        connectorQueue = new Blinky.Pki.Adcs.ConnectorQueue();
-
-        builder.Services.AddSingleton(connectorQueue);
-    }
-
-    // Built now, so that a wrong URL, an unreadable client certificate or a
-    // missing pin stops the API in front of whoever configured it. The
-    // enrolment agent is not opened until the first enrolment: the connector
-    // lives on a server with its own maintenance windows, and an API that will
-    // not start while that server reboots is an outage nobody here caused.
-    builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(
-        Blinky.Pki.Adcs.AdcsInstance.Create(adcs, issues: true, connectorQueue));
-}
-else
-{
-    builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority>(_ =>
-        Blinky.Pki.BuiltIn.BuiltInCaFactory.LoadFromDirectory(
-            builder.Configuration["Blinky:Ca:Directory"] ?? "/etc/blinky/ca",
-            builder.Configuration["Blinky:Ca:Password"],
-            builder.Configuration.GetValue("Blinky:Ca:AllowFileKeys", false),
-
-            // How long an issued list claims to be good for. Short is safer -
-            // a revocation reaches relying parties sooner - but only as far as
-            // publication is reliable, because an expired CRL does not fail open:
-            // it breaks every chain built under it. Whatever this is, the copy
-            // Samba holds in the directory has to be refreshed inside it, which is
-            // what scripts/publish-crl-to-directory.sh is for.
-            TimeSpan.FromHours(
-                builder.Configuration.GetValue("Blinky:Ca:CrlValidityHours", 8)),
-            // The address relying parties are told to fetch revocation from, and
-            // it has to be one they can reach: not localhost, not the container
-            // name, and over HTTP rather than HTTPS - see CaPublication. Left
-            // unset, certificates are issued with neither extension, which is
-            // what they were until 21 August 2026 and why the first smart-card
-            // logon reported CERT_TRUST_REVOCATION_STATUS_UNKNOWN.
-            //
-            // OcspUrl is separate and unset in every deployment today, because
-            // nothing answers OCSP yet - 0041a. It exists now because the address
-            // lands in the certificate at issuance and cannot be added to a card
-            // afterwards. Set it in the change that starts a responder.
-            Blinky.Pki.BuiltIn.CaPublication.FromBaseUrl(
-                builder.Configuration["Blinky:Ca:PublicUrl"],
-                builder.Configuration["Blinky:Ca:OcspUrl"])));
-}
+// The certificate authorities: rows, built on demand and rebuilt when the console
+// changes one (0108). Until then one value in .env chose one CA for the life of the
+// process, and the first issuance through MS-CONN01 sat on a setting only somebody
+// with a shell could change. What .env still says about the CA is imported into the
+// table once, at the first start after the upgrade - see CaSeed - and then ignored.
+//
+// The connector's queue exists whether or not a polling connector is configured:
+// it costs nothing, and a CA switched to ConnectorPolls from the console has to find
+// it there without a restart.
+builder.Services.AddSingleton<Blinky.Pki.Adcs.ConnectorQueue>();
+builder.Services.AddSingleton<Blinky.Api.Authorities.CertificateAuthorities>();
+builder.Services.AddSingleton<Blinky.Api.Authorities.CaAdministration>();
+builder.Services.AddSingleton<Blinky.Pki.ICertificateAuthority, Blinky.Api.Authorities.DefaultCertificateAuthority>();
 
 // Which certificates are connectors is a table, not a setting: a connector is
 // registered by the enrolment that issued its certificate and withdrawn from
@@ -121,32 +72,20 @@ builder.Services.AddSingleton(new Blinky.Api.Distribution.Downloads(
     builder.Configuration["Blinky:Downloads:Path"] ?? "/var/lib/blinky/downloads"));
 
 // Via=Connector reads Active Directory through the ADCS connector, as the domain account
-// it runs as, so this host keeps no bind password for the domain (0104). Refused at
-// start without ADCS, because then there is no connector to ask and every read would
-// fail later for a reason that names neither setting.
+// it runs as, so this host keeps no bind password for the domain (0104). The connector
+// is looked up at each read: since 0108 the CA in front of it is a row that can change
+// while this runs, and a read with no Microsoft CA enabled says so in words.
 var directoryViaConnector = string.Equals(
     builder.Configuration["Blinky:Directory:Via"], "Connector", StringComparison.OrdinalIgnoreCase);
-
-if (directoryViaConnector && caBackend != CaBackend.Adcs)
-{
-    throw new InvalidOperationException(
-        "Blinky:Directory:Via is Connector, and the CA backend is not Adcs. The directory is "
-        + "read by the ADCS connector; without one, bind to the directory directly "
-        + "(Blinky:Directory:Host) and leave Via empty.");
-}
 
 builder.Services.AddSingleton<Blinky.Directory.IDirectory>(services =>
 {
     if (directoryViaConnector)
     {
-        var connector = (services.GetRequiredService<Blinky.Pki.ICertificateAuthority>()
-                            as Blinky.Pki.Adcs.AdcsCertificateAuthority)?.Connector
-                        ?? throw new InvalidOperationException(
-                            "Blinky:Directory:Via is Connector, and the ADCS transport is not the "
-                            + "connector.");
+        var authorities = services.GetRequiredService<Blinky.Api.Authorities.CertificateAuthorities>();
 
         return new Blinky.Api.Credentials.ConnectorDirectory(
-            connector, builder.Configuration["Blinky:Directory:NetBiosDomain"]);
+            () => authorities.Adcs?.Connector, builder.Configuration["Blinky:Directory:NetBiosDomain"]);
     }
 
     var directoryHost = builder.Configuration["Blinky:Directory:Host"];
@@ -178,9 +117,10 @@ builder.Services.AddSingleton<Blinky.Directory.IDirectory>(services =>
 
 // A Microsoft CA issues on somebody's behalf only for DOMAIN\user, read from the
 // directory at issuance; the built-in CA takes the subject it is given and needs none.
+// Whether it is needed is decided per issuance, by the CA the profile names (0108).
 builder.Services.AddSingleton(services => new Blinky.Api.Credentials.LogonNames(
     services.GetRequiredService<Blinky.Directory.IDirectory>(),
-    required: caBackend == CaBackend.Adcs));
+    required: false));
 
 builder.Services.AddSingleton<CredentialIssuanceService>();
 
@@ -264,6 +204,15 @@ else
 
 // The first way in, created once and only when there is nobody at all.
 //
+// The CA and the profiles .env described, imported into their tables the first time
+// this build starts against a database that has none (0108). Before the console can
+// be used, so the first page an administrator opens shows what is actually issuing.
+if (schema.IsValid)
+{
+    Blinky.Api.Authorities.CaSeed.Import(
+        app.Services.GetRequiredService<Database>(), app.Configuration, app.Logger);
+}
+
 // A deployment that has no accounts has no way to make one, which is the
 // bootstrap problem 0053d names: a smart card cannot be required to sign into
 // the system that issues smart cards before it has issued any. So the installer
@@ -418,7 +367,7 @@ app.MapPost("/api/tokens/inventory",
 // AdcsQueue.MaximumWaitSeconds and then answers 204, so a call is collected within a
 // round trip instead of a polling interval. Who may reach these is decided in
 // AgentAuthenticationMiddleware, by fingerprint.
-if (connectorQueue is not null)
+if (app.Services.GetService<Blinky.Pki.Adcs.ConnectorQueue>() is not null)
 {
     app.MapGet(AdcsQueue.NextPath,
         async (int? wait, Blinky.Pki.Adcs.ConnectorQueue queue, CancellationToken ct) =>
@@ -852,7 +801,7 @@ app.MapPost("/api/jobs/inventory",
 
 app.MapPost("/api/jobs/enrol",
     (EnrolmentJobRequest request, HttpContext context, JobService jobs,
-        Database database) =>
+        Database database, Blinky.Api.Authorities.CaAdministration administration) =>
     {
         if (!IsOperator(context))
         {
@@ -905,16 +854,22 @@ app.MapPost("/api/jobs/enrol",
         // a minute later on an agent, and by then nobody is looking at the
         // thing that created it. The refusal itself is not new - the issuance
         // service has always made it - only its timing and its audience.
-        var profile = Profiles.DescriptorByName(request.ProfileName);
+        var profile = administration.Find(request.ProfileName);
 
         if (profile is null)
         {
             return Results.Json(new
             {
-                error = $"there is no profile called {request.ProfileName}",
-                known = Profiles.All.Select(p => p.Name),
+                error = $"there is no enabled profile called {request.ProfileName}",
+                known = administration.Profiles(enabledOnly: true).Select(p => p.Name),
             }, statusCode: 400);
         }
+
+        // The profile decides the key and, unless the operator chose a slot, where it
+        // goes (0108). The algorithm used to travel separately from the console, so one
+        // card could be given RSA or ECC whatever the CA's template allowed.
+        var slotId = string.IsNullOrWhiteSpace(request.SlotId) ? profile.SlotId : request.SlotId;
+        var keyAlgorithm = profile.KeyAlgorithm;
 
         if (profile.IncludeSidExtension && string.IsNullOrWhiteSpace(objectSid))
         {
@@ -942,8 +897,8 @@ app.MapPost("/api/jobs/enrol",
         // supply. A job that failed on a mistyped PIN is finished as far as the
         // row is concerned, and without a way to say "this is a new attempt"
         // the same request would keep returning the dead one.
-        var key = $"enrol:{request.TokenSerial}:{request.SlotId}:{request.ProfileName}"
-                  + $":{request.KeyAlgorithm ?? "default"}"
+        var key = $"enrol:{request.TokenSerial}:{slotId}:{request.ProfileName}"
+                  + $":{keyAlgorithm}"
                   + $":{request.Reason ?? "initial"}";
 
         // Whether the agent may generate over a key that is already in the
@@ -966,15 +921,15 @@ app.MapPost("/api/jobs/enrol",
         {
             var slot = session.Query<Slot>()
                 .FirstOrDefault(s => s.Token.Serial == request.TokenSerial
-                                     && s.SlotId == request.SlotId);
+                                     && s.SlotId == slotId);
 
             replaceKey = slot?.State == Blinky.Domain.SlotState.KeyPresent;
         }
 
         var (job, created) = jobs.Create(JobType.Enroll, key,
             id => JobEnvelope.Enrolment(id, key, DateTimeOffset.UtcNow.AddHours(1),
-                request.TokenSerial, request.SlotId, request.ProfileName, displayName,
-                upn, objectSid, request.KeyAlgorithm, replaceKey),
+                request.TokenSerial, slotId, request.ProfileName, displayName,
+                upn, objectSid, keyAlgorithm, replaceKey),
             request.AgentId, cardholderId: cardholderId);
 
         return Results.Ok(new { job.Id, created, state = job.State.ToString() });
@@ -1202,13 +1157,18 @@ app.MapPost("/api/credentials/issue",
 // the check that flow will run, available now against the one CA the
 // configuration names.
 app.MapGet("/api/system/ca/checks",
-    async (HttpContext context, Blinky.Pki.ICertificateAuthority ca, CancellationToken ct) =>
+    async (HttpContext context, Blinky.Api.Authorities.CertificateAuthorities authorities,
+        CancellationToken ct) =>
     {
         if (!IsOperator(context))
         {
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
         }
+
+        // The CA itself rather than the container's ICertificateAuthority, which since
+        // 0108 is a proxy and would never be the Microsoft CA this asks about.
+        var ca = authorities.Default;
 
         if (ca is not Blinky.Pki.Adcs.AdcsCertificateAuthority adcs)
         {
@@ -1242,7 +1202,7 @@ app.MapGet("/api/system/ca/checks",
     });
 
 app.MapGet("/api/system/status",
-    async (HttpContext context, Blinky.Pki.ICertificateAuthority ca,
+    async (HttpContext context, Blinky.Api.Authorities.CertificateAuthorities authorities,
         Blinky.Directory.IDirectory directory, IConfiguration configuration,
         Database database, IKeyProvider keyProvider,
         KeyProviders.SecretsOptions secretsOptions, CancellationToken ct) =>
@@ -1252,6 +1212,8 @@ app.MapGet("/api/system/status",
             return Results.Json(new { error = "an operator token is required" },
                 statusCode: 401);
         }
+
+        var ca = authorities.Default;
 
         // A built-in CA answers from this process and cannot fail here. A
         // Microsoft CA answers through a connector on another machine, and a
@@ -1875,7 +1837,7 @@ app.MapPost("/api/enrol-tokens/{id:guid}/revoke",
     });
 
 app.MapGet("/api/profiles",
-    (HttpContext context) =>
+    (HttpContext context, Blinky.Api.Authorities.CaAdministration administration) =>
     {
         if (!IsOperator(context))
         {
@@ -1883,16 +1845,107 @@ app.MapGet("/api/profiles",
                 statusCode: 401);
         }
 
-        return Results.Ok(Profiles.All.Select(p => new
+        // The enabled ones, in the shape the enrolment dialog has read since 0052, from
+        // the table since 0108 - with the slot and the CA it would now go to.
+        return Results.Ok(administration.Profiles(enabledOnly: true).Select(p => new
         {
             p.Name,
+            p.Description,
             requiresUpn = p.IncludeUpnSan,
             requiresObjectSid = p.IncludeSidExtension,
             keyAlgorithm = p.KeyAlgorithm,
             days = p.ValidityDays,
+            slotId = p.SlotId,
+            ca = p.CaInstanceName,
+            backend = p.Backend,
             extendedKeyUsage = p.ExtendedKeyUsages.Select(ExtendedKeyUsageName),
         }));
     });
+
+// Certificate authorities and certificate profiles, from the console (0108). Read by any
+// operator, because the enrolment dialog and the status page show them; written by an
+// administrator, because a wrong template or CA name stops every enrolment.
+app.MapGet("/api/ca-instances",
+    (HttpContext context, Blinky.Api.Authorities.CaAdministration administration) =>
+        !IsOperator(context)
+            ? Results.Json(new { error = "an operator token is required" }, statusCode: 401)
+            : Results.Ok(administration.Instances()));
+
+app.MapPost("/api/ca-instances",
+    (Blinky.Api.Authorities.CaInstanceRequest request, HttpContext context,
+        Blinky.Api.Authorities.CaAdministration administration) =>
+        CaAdmin(context, () => Results.Ok(administration.Create(request, ActorFor(context)))));
+
+app.MapPut("/api/ca-instances/{id:guid}",
+    (Guid id, Blinky.Api.Authorities.CaInstanceRequest request, HttpContext context,
+        Blinky.Api.Authorities.CaAdministration administration) =>
+        CaAdmin(context, () => Results.Ok(administration.Update(id, request, ActorFor(context)))));
+
+app.MapDelete("/api/ca-instances/{id:guid}",
+    (Guid id, HttpContext context, Blinky.Api.Authorities.CaAdministration administration) =>
+        CaAdmin(context, () =>
+        {
+            administration.DeleteInstance(id, ActorFor(context));
+            return Results.NoContent();
+        }));
+
+// What the CA says about itself, through the connector for ADCS - the check that would
+// have shown MS-CONN01's empty CA name before anybody enrolled a card.
+app.MapPost("/api/ca-instances/{id:guid}/test",
+    async (Guid id, HttpContext context, Blinky.Api.Authorities.CaAdministration administration,
+        CancellationToken ct) =>
+    {
+        if (!IsAdministrator(context))
+        {
+            return Results.Json(new { error = "an administrator is required" }, statusCode: 403);
+        }
+
+        try
+        {
+            return Results.Ok(await administration.TestAsync(id, ct));
+        }
+        catch (Blinky.Pki.CertificateAuthorityException e)
+        {
+            return Results.Json(new { error = e.Message }, statusCode: 502);
+        }
+    });
+
+app.MapGet("/api/certificate-profiles",
+    (HttpContext context, Blinky.Api.Authorities.CaAdministration administration) =>
+        !IsOperator(context)
+            ? Results.Json(new { error = "an operator token is required" }, statusCode: 401)
+            : Results.Ok(new
+            {
+                profiles = administration.Profiles(),
+
+                // What the form may offer, from the same lists the server validates
+                // against, so the console cannot drift from them.
+                choices = new
+                {
+                    slots = Blinky.Api.Authorities.CaAdministration.Slots,
+                    keyAlgorithms = Blinky.Api.Authorities.CaAdministration.KeyAlgorithms,
+                    pinPolicies = Blinky.Api.Authorities.CaAdministration.PinPolicies,
+                    touchPolicies = Blinky.Api.Authorities.CaAdministration.TouchPolicies,
+                },
+            }));
+
+app.MapPost("/api/certificate-profiles",
+    (Blinky.Api.Authorities.ProfileRequest request, HttpContext context,
+        Blinky.Api.Authorities.CaAdministration administration) =>
+        CaAdmin(context, () => Results.Ok(administration.CreateProfile(request, ActorFor(context)))));
+
+app.MapPut("/api/certificate-profiles/{id:guid}",
+    (Guid id, Blinky.Api.Authorities.ProfileRequest request, HttpContext context,
+        Blinky.Api.Authorities.CaAdministration administration) =>
+        CaAdmin(context, () => Results.Ok(administration.UpdateProfile(id, request, ActorFor(context)))));
+
+app.MapDelete("/api/certificate-profiles/{id:guid}",
+    (Guid id, HttpContext context, Blinky.Api.Authorities.CaAdministration administration) =>
+        CaAdmin(context, () =>
+        {
+            administration.DeleteProfile(id, ActorFor(context));
+            return Results.NoContent();
+        }));
 
 app.MapGet("/api/cardholders",
     (string? q, HttpContext context, Database database) =>
@@ -2527,21 +2580,21 @@ app.MapPost("/api/agents/{id:guid}/renew-certificate",
 //
 // The CRL is signed. That is what protects it, not the transport.
 
-app.MapGet("/pki/issuing.crt", (Blinky.Pki.ICertificateAuthority ca, IConfiguration configuration) =>
-    StackChain.Of(ca, configuration) is { } chain
+app.MapGet("/pki/issuing.crt", (Blinky.Api.Authorities.CertificateAuthorities authorities, IConfiguration configuration) =>
+    StackChain.Of(authorities.Default, configuration) is { } chain
         // DER rather than PEM: this is what an authority information access
         // fetch expects, and Windows will not read a PEM here.
         ? Results.File(chain.Issuer.RawData, "application/pkix-cert", "issuing.crt")
         : Results.NotFound());
 
-app.MapGet("/pki/root.crt", (Blinky.Pki.ICertificateAuthority ca, IConfiguration configuration) =>
-    StackChain.Of(ca, configuration) is { } chain
+app.MapGet("/pki/root.crt", (Blinky.Api.Authorities.CertificateAuthorities authorities, IConfiguration configuration) =>
+    StackChain.Of(authorities.Default, configuration) is { } chain
         ? Results.File(chain.Anchor.RawData, "application/pkix-cert", "root.crt")
         : Results.NotFound());
 
-app.MapGet("/pki/chain.pem", (Blinky.Pki.ICertificateAuthority ca, IConfiguration configuration) =>
+app.MapGet("/pki/chain.pem", (Blinky.Api.Authorities.CertificateAuthorities authorities, IConfiguration configuration) =>
 {
-    if (StackChain.Of(ca, configuration) is not { } chain)
+    if (StackChain.Of(authorities.Default, configuration) is not { } chain)
     {
         return Results.NotFound();
     }
@@ -2847,6 +2900,27 @@ static OperatorAccount? SignedInOperator(HttpContext context, Database database,
 /// </remarks>
 // One shape for every refusal in the passkey flow: a status, a code an agent or
 // a console can branch on, and a sentence for whoever reads the log.
+/// <summary>
+/// An administrator's write to a CA or a profile, with the refusal said as the status
+/// and the sentence the administration chose for it.
+/// </summary>
+static IResult CaAdmin(HttpContext context, Func<IResult> handler)
+{
+    if (!IsAdministrator(context))
+    {
+        return Results.Json(new { error = "an administrator is required" }, statusCode: 403);
+    }
+
+    try
+    {
+        return handler();
+    }
+    catch (Blinky.Api.Authorities.CaAdministrationException e)
+    {
+        return Results.Json(new { error = e.Message }, statusCode: e.Status);
+    }
+}
+
 static async Task<IResult> Passkey(Func<Task<IResult>> handler)
 {
     try

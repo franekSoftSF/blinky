@@ -1141,6 +1141,15 @@
       "gap": "No real tenant or org yet, so no passkey registered through a provider made here"
     },
     {
+      "id": "0108",
+      "phase": 3,
+      "title": "Certificate authorities and profiles are rows, configured in the console",
+      "state": "done-unverified",
+      "owner": "cloud-ai",
+      "proof": "CA_BACKEND and ADCS_* in .env chose one CA for the life of the process and two profiles were constants in the build, so changing a template or the CA a connector asks took a shell on the server - the first issuance through MS-CONN01 sat on an empty CaConfig for exactly that. Now ca_instances and certificate_profiles are read: CertificateAuthorities builds a CA from its row on demand and again after any change, with the ADCS template map assembled from the profiles; the container's ICertificateAuthority is a proxy to the default row, and the status page, the template checks and /pki ask the real one. Issuance takes the profile and its CA from the table, checks the profile's required PIN and touch policy against the attestation before the CA is called (docs/04 promised it, nothing did it), passes the ADCS template from the profile, needs DOMAIN\\user only for a Microsoft CA, and records Credential.Profile and CaInstance; revocation goes to the CA that issued. /api/jobs/enrol takes the key algorithm and default slot from the profile. The first start imports the CA and the two profiles from .env into empty tables, with audit events. Admin-only CRUD at /api/ca-instances and /api/certificate-profiles, a CA test that asks through the connector, and the console page Administracja / CA i profile; a CA or profile an issued credential points at cannot be deleted. Passwords typed as values never reach a row. 859 tests, 9 new; ng build and 23 console tests pass.",
+      "gap": "Not deployed: BY-CACMS needs three columns added by hand (ALTER, below) before this build starts, then the import has to be seen to reproduce today's ADCS issuance through MS-CONN01 with CaConfig set from the console and the registry value removed. The worker still builds the built-in CA from .env for the CRL. One polling connector per deployment: two enabled ConnectorPolls CAs are refused."
+    },
+    {
       "id": "0103",
       "phase": 5,
       "title": "One family: the console drawn as BlinkyLite's is",

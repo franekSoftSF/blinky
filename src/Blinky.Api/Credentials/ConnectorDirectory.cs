@@ -25,9 +25,31 @@ namespace Blinky.Api.Credentials;
 /// an unreachable domain controller does, and a probe reports it rather than throwing.
 /// </para>
 /// </remarks>
-public sealed class ConnectorDirectory(ConnectorAdcsTransport connector, string? netBiosDomain = null)
-    : IDirectory
+public sealed class ConnectorDirectory : IDirectory
 {
+    private readonly Func<ConnectorAdcsTransport?> connectorOf;
+    private readonly string? netBiosDomain;
+
+    public ConnectorDirectory(ConnectorAdcsTransport connector, string? netBiosDomain = null)
+        : this(() => connector, netBiosDomain)
+    {
+    }
+
+    /// <param name="connectorOf">
+    /// Asked at every read rather than once: since 0108 the CA, and with it the
+    /// connector, is a row an administrator can change while this API runs.
+    /// </param>
+    public ConnectorDirectory(Func<ConnectorAdcsTransport?> connectorOf, string? netBiosDomain = null)
+    {
+        this.connectorOf = connectorOf;
+        this.netBiosDomain = netBiosDomain;
+    }
+
+    private ConnectorAdcsTransport Connector => connectorOf()
+        ?? throw new CertificateAuthorityException(
+            "No enabled Microsoft CA reaches a connector, so nothing can read the directory for "
+            + "Blinky:Directory:Via=Connector. Add or enable one in the console.");
+
     public DirectorySource Source => DirectorySource.ActiveDirectory;
 
     /// <summary>The domain controller the connector last said it read, for the status page.</summary>
@@ -44,7 +66,7 @@ public sealed class ConnectorDirectory(ConnectorAdcsTransport connector, string?
             return [];
         }
 
-        var found = await connector.DirectoryAsync<ConnectorDirectoryUsers>(
+        var found = await Connector.DirectoryAsync<ConnectorDirectoryUsers>(
             ConnectorDirectoryPaths.Search, new ConnectorDirectoryRequest(query, limit), ct);
 
         return found.Users.Select(Read).ToList();
@@ -57,7 +79,7 @@ public sealed class ConnectorDirectory(ConnectorAdcsTransport connector, string?
             return null;
         }
 
-        var found = await connector.DirectoryAsync<ConnectorDirectoryFound>(
+        var found = await Connector.DirectoryAsync<ConnectorDirectoryFound>(
             ConnectorDirectoryPaths.Find, new ConnectorDirectoryRequest(upnOrAccount), ct);
 
         return found.User is { } user ? Read(user) : null;
@@ -69,7 +91,7 @@ public sealed class ConnectorDirectory(ConnectorAdcsTransport connector, string?
 
         try
         {
-            var probe = await connector.DirectoryAsync<ConnectorDirectoryProbe>(
+            var probe = await Connector.DirectoryAsync<ConnectorDirectoryProbe>(
                 ConnectorDirectoryPaths.Probe, new ConnectorDirectoryRequest(string.Empty), ct);
 
             Host = probe.Host ?? Host;
@@ -93,7 +115,7 @@ public sealed class ConnectorDirectory(ConnectorAdcsTransport connector, string?
             return [];
         }
 
-        var found = await connector.DirectoryAsync<ConnectorDirectoryUsers>(
+        var found = await Connector.DirectoryAsync<ConnectorDirectoryUsers>(
             ConnectorDirectoryPaths.Members, new ConnectorDirectoryRequest(group, limit), ct);
 
         return found.Users.Select(Read).ToList();
@@ -109,7 +131,7 @@ public sealed class ConnectorDirectory(ConnectorAdcsTransport connector, string?
 
         try
         {
-            var access = await connector.DirectoryAsync<ConnectorDirectoryWriteAccess>(
+            var access = await Connector.DirectoryAsync<ConnectorDirectoryWriteAccess>(
                 ConnectorDirectoryPaths.WriteAccess, new ConnectorDirectoryRequest(subjectDn), ct);
 
             return new DirectoryWriteAccess(
@@ -135,7 +157,7 @@ public sealed class ConnectorDirectory(ConnectorAdcsTransport connector, string?
             return null;
         }
 
-        var answer = await connector.DirectoryAsync<ConnectorDirectoryNetBios>(
+        var answer = await Connector.DirectoryAsync<ConnectorDirectoryNetBios>(
             ConnectorDirectoryPaths.NetBios, new ConnectorDirectoryRequest(distinguishedName), ct);
 
         return answer.Name;

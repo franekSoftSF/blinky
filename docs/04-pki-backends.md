@@ -189,6 +189,8 @@ RSA and ECDSA; BouncyCastle is pulled in only where .NET has no answer (CMC
 structures, some PKCS#7 handling). The result is less third-party crypto in the
 signing path, which is the path that matters.
 
+**Since 0108 the profile is a row and this is enforced**: the PIN and touch policy are compared with the attestation in `CredentialIssuanceService` before the CA is called, and the CA itself is the row the profile names.
+
 The profile drives everything: algorithm, validity, EKUs, subject and SAN
 templates, and the required PIN and touch policy — the last two are checked
 against the attestation before signing, so a profile that demands touch cannot

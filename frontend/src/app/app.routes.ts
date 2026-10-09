@@ -7,6 +7,7 @@ import { Helpdesk } from './pages/helpdesk';
 import { SystemStatusPage } from './pages/system-status';
 import { EnrolTokens } from './pages/enrol-tokens';
 import { Downloads } from './pages/downloads';
+import { CaProfiles } from './pages/ca-profiles';
 import { SignIn } from './pages/sign-in';
 import { Passkeys } from './pages/passkeys';
 import { PasskeyProviders } from './pages/passkey-providers';
@@ -34,6 +35,7 @@ export const routes: Routes = [
   { path: 'directory', component: DirectoryDiagnostics, canActivate: [signedIn] },
   { path: 'enrol-tokens', component: EnrolTokens, canActivate: [signedIn] },
   { path: 'downloads', component: Downloads, canActivate: [signedIn] },
+  { path: 'ca-profiles', component: CaProfiles, canActivate: [signedIn] },
   { path: 'settings', component: OperatorSettings, canActivate: [signedIn] },
   { path: '**', redirectTo: '' },
 ];

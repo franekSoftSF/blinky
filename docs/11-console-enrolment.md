@@ -69,11 +69,12 @@ GET /api/profiles
   { "name": "client-auth",     "requiresObjectSid": false, "requiresUpn": false, ... } ]
 ```
 
-Patch 0022's open half is the same list moving into the database. This endpoint
-is written so that move does not change its shape: the certificate facts now
-live in `Profiles.All` as `ProfileDescriptor` rows without a slot, and
-`ByName` builds an `IssuanceProfile` from one of them. A descriptor becomes a
-database row when 0022 lands, and nothing above this class has to change.
+Patch 0022's open half is the same list moving into the database, and since
+0108 it has: `GET /api/profiles` reads the enabled `certificate_profiles` rows,
+in the same shape plus `slotId`, `ca`, `backend` and `description`.
+`Profiles.All` is now only what the first start imports into an empty table.
+A profile also carries its slot and its key algorithm, and the job takes the
+algorithm from the profile rather than from the dialog.
 
 A slot is deliberately not part of a descriptor. It is chosen per enrolment,
 and folding it in is how a profile list ends up quietly describing everything

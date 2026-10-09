@@ -12,7 +12,7 @@ than to the database.
 | `Token` | `id`, unique `serial` | One physical YubiKey. Serial is the identity; the row outlives any credential on it |
 | `Slot` | `(token_id, slot_id)` | One PIV slot on that token. Fixed set of rows created when the token is registered |
 | `Credential` | `id` | One issued certificate bound to one slot. Immutable once issued — renewal creates a new row |
-| `CertificateProfile` | `id` | What to issue: algorithm, EKUs, subject/SAN template, validity, PIN and touch policy, CA backend, ADCS template name |
+| `CertificateProfile` | `id` | What to issue: algorithm, EKUs, subject/SAN template, validity, PIN and touch policy, CA backend, ADCS template name. Since 0108 also `include_upn_san`, `include_sid_extension` and `description`, and read at every issuance; created, edited and deleted from *Administracja / CA i profile*. A profile an issued credential points at is disabled, never deleted |
 | `IssuancePolicy` | `id` | Who gets which profiles, and under what conditions |
 | `CaInstance` | `id` | A configured CA: backend, topology, config, chain, CRL/OCSP URLs |
 | `Job` | `id` | One unit of work for one agent |

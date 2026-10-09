@@ -22,7 +22,8 @@ namespace Blinky.Api.Credentials;
 /// </remarks>
 public sealed class CredentialIssuanceService(
     Database database,
-    ICertificateAuthority authority,
+    Blinky.Api.Authorities.CertificateAuthorities authorities,
+    Blinky.Api.Authorities.CaAdministration profiles,
     Blinky.Api.Jobs.JobService jobs,
     LogonNames logonNames,
     ILogger<CredentialIssuanceService> logger)
@@ -60,7 +61,24 @@ public sealed class CredentialIssuanceService(
 
         var attested = attestation.Attestation!;
 
-        var logonName = await logonNames.ResolveAsync(request.Cardholder, ct);
+        // The profile and its CA are rows (0108): the template, the algorithm and the
+        // CA a credential comes from are the console's to change, not the build's.
+        var profile = profiles.Find(request.ProfileName)
+                      ?? throw new IssuancePolicyException(
+                          $"There is no enabled profile called {request.ProfileName}, or its CA is disabled.");
+
+        // Checked against what the card itself attested, before the CA is asked: a
+        // key whose PIN policy the profile does not allow is refused here rather than
+        // certified and found out later. docs/04 promised this from the start.
+        Require(profile.RequiredPinPolicy, attested.PinPolicy.ToString(), "PIN");
+        Require(profile.RequiredTouchPolicy, attested.TouchPolicy.ToString(), "touch");
+
+        var authority = authorities.For(profile.CaInstance.Id);
+
+        // Only a Microsoft CA issues on somebody's behalf by DOMAIN\user, so only a
+        // profile on one needs the directory at issuance.
+        var logonName = await logonNames.ResolveAsync(request.Cardholder,
+            authority is Blinky.Pki.Adcs.AdcsCertificateAuthority, ct);
 
         var context = new CertificateRequestContext(
             DecodePem(request.CertificateSigningRequestPem, "CERTIFICATE REQUEST"),
@@ -68,11 +86,14 @@ public sealed class CredentialIssuanceService(
                 attested.PinPolicy.ToString(), attested.TouchPolicy.ToString()),
             new CardholderIdentity(request.Cardholder.DisplayName, request.Cardholder.Upn,
                 request.Cardholder.ObjectSid, null, logonName),
-            Profiles.ByName(request.ProfileName, slot.Name));
+            new IssuanceProfile(profile.Name, slot.Name, profile.KeyAlgorithm, profile.ValidityDays,
+                JsonSerializer.Deserialize<List<string>>(profile.ExtendedKeyUsages) ?? [],
+                profile.IncludeUpnSan, profile.IncludeSidExtension,
+                profile.SubjectTemplate, profile.AdcsTemplateName));
 
         var issued = await authority.IssueAsync(context, ct);
 
-        var credentialId = Record(request, issued, slot.Name);
+        var credentialId = Record(request, issued, slot.Name, profile.Id, profile.CaInstance.Id);
 
         logger.LogInformation("Issued {Serial} for token {Token} slot {Slot} to {Subject}",
             issued.SerialNumber, request.TokenSerial, slot, issued.Certificate.Subject);
@@ -266,7 +287,7 @@ public sealed class CredentialIssuanceService(
             // The list first. If publishing fails, nothing is marked: a record
             // that says revoked while the certificate is still good on every
             // revocation list is worse than one that says nothing yet.
-            await authority.RevokeAsync(
+            await AuthorityOf(credential).RevokeAsync(
                 new RevocationRequest(credential.SerialNumber, reason, comment), ct);
         }
 
@@ -312,7 +333,7 @@ public sealed class CredentialIssuanceService(
                 serialNumber = credential.SerialNumber,
                 reason = reason.ToString(),
                 comment,
-                ca = authority.Name,
+                ca = AuthorityOf(credential).Name,
                 atCa = !string.IsNullOrEmpty(credential.SerialNumber),
             }),
         });
@@ -380,7 +401,24 @@ public sealed class CredentialIssuanceService(
         return true;
     }
 
-    private Guid Record(IssueCredentialRequest request, IssuedCertificate issued, string slotId)
+    /// <summary>
+    /// The CA a credential came from, which is the one that can revoke it. A credential
+    /// issued before 0108 names none, and the default CA is the one that issued it then.
+    /// </summary>
+    private ICertificateAuthority AuthorityOf(Credential credential) =>
+        credential.CaInstance is { } instance ? authorities.For(instance.Id) : authorities.Default;
+
+    private static void Require(string? required, string attested, string what)
+    {
+        if (required is not null && !string.Equals(required, attested, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new IssuancePolicyException(
+                $"The profile requires {what} policy {required} and the card attested {attested} for this key.");
+        }
+    }
+
+    private Guid Record(IssueCredentialRequest request, IssuedCertificate issued, string slotId,
+        Guid profileId, Guid caInstanceId)
     {
         using var session = database.OpenSession();
         using var transaction = session.BeginTransaction();
@@ -395,6 +433,11 @@ public sealed class CredentialIssuanceService(
         {
             Token = token,
             SlotId = slotId,
+
+            // Where it came from, for revocation and for the record: until 0108 a
+            // credential could not say which profile or CA had issued it.
+            Profile = session.Load<CertificateProfile>(profileId),
+            CaInstance = session.Load<CaInstance>(caInstanceId),
             SerialNumber = issued.SerialNumber,
             IssuerDn = issued.Certificate.Issuer,
             SubjectDn = issued.Certificate.Subject,

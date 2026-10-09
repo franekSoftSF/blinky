@@ -278,6 +278,9 @@ public sealed class CertificateProfileMapping : ClassMapping<CertificateProfile>
         Property(x => x.SanTemplate, m => m.Column("san_template"));
         Property(x => x.ExtendedKeyUsages, m => Conventions.AsJson(m, "extended_key_usages"));
         Property(x => x.AdcsTemplateName, m => m.Column("adcs_template_name"));
+        Property(x => x.IncludeUpnSan, m => { m.Column("include_upn_san"); m.NotNullable(true); });
+        Property(x => x.IncludeSidExtension, m => { m.Column("include_sid_extension"); m.NotNullable(true); });
+        Property(x => x.Description, m => m.Column("description"));
         Property(x => x.IsEnabled, m => { m.Column("is_enabled"); m.NotNullable(true); });
         Property(x => x.CreatedAt, m => Conventions.AsTimestamp(m, "created_at"));
         Property(x => x.UpdatedAt, m => Conventions.AsTimestamp(m, "updated_at"));

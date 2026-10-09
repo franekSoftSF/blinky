@@ -114,6 +114,10 @@ export interface HelpdeskView {
 /** A certificate profile as GET /api/profiles describes it (0052). */
 export interface ProfileRow {
   name: string;
+  description?: string | null;
+  slotId?: string;
+  ca?: string;
+  backend?: string;
   requiresUpn: boolean;
   requiresObjectSid: boolean;
   keyAlgorithm: string;

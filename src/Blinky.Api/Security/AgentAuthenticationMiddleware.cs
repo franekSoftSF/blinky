@@ -109,6 +109,13 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         "/api/downloads",
         "/api/downloads/{name}",
 
+        // Certificate authorities and profiles, from the console (0108).
+        "/api/ca-instances",
+        "/api/ca-instances/{id:guid}",
+        "/api/ca-instances/{id:guid}/test",
+        "/api/certificate-profiles",
+        "/api/certificate-profiles/{id:guid}",
+
         // Route patterns, not paths. A help desk request arrives as
         // /api/tokens/12345/helpdesk and matches nothing written literally,
         // which is why these could not be listed at all before the comparison

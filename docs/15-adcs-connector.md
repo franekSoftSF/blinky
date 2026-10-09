@@ -582,8 +582,9 @@ the check as the service evaluated the local `S-1-5-18` token instead and refuse
 template the computer may enrol on; see *As the service* below.
 
 **What it is not yet:** a registration. There is no flow that creates a CA
-instance and refuses it — CA instances are not rows until 0022's open half — so the
-check runs against the one CA the configuration names, when somebody asks. The
+instance and refuses it. CA instances are rows since 0108 and the console's *Sprawdź*
+asks one through its connector, but the template checks still run against the
+default CA when somebody asks. The
 attribute names and the version 4 encoding of `msPKI-RA-Application-Policies` are
 now confirmed on a real template; the policy is still matched by substring,
 because that encoding packs several name–type–value triples into one string.
