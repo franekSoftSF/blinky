@@ -72,6 +72,19 @@
                 BorderThickness="0,0,0,1"
                 Padding="20,12">
             <DockPanel>
+                <!-- Where BlinkyLite has them, in the window rather than in the
+                     tray menu: a submenu off an icon by the clock is not where
+                     anybody looks for the language of the window in front of
+                     them. -->
+                <ComboBox x:Name="ThemePicker" DockPanel.Dock="Right" Width="130" Margin="8,0,0,0"
+                          VerticalAlignment="Center" DisplayMemberPath="Name"
+                          SelectionChanged="Theme_Changed"
+                          ToolTip="{Binding Path=[Tray.Theme], Source={x:Static local:Strings.Current}}" />
+                <ComboBox x:Name="LanguagePicker" DockPanel.Dock="Right" Width="120" Margin="8,0,0,0"
+                          VerticalAlignment="Center" DisplayMemberPath="Name"
+                          SelectionChanged="Language_Changed"
+                          ToolTip="{Binding Path=[Tray.Language], Source={x:Static local:Strings.Current}}" />
+
                 <Button DockPanel.Dock="Right" Style="{StaticResource Quiet}" VerticalAlignment="Center"
                         Click="Refresh_Click">
                     <StackPanel Orientation="Horizontal">

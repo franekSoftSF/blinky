@@ -75,6 +75,8 @@ public partial class TokensWindow : Window
             Hide();
         };
 
+        FillPickers();
+
         Loaded += async (_, _) => await LoadAsync();
 
         // Only while somebody is looking. A hidden window sweeping readers
@@ -91,6 +93,73 @@ public partial class TokensWindow : Window
                 refresh.Stop();
             }
         };
+    }
+
+    // Set while the pickers are being filled, so that selecting the current
+    // value in code is not taken for the person choosing it.
+    private bool filling;
+
+    private sealed record Choice<T>(T Value, string Name);
+
+    /// <summary>
+    /// Fills both pickers in the current language. Called again after a
+    /// language change: the theme names are words too, and a list of them left
+    /// in the old language is the one corner of the window that did not switch.
+    /// </summary>
+    private void FillPickers()
+    {
+        filling = true;
+
+        try
+        {
+            // Each language in its own name, so somebody who cannot read the
+            // current one can still find theirs.
+            var languages = new List<Choice<string>> { new("pl", "Polski"), new("en", "English") };
+            LanguagePicker.ItemsSource = languages;
+            LanguagePicker.SelectedItem = languages.First(choice => choice.Value == Strings.Current.Language);
+
+            var strings = Strings.Current;
+            var themes = new List<Choice<ThemeChoice>>
+            {
+                new(ThemeChoice.System, strings["Tray.ThemeSystem"]),
+                new(ThemeChoice.Light, strings["Tray.ThemeLight"]),
+                new(ThemeChoice.Dark, strings["Tray.ThemeDark"]),
+            };
+            ThemePicker.ItemsSource = themes;
+            ThemePicker.SelectedItem = themes.First(choice => choice.Value == Theme.Choice);
+        }
+        finally
+        {
+            filling = false;
+        }
+    }
+
+    private async void Language_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (filling || LanguagePicker.SelectedItem is not Choice<string> choice)
+        {
+            return;
+        }
+
+        Strings.Current.Use(choice.Value);
+        FillPickers();
+
+        // Bound labels follow by themselves; the rows and headings were built
+        // in code from the old language and have to be built again.
+        await LoadAsync();
+    }
+
+    private async void Theme_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (filling || ThemePicker.SelectedItem is not Choice<ThemeChoice> choice)
+        {
+            return;
+        }
+
+        Theme.Apply(choice.Value);
+
+        // The badges hold brushes resolved when the row was made.
+        await LoadAsync();
     }
 
     private TokenView? Selected => DeviceList.SelectedIndex >= 0
