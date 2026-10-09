@@ -30,6 +30,7 @@ namespace Blinky.Agent.Service;
 public sealed class AgentRequestServer(
     ICardSlots cards,
     PukUnblock unblock,
+    BackendClient backend,
     AgentOptions options,
     ILogger<AgentRequestServer> logger) : BackgroundService
 {
@@ -116,6 +117,14 @@ public sealed class AgentRequestServer(
                     await cards.DeleteCertificateAsync(token, request.SlotId,
                         alsoTheKey: true, ct),
 
+                // Neither touches the card: a request is a row on the server,
+                // and an operator decides it.
+                AgentRequest.RequestPasskey when request.TokenSerial is { } token =>
+                    await backend.RequestPasskeyAsync(token, ct),
+
+                AgentRequest.GetPasskeyRequest when request.TokenSerial is { } token =>
+                    await backend.GetPasskeyRequestAsync(token, ct),
+
                 AgentRequest.GetPinPolicy =>
                     new AgentResponse(true, PinComplexityPolicy: options.PinPolicy),
 
@@ -145,7 +154,8 @@ public sealed class AgentRequestServer(
                         options.PinPolicy, ct),
 
                 AgentRequest.ChangePin or AgentRequest.UnblockPin
-                    or AgentRequest.UnblockOffline or AgentRequest.OfflineChallenge =>
+                    or AgentRequest.UnblockOffline or AgentRequest.OfflineChallenge
+                    or AgentRequest.RequestPasskey or AgentRequest.GetPasskeyRequest =>
                     AgentResponse.Failed("That request has to name a token."),
 
                 _ => AgentResponse.Failed($"This agent does not know the request {request.Op}."),

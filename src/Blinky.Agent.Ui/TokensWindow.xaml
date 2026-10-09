@@ -302,6 +302,22 @@
                         </DockPanel>
                     </Button>
 
+                    <!-- A request to an operator, not a passkey (0109). The
+                         console decides the provider and the PIN rules, and
+                         only then does the ceremony start - at this
+                         workstation, through the same prompts as any other. -->
+                    <Button x:Name="PasskeyButton" Style="{StaticResource Action}" Click="Passkey_Click">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="&#xE77B;" FontFamily="{StaticResource Icons}" FontSize="16"
+                                       Foreground="{DynamicResource AccentText}" Margin="0,1,12,0" VerticalAlignment="Top" />
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="{Binding Path=[Passkey.Request], Source={x:Static local:Strings.Current}}" />
+                                <TextBlock x:Name="PasskeyStateText" Style="{StaticResource Hint}" Margin="0,3,0,0" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Button>
+
                     <!-- No management key here, deliberately. It is an operator's
                          secret, and nothing in this window can change it: the
                          person at the keyboard would be shown a warning they

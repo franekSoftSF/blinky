@@ -439,3 +439,27 @@ public sealed class ConnectorRegistrationMapping : ClassMapping<ConnectorRegistr
         Property(x => x.RevokedBy, m => m.Column("revoked_by"));
     }
 }
+
+/// <summary>
+/// A workstation's request for a passkey (0109). No column for a PIN, a
+/// provider or a login: those are the operator's to choose on approval, and the
+/// request names only the key and its holder.
+/// </summary>
+public sealed class PasskeyRequestMapping : ClassMapping<PasskeyRequest>
+{
+    public PasskeyRequestMapping()
+    {
+        Table("passkey_requests");
+        Id(x => x.Id, m => { m.Column("id"); m.Generator(Generators.GuidComb); });
+        Property(x => x.TokenSerial, m => { m.Column("token_serial"); m.NotNullable(true); });
+        ManyToOne(x => x.Cardholder, m => { m.Column("cardholder_id"); m.NotNullable(true); });
+        Property(x => x.AgentId, m => { m.Column("agent_id"); m.NotNullable(true); });
+        Property(x => x.State, m => Conventions.AsEnumString<PasskeyRequestState>(m, "state"));
+        Property(x => x.JobId, m => m.Column("job_id"));
+        Property(x => x.DecidedBy, m => m.Column("decided_by"));
+        Property(x => x.RejectionReason, m => m.Column(c => { c.Name("rejection_reason"); c.SqlType("text"); }));
+        Property(x => x.DecidedAt, m => Conventions.AsTimestamp(m, "decided_at", notNull: false));
+        Property(x => x.CreatedAt, m => Conventions.AsTimestamp(m, "created_at"));
+        Property(x => x.UpdatedAt, m => Conventions.AsTimestamp(m, "updated_at"));
+    }
+}

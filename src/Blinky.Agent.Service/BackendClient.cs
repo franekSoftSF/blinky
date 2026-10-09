@@ -245,6 +245,54 @@ public sealed partial class BackendClient : IDisposable
     }
 
     /// <summary>
+    /// Asks an operator for a passkey on this token (0109), or reads the latest
+    /// such request back.
+    /// </summary>
+    /// <remarks>
+    /// Answers in the tray's terms rather than null-or-value: the reason the API
+    /// gives for a refusal - this key is issued to nobody, Blinky does not know
+    /// it - is what the person at the keyboard needs to read, and dropping it
+    /// for a generic failure would leave them asking the help desk the
+    /// question the server already answered.
+    /// </remarks>
+    public Task<AgentResponse> RequestPasskeyAsync(long serial, CancellationToken ct) =>
+        PasskeyRequestCallAsync(client => client.PostAsync($"/api/tokens/{serial}/passkey-request", content: null, ct), ct);
+
+    public Task<AgentResponse> GetPasskeyRequestAsync(long serial, CancellationToken ct) =>
+        PasskeyRequestCallAsync(client => client.GetAsync($"/api/tokens/{serial}/passkey-request", ct), ct);
+
+    private async Task<AgentResponse> PasskeyRequestCallAsync(
+        Func<HttpClient, Task<HttpResponseMessage>> call, CancellationToken ct)
+    {
+        try
+        {
+            var response = await call(Authenticated());
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                return new AgentResponse(true);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                return new AgentResponse(true,
+                    PasskeyRequest: await response.Content.ReadFromJsonAsync<PasskeyRequestView>(ct));
+            }
+
+            var refusal = await response.Content.ReadFromJsonAsync<ApiRefusal>(ct);
+
+            return AgentResponse.Failed(refusal?.Error ?? $"The server refused ({(int)response.StatusCode}).");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException
+                                      or InvalidOperationException or System.Text.Json.JsonException)
+        {
+            return AgentResponse.Failed("The Blinky server could not be reached.");
+        }
+    }
+
+    private sealed record ApiRefusal(string? Error, string? Code);
+
+    /// <summary>
     /// Asks for the PUK this token holds and the one to replace it with.
     /// </summary>
     /// <returns>Null when the backend refused or could not be reached.</returns>

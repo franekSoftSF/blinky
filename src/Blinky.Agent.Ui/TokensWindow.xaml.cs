@@ -143,6 +143,7 @@ public partial class TokensWindow : Window
 
         Strings.Current.Use(choice.Value);
         FillPickers();
+        passkeyShownFor = null;
 
         // Bound labels follow by themselves; the rows and headings were built
         // in code from the old language and have to be built again.
@@ -296,6 +297,78 @@ public partial class TokensWindow : Window
         ShowDefaults(token);
         ShowManagement(token);
         ShowBiometrics(token);
+
+        // Asked of the server once per token shown, not on every four-second
+        // sweep: the sweep reads the card, this reads the API, and one open
+        // window polling the API is how 0101 found the console flooding it.
+        if (passkeyShownFor != token.Serial)
+        {
+            passkeyShownFor = token.Serial;
+            _ = ShowPasskeyAsync(token.Serial, AgentRequest.GetPasskeyRequest);
+        }
+    }
+
+    private long? passkeyShownFor;
+
+    /// <summary>
+    /// The passkey request for this token, in words, and whether asking makes
+    /// sense: not while one is waiting, which would be a second row for the
+    /// same question.
+    /// </summary>
+    private async Task ShowPasskeyAsync(long serial, string op)
+    {
+        var strings = Strings.Current;
+
+        PasskeyButton.IsEnabled = false;
+        PasskeyStateText.Text = strings["Passkey.Checking"];
+
+        var response = await client.SendAsync(new AgentRequest(op, serial));
+
+        // The selection may have moved while the server answered.
+        if (Selected?.Serial != serial)
+        {
+            return;
+        }
+
+        if (!response.Succeeded)
+        {
+            PasskeyButton.IsEnabled = true;
+            PasskeyStateText.Text = strings["Passkey.Hint"];
+
+            if (op == AgentRequest.RequestPasskey)
+            {
+                NoticeWindow.Show(response.Error ?? strings["Error.NoService"], NoticeKind.Warning);
+            }
+
+            return;
+        }
+
+        var request = response.PasskeyRequest;
+
+        PasskeyButton.IsEnabled = request?.State != PasskeyRequestView.Pending;
+        PasskeyStateText.Text = request?.State switch
+        {
+            PasskeyRequestView.Pending => string.Format(CultureInfo.CurrentCulture,
+                strings["Passkey.Pending"], request.CreatedAt.ToLocalTime()),
+            PasskeyRequestView.Approved => strings["Passkey.Approved"],
+            PasskeyRequestView.Rejected => string.Format(CultureInfo.CurrentCulture,
+                strings["Passkey.Rejected"], request.RejectionReason),
+            null => strings["Passkey.Hint"],
+            var other => other,
+        };
+
+        if (op == AgentRequest.RequestPasskey && request is not null)
+        {
+            NoticeWindow.Show(strings["Passkey.Sent"], NoticeKind.Success);
+        }
+    }
+
+    private async void Passkey_Click(object sender, RoutedEventArgs e)
+    {
+        if (Selected is { } token)
+        {
+            await ShowPasskeyAsync(token.Serial, AgentRequest.RequestPasskey);
+        }
     }
 
     /// <summary>
@@ -387,7 +460,12 @@ public partial class TokensWindow : Window
         ? string.Format(CultureInfo.CurrentCulture, Strings.Current["Pin.AttemptsLeft"], left)
         : Strings.Current["Manage.Unknown"];
 
-    private async void Refresh_Click(object sender, RoutedEventArgs e) => await LoadAsync();
+    private async void Refresh_Click(object sender, RoutedEventArgs e)
+    {
+        // The button is how somebody checks whether the operator has answered.
+        passkeyShownFor = null;
+        await LoadAsync();
+    }
 
     private async void Export_Click(object sender, RoutedEventArgs e)
     {

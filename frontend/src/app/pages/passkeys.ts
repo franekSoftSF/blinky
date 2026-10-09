@@ -40,6 +40,17 @@ interface Listing {
   providerStatus: string | null;
 }
 
+/** A workstation's request (0109): the holder comes from the token, not from the workstation. */
+interface PasskeyRequestRow {
+  id: string;
+  tokenSerial: number;
+  holder: string;
+  upn: string | null;
+  workstation: string | null;
+  state: string;
+  createdAt: string;
+}
+
 interface Status {
   id: string;
   directory: string;
@@ -89,6 +100,41 @@ const FINAL = ['Registered', 'Failed', 'Revoked'];
         <p>{{ i18n.t('pkLede') }}</p>
       </div>
     </section>
+
+    @if (requests().length > 0) {
+      <article class="panel setting-section">
+        <header>
+          <div class="section-number">✉</div>
+          <div>
+            <h2>{{ i18n.t('pkRequests') }}</h2>
+            <p>{{ i18n.t('pkRequestsLede') }}</p>
+          </div>
+        </header>
+        <div class="setting-body">
+          <ul class="pk-requests">
+            @for (r of requests(); track r.id) {
+              <li>
+                <div>
+                  <strong>{{ r.holder }}</strong>
+                  @if (r.upn) { <span class="mono"> {{ r.upn }}</span> }
+                  <span class="block mono">
+                    {{ r.tokenSerial }} · {{ i18n.t('pkRequestFrom') }} {{ r.workstation || '?' }} ·
+                    {{ r.createdAt | date: 'short' }}
+                  </span>
+                </div>
+                <div class="pk-request-actions">
+                  <button type="button" (click)="reject(r)" [disabled]="busy()">{{ i18n.t('pkReject') }}</button>
+                  <button type="button" class="primary" (click)="approve(r)" [disabled]="busy() || !directory()"
+                          [title]="directory() ? '' : i18n.t('pkNeedProvider')">
+                    {{ i18n.t('pkApprove') }}
+                  </button>
+                </div>
+              </li>
+            }
+          </ul>
+        </div>
+      </article>
+    }
 
     <article class="panel setting-section">
       <header>
@@ -342,6 +388,27 @@ const FINAL = ['Registered', 'Failed', 'Revoked'];
   `,
   styles: [
     `
+      .pk-requests {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .pk-requests li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border: 1px solid var(--bl-border);
+        border-radius: 8px;
+      }
+      .pk-request-actions {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+      }
       .pk-reason {
         margin: 0 1.2rem 1rem;
         color: var(--bl-text-muted);
@@ -453,6 +520,7 @@ export class Passkeys implements OnDestroy {
   protected readonly appendSerial = signal(true);
 
   protected readonly status = signal<Status | null>(null);
+  protected readonly requests = signal<PasskeyRequestRow[]>([]);
 
   protected readonly cardSerial = signal('');
   protected readonly cardIssued = signal(false);
@@ -476,6 +544,7 @@ export class Passkeys implements OnDestroy {
 
   constructor() {
     void this.loadDirectories();
+    void this.loadRequests();
 
     if (this.console.snapshot().agents.length === 0) {
       void this.console.load();
@@ -610,6 +679,65 @@ export class Passkeys implements OnDestroy {
       this.error.set(describe(error, this.i18n.t('operationFailed')));
     } finally {
       this.busy.set(false);
+    }
+  }
+
+  /**
+   * Says yes with what this page already holds: the provider from section 1 and
+   * the PIN settings from section 3. The job goes to the workstation that asked,
+   * for the key it asked about - the API takes both from the request, not from
+   * here.
+   */
+  protected async approve(request: PasskeyRequestRow): Promise<void> {
+    this.busy.set(true);
+    this.error.set(null);
+
+    try {
+      const minPin = Number.parseInt(this.minPin().trim(), 10);
+      const made = await firstValueFrom(this.http.post<{ passkey: string }>(
+        `/api/passkeys/requests/${request.id}/approve`, {
+          directory: this.directory(),
+          pinMode: this.pinMode(),
+          minPinLength: Number.isFinite(minPin) ? minPin : 6,
+          forceChangePin: this.forceChange(),
+          keyName: this.keyName().trim() || null,
+          appendSerial: this.appendSerial(),
+        }));
+
+      await this.loadRequests();
+      await this.follow(made.passkey);
+    } catch (error) {
+      this.error.set(describe(error, this.i18n.t('operationFailed')));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  protected async reject(request: PasskeyRequestRow): Promise<void> {
+    const reason = window.prompt(this.i18n.t('pkRejectReason'), this.i18n.t('pkRejectDefault'));
+    if (!reason?.trim()) return;
+
+    this.busy.set(true);
+    this.error.set(null);
+
+    try {
+      await firstValueFrom(this.http.post(`/api/passkeys/requests/${request.id}/reject`, { reason: reason.trim() }));
+      await this.loadRequests();
+    } catch (error) {
+      this.error.set(describe(error, this.i18n.t('operationFailed')));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  /** Once when the page opens: a request waits for a person, not for a poll. */
+  private async loadRequests(): Promise<void> {
+    try {
+      this.requests.set(await firstValueFrom(this.http.get<PasskeyRequestRow[]>(
+        '/api/passkeys/requests', { params: { state: 'Pending' } })));
+    } catch {
+      // The rest of the page works without them; an error here would sit over
+      // the provider list for a reason unrelated to it.
     }
   }
 

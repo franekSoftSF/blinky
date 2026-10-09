@@ -83,6 +83,20 @@ public sealed record AgentRequest(
 
     /// <summary>The rules a new PIN has to satisfy on this deployment.</summary>
     public const string GetPinPolicy = "GetPinPolicy";
+
+    /// <summary>
+    /// Ask an operator for a passkey on this token (0109).
+    /// </summary>
+    /// <remarks>
+    /// A request, not the ceremony. Work is created by an operator and never by
+    /// an agent, so this asks and the console decides: the provider, the PIN
+    /// rules and whether it happens at all are the operator's. Asking twice
+    /// while one is pending returns the one already there.
+    /// </remarks>
+    public const string RequestPasskey = "RequestPasskey";
+
+    /// <summary>The latest passkey request for this token, if there is one.</summary>
+    public const string GetPasskeyRequest = "GetPasskeyRequest";
 }
 
 /// <summary>
@@ -119,7 +133,10 @@ public sealed record AgentResponse(
     string? Challenge = null,
 
     /// <summary>One slot's certificate, PEM encoded.</summary>
-    string? CertificatePem = null)
+    string? CertificatePem = null,
+
+    /// <summary>A passkey request, for the two requests about one.</summary>
+    PasskeyRequestView? PasskeyRequest = null)
 {
     public static AgentResponse Failed(string error, int? attemptsRemaining = null) =>
         new(false, error, AttemptsRemaining: attemptsRemaining);

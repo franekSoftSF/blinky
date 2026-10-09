@@ -40,6 +40,7 @@ builder.Services.AddSingleton(services =>
 builder.Services.AddSingleton<Blinky.Api.Passkeys.IPasskeyStore, Blinky.Api.Passkeys.PasskeyStore>();
 builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyProvisioningService>();
 builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyJobs>();
+builder.Services.AddSingleton<Blinky.Api.Passkeys.PasskeyRequests>();
 
 // The certificate authorities: rows, built on demand and rebuilt when the console
 // changes one (0108). Until then one value in .env chose one CA for the life of the
@@ -1094,6 +1095,77 @@ app.MapPost("/api/passkeys/{id:guid}/revoke",
 
             var revoked = await passkeys.RevokeAsync(id, request.Reason, ActorFor(context), ct);
             return Results.Ok(new { id, state = revoked.State.ToString(), revoked.RevokedAt });
+        }));
+
+// A workstation asking for a passkey on the key in its reader (0109). Asking, not
+// doing: the row waits for an operator, and only an operator's approval makes a
+// job. Any agent may ask about any token, as with /credentials above - holding
+// the key is what it takes to ask, and the console sees which machine did.
+app.MapPost("/api/tokens/{serial:long}/passkey-request",
+    (long serial, HttpContext context, Blinky.Api.Passkeys.PasskeyRequests requests) =>
+        Passkey(() => Task.FromResult(Results.Ok(
+            requests.Ask(((Agent)context.Items["agent"]!).Id, serial)))));
+
+app.MapGet("/api/tokens/{serial:long}/passkey-request",
+    (long serial, HttpContext context, Blinky.Api.Passkeys.PasskeyRequests requests) =>
+    {
+        _ = (Agent)context.Items["agent"]!;
+
+        return requests.Latest(serial) is { } latest ? Results.Ok(latest) : Results.NoContent();
+    });
+
+app.MapGet("/api/passkeys/requests",
+    (string? state, HttpContext context, Blinky.Api.Passkeys.PasskeyRequests requests) =>
+    {
+        if (!IsOperator(context))
+        {
+            return Results.Json(new { error = "an operator token is required" }, statusCode: 401);
+        }
+
+        if (state is not null && !Enum.TryParse<Blinky.Domain.PasskeyRequestState>(state, true, out _))
+        {
+            return Results.Json(new { error = "state is Pending, Approved or Rejected" }, statusCode: 400);
+        }
+
+        return Results.Ok(requests.List(state is null
+            ? null
+            : Enum.Parse<Blinky.Domain.PasskeyRequestState>(state, true)));
+    });
+
+app.MapPost("/api/passkeys/requests/{id:guid}/approve",
+    (Guid id, Blinky.Api.Passkeys.PasskeyRequestApproval approval, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyRequests requests, CancellationToken ct) =>
+        Passkey(async () =>
+        {
+            if (!IsOperator(context))
+            {
+                return Results.Json(new { error = "an operator token is required" }, statusCode: 401);
+            }
+
+            var made = await requests.ApproveAsync(id, approval, ActorFor(context), ct);
+
+            return Results.Ok(new
+            {
+                id,
+                job = made.Job.Id,
+                made.Created,
+                passkey = made.Passkey.Id,
+                user = new { made.User.Id, made.User.Login, made.User.DisplayName },
+            });
+        }));
+
+app.MapPost("/api/passkeys/requests/{id:guid}/reject",
+    (Guid id, PasskeyRevokeRequest request, HttpContext context,
+        Blinky.Api.Passkeys.PasskeyRequests requests) =>
+        Passkey(() =>
+        {
+            if (!IsOperator(context))
+            {
+                return Task.FromResult(Results.Json(new { error = "an operator token is required" }, statusCode: 401));
+            }
+
+            requests.Reject(id, request.Reason, ActorFor(context));
+            return Task.FromResult(Results.Ok(new { id, state = "Rejected" }));
         }));
 
 // An agent asking for a certificate. The attestation is verified here, against

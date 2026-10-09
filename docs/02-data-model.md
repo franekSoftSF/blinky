@@ -188,6 +188,28 @@ Configuration, so full CRUD in the console (0107) - with two limits that come
 from `PasskeyCredential` naming its provider by `name`: the name and kind do not
 change, and a provider with registered passkeys is disabled rather than deleted.
 
+### `PasskeyRequest`
+
+A workstation asking for a passkey on the key in its reader (0109). History,
+like `PasskeyCredential`: created, then approved or rejected, never edited and
+never deleted. A rejected request asked again is a new row.
+
+```
+id                uuid
+token_serial      bigint
+cardholder_id     uuid FK          -- the token's holder when it was asked
+agent_id          uuid             -- the workstation that asked; the job goes to it
+state             text             -- Pending | Approved | Rejected
+job_id            uuid NULL        -- set on approval
+decided_by        text NULL
+rejection_reason  text NULL        -- shown at the workstation
+decided_at        timestamptz NULL
+created_at, updated_at timestamptz
+```
+
+No provider, login or PIN setting: those are the operator's to choose on
+approval, which goes through the same `PasskeyJobs` as the operator's own form.
+
 ## Four state machines
 
 Keeping them separate is deliberate. A token can be perfectly healthy while a

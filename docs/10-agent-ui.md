@@ -152,6 +152,21 @@ self-service, which is either the point or the hole, depending on whose fleet
 it is. The default is operator-approved, because that is the choice that can be
 loosened later without a migration.
 
+## Asking for a passkey
+
+The tray can ask; it cannot start (0109). *Poproś o passkey* sends a request
+for the key in the reader, and the holder comes from the token as the console
+recorded it - nothing on this side knows who is signed in, and a name typed
+into a tray is a claim anybody at that keyboard could make. An operator approves
+it in the console, choosing the provider and the PIN rules, and only then is
+there a job; it goes to the workstation that asked, and the ceremony runs there
+through the ordinary FIDO2 prompts. A refusal carries a reason, and the tray
+shows it.
+
+The same choice as for unblocking, and for the same reason: operator-approved is
+the default that can be loosened later without a migration. Asking twice while a
+request waits returns the one already there.
+
 ## Unblocking with no network
 
 The workstation is offline. The person answering the telephone is not.

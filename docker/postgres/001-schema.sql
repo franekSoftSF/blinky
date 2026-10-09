@@ -302,6 +302,21 @@ create table connector_registrations (
        primary key (id)
     );
 
+create table passkey_requests (
+        id uuid not null,
+       token_serial int8 not null,
+       cardholder_id uuid not null,
+       agent_id uuid not null,
+       state text not null,
+       job_id uuid,
+       decided_by varchar(255),
+       rejection_reason text,
+       decided_at timestamptz,
+       created_at timestamptz not null,
+       updated_at timestamptz not null,
+       primary key (id)
+    );
+
 alter table tokens 
         add constraint FK_899BCD5E 
         foreign key (cardholder_id) 
@@ -351,4 +366,9 @@ alter table secret_envelopes
         add constraint FK_B6AC9663 
         foreign key (token_id) 
         references tokens;
+
+alter table passkey_requests 
+        add constraint FK_29B585A8 
+        foreign key (cardholder_id) 
+        references cardholders;
 

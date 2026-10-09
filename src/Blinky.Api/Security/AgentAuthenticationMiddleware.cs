@@ -78,6 +78,12 @@ public sealed class AgentAuthenticationMiddleware(RequestDelegate next, ILogger<
         "/api/passkeys/{id:guid}",
         "/api/passkeys/{id:guid}/revoke",
 
+        // A workstation's request is the agent's to make; deciding it is the
+        // console's (0109).
+        "/api/passkeys/requests",
+        "/api/passkeys/requests/{id:guid}/approve",
+        "/api/passkeys/requests/{id:guid}/reject",
+
         // Both reached from a console, never from an agent: the machine whose
         // token is being rescued is the one that cannot call anybody.
         "/api/tokens/offline-unblock",
