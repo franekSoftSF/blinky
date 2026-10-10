@@ -293,6 +293,168 @@ audit record rather than a cryptographic fact. That is weaker, it is probably
 acceptable, and it is exactly the kind of thing that must be decided on purpose
 rather than discovered in an audit.
 
+## Issuance the person can follow, and the four ways it starts
+
+Added on 10 October 2026, from the owner, after the first cards issued from the
+console reached PC-0001. Nothing here is built.
+
+**What was wrong.** A card issued from the console reaches the workstation as a
+job, and the person there sees a small window ask for a PIN, then another ask
+for a touch, with nothing saying what is happening, for whom, who started it or
+how far along it is. That is the window-nobody-asked-for of the opening section,
+seen on real hardware. It disorients, and it trains people to type a PIN into
+whatever asks.
+
+**Two rules come out of it, and every mode below obeys both.**
+
+1. **No prompt appears on its own.** During a job, every request for a PIN, a
+   touch or a finger is shown *inside* an issuance window that says what the
+   job is, for whom, started by whom, with the steps listed and the current one
+   marked. The window comes up when the job starts and stays until it ends.
+2. **Each step tells the person what to do, not what the card is doing.**
+   "Touch the gold contact on the key" rather than "waiting for touch";
+   "choose a PIN you will type every time you sign in" rather than "ChoosePin".
+
+**And one record.** Every job and every credential says which mode produced
+it, who asked, and - where a person other than the cardholder drove it - who
+that was. An `IssuanceMode` on the job and the credential, and the audit event
+naming both people. Without it, "issued face to face by helpdesk1" and "asked
+for by the user" are the same row.
+
+### 0084a — The issuance window: steps, progress, instructions
+
+Built in the current WPF agent, not after the Tauri app: it is the fix for
+what PC-0001 showed, and the service-side half moves to 0080's local API
+unchanged.
+
+*Server / API*
+- The job envelope carries an additive `JobContext`: the operation (PIV
+  enrolment, passkey, renewal, unblock), the cardholder's display name and UPN,
+  the operator who created it, the profile name and the mode. Additive, so
+  `Protocol.SchemaVersion` does not move.
+- The step names the agent already reports (`AuthenticateManagementKey`,
+  `GenerateKey`, `Attest`, `BuildAndSignCsr`, `SubmitToCa`, `WriteCertificate`,
+  `PersonaliseCard`, `ChoosePin`, `VerifyUser`) become a published list per job
+  type in `Blinky.Contracts`, so the console's job view and the agent's window
+  show the same steps in the same order.
+
+*Client*
+- The service sends `JobStarted`, `JobStep` and `JobEnded` over the prompt
+  pipe (new, additive message types) with the context and the step list.
+- An issuance window: header with what and for whom, the step list with done,
+  current and to-do marks, a progress bar, and an instruction panel for the
+  current step. PIN, touch and fingerprint requests render in that panel; the
+  standalone prompt window is used only outside a job (sign-in PINs).
+- The end is a summary - what is now on the key, valid until when, and the
+  one thing to do next (sign out and back in with the card) - or, on failure,
+  the step that failed and the sentence the service gave, never a stack trace.
+- Instructions as strings in `Strings`, Polish and English, one per step and
+  per prompt type; an icon per step.
+
+*Done when* an enrolment issued from the console to PC-0001 shows one window
+from start to end, with every PIN and touch inside it, and the job view in the
+console lists the same steps.
+
+### 0083 — signing in at the workstation (existing patch, one decision added)
+
+Unchanged in intent; the user identity it produces is what the three modes
+below lean on. The decision it now needs: the API runs in a Linux container
+with **no domain credential** since 0104, and accepting a SPNEGO ticket needs a
+key for `HTTP/<server>`. Either a keytab for the API (simple; a domain secret on
+the Linux host again), or the ticket verified by the ADCS connector, which is a
+domain member already (no secret on Linux; one more route on the connector
+channel). Not decided.
+
+### 0085a — Face to face: the operator signs in at the workstation
+
+The cardholder is in front of the help desk with the key; the operator runs the
+issuance on the machine in front of them, and the cardholder types their own
+PIN.
+
+*Server / API*
+- An operator session obtained **through the agent**: the agent's mTLS
+  identity plus the operator's own sign-in (Kerberos with an operator role from
+  0083, or the console's password and TOTP from 0086). Short-lived, bound to
+  that agent, revoked on sign-out or when the window closes.
+- With that session: directory search and profile list (the console's routes,
+  scoped), and job creation with `IssuanceMode.FaceToFace`, the operator as
+  requester and this agent as target. The rule in [05](05-agent-protocol.md)
+  that a job for X runs only if the signed-in user is X is overridden here **on
+  purpose and on the record**: the operator's identity is the authority, and
+  the audit event says so.
+
+*Client*
+- "Operator mode" on the app's sign-in screen; after sign-in, find the
+  cardholder, choose the profile, insert the key, start.
+- The 0084a window, with a **hand-over step**: "Give the keyboard to
+  <name> to choose a PIN" - the operator does not type it, and the window
+  says so.
+- Signs the operator out when the job ends, so the next person at the desk is
+  not acting as them.
+
+*Done when* an operator signs in at a workstation, issues a card to a
+cardholder present there, the cardholder sets the PIN, and the credential and
+audit name both.
+
+### 0085b — Prepared by an operator, completed by the user
+
+The operator readies the key (in the console or face to face); the cardholder
+finishes the issuance alone, later, at their own machine.
+
+*Server / API*
+- A **prepare** job: reset if needed, management key, PUK into escrow,
+  attestation checked, token assigned to the cardholder (`Assigned`), no key
+  and no certificate yet.
+- An `IssuanceAuthorisation`: operator, cardholder, token serial, profile,
+  valid until, state (`Pending`, `Used`, `Expired`, `Withdrawn`). It records a
+  decision, so create-and-transition with withdrawal, never delete.
+- A **complete** route the agent calls for a signed-in user: allowed only if
+  an authorisation is pending for that token and the user identity from 0083
+  resolves to its cardholder. It creates the enrolment job
+  (`IssuanceMode.PreparedThenUser`) and marks the authorisation used.
+
+*Client*
+- On sign-in, "Your key is ready to activate" when the key in the reader has a
+  pending authorisation; the user starts it.
+- The 0084a window, with the user choosing their PIN (the factory or transport
+  PIN replaced) and touching the key for generation and attestation.
+
+*Done when* a key prepared by an operator is activated by its holder alone,
+and an authorisation that expired or belongs to someone else is refused at the
+server with a reason the window shows.
+
+### 0084b — Self-service: the user brings a key, an administrator approves
+
+The user plugs in a key Blinky does not know or has not assigned; the app reads
+the serial and offers to ask for it to be issued.
+
+*Server / API*
+- An `IssuanceRequest` from the agent: serial, attestation (the key proves
+  what it is before anybody approves it), the signed-in user from 0083, the
+  agent. Same shape as 0109's passkey request - asking, never doing - and
+  worth folding the two into one request model with a kind rather than keeping
+  two.
+- In the console: the request list, approve with a profile (cardholder taken
+  from the request's user identity, not typed) or reject with a reason.
+  Approval creates an `IssuanceAuthorisation`, and from there it is 0085b's
+  completion - the user finishes at the same machine.
+
+*Client*
+- "Request this key" for an unassigned key, showing the serial and model the
+  request will carry; then the request's state, and the activation of 0085b
+  when it is approved.
+
+*Done when* a new key plugged in by a user becomes their card after one
+approval in the console, without an operator touching the workstation.
+
+### Order, and what depends on what
+
+0084a first and alone - it needs nothing else and fixes what was seen. Then
+0083, because 0085b, 0084b and the Kerberos half of 0085a need a user identity
+the server trusts. 0085a needs an operator identity at the workstation, which
+is 0083 with an operator role or 0086. The request model of 0084b should absorb
+0109's before a second request table exists.
+
 ## Every new model gets full CRUD
 
 Adopted, with one exception that has to be part of the rule rather than an

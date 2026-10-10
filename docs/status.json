@@ -18,7 +18,7 @@
     ]
   },
   "status": {
-    "updated": "2026-10-09",
+    "updated": "2026-10-10",
     "phase": 2,
     "phaseTitle": "Issue something",
     "state": "gate-met",
@@ -1262,12 +1262,44 @@
       "gap": "No window appears that nobody asked for. The ceremony is reachable only from an application already in front of somebody and waits as long as the person needs. 0049 folds in here."
     },
     {
+      "id": "0084a",
+      "phase": 8,
+      "title": "The issuance window: steps, progress, instructions",
+      "state": "open",
+      "owner": "both",
+      "gap": "Nothing built. Needs no other patch; the fix for prompts appearing alone during a console-issued enrolment on PC-0001 (2026-10-09)"
+    },
+    {
+      "id": "0084b",
+      "phase": 8,
+      "title": "Self-service: the user brings a key, an administrator approves",
+      "state": "open",
+      "owner": "both",
+      "gap": "Nothing built. Needs 0083 for the user identity; should absorb 0109's request model rather than add a second table"
+    },
+    {
       "id": "0085",
       "phase": 8,
       "title": "The same ceremony, driven by an operator",
       "state": "open",
       "owner": "both",
       "gap": "Needs 0023a underneath it, and inherits whatever 0086 decides about who an operator is."
+    },
+    {
+      "id": "0085a",
+      "phase": 8,
+      "title": "Face to face: the operator signs in at the workstation",
+      "state": "open",
+      "owner": "both",
+      "gap": "Nothing built. Needs an operator identity at the workstation: 0083 with an operator role, or 0086"
+    },
+    {
+      "id": "0085b",
+      "phase": 8,
+      "title": "Prepared by an operator, completed by the user",
+      "state": "open",
+      "owner": "both",
+      "gap": "Nothing built. Needs 0083; the prepare job is a split of CardEnrolment's PersonaliseCard from key generation"
     },
     {
       "id": "0086",

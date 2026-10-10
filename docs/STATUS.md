@@ -1,6 +1,6 @@
 # Project status — Blinky
 
-**Last updated:** 2026-10-09
+**Last updated:** 2026-10-10
 **Phase:** 2 — Issue something. **The gate is met**
 **Overall:** on 24 August 2026 a person logged into the lab domain with a card
 this system personalised and issued, against a Samba4 KDC, with no ADCS anywhere
@@ -585,7 +585,11 @@ certificate path becomes the upgrade rather than the front door.
 | 0082 | Codex | `Blinky.Workstation`: Angular in a Tauri v2 shell | **open** | HTTP in the Rust layer behind a Tauri command, never `fetch` from the WebView — a pinned certificate cannot be checked by the browser engine. The app reaches the backend only through the agent |
 | 0083 | Cloud.AI | Signing in at the workstation: Kerberos, or a password | **open** | Kerberos is already the design in [05](05-agent-protocol.md). The password is new, for a machine with no domain: verified at the backend and never by the agent, per-user salt, rate-limited and lockable |
 | 0084 | both | Enrolment the person started | **open** | No window appears that nobody asked for. 0049 folds in here |
+| 0084a | both | The issuance window: steps, progress, instructions | **open** | Nothing built. Needs no other patch; the fix for prompts appearing alone during a console-issued enrolment on PC-0001 (2026-10-09) |
+| 0084b | both | Self-service: the user brings a key, an administrator approves | **open** | Nothing built. Needs 0083 for the user identity; should absorb 0109's request model rather than add a second table |
 | 0085 | both | The same ceremony, driven by an operator | **open** | Needs 0023a underneath it |
+| 0085a | both | Face to face: the operator signs in at the workstation | **open** | Nothing built. Needs an operator identity at the workstation: 0083 with an operator role, or 0086 |
+| 0085b | both | Prepared by an operator, completed by the user | **open** | Nothing built. Needs 0083; the prepare job is a split of CardEnrolment's PersonaliseCard from key generation |
 | 0086 | Cloud.AI | The panel's way in: bootstrap superadmin, password and TOTP | **done** | Endpoints under `/api/auth`, and a bootstrap administrator seeded at start only when there are no accounts at all. It arrives owing both a real password and a second factor, because a password an installer generated lives in a file, a shell history and a support bundle. Every step re-presents the password rather than exchanging it for a half-finished ticket, so there is one kind of token in this system instead of two. A password change ends every session founded on the old one. **Proved end to end on BY-CACMS on 11 September 2026**, including the defect only that run could find: the endpoint answered `totp-enrolment-required` before looking at the code, so a secret could be handed out and never confirmed |
 | 0087 | Cloud.AI | TOTP, properly: enrolment, drift, recovery codes | **open** | A code accepted once inside its window and not again; a stated drift tolerance; recovery codes shown once and stored hashed |
 | 0088 | Cloud.AI | FIDO2 as an operator second factor | **open** | The CTAP2 work of 0070–0076 turned on ourselves. After Phase 7, and not built twice |
