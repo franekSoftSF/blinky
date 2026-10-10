@@ -1348,7 +1348,7 @@
       "state": "partly-done",
       "owner": "cloud-ai",
       "proof": "Blinky.Fido on Yubico.YubiKey 1.18.0: IFidoKey and its Yubico adapter read AAGUID, CTAP versions, FIDO2 PIN set and retries, discoverable slots left and CTAP 2.1 controls, and open a key by serial. Denied HID access is an error naming elevation, from the SDK's own exception seen on 2026-10-08.",
-      "gap": "Not in the inventory and not joined to the PC/SC token; no key has been read through it"
+      "gap": "Not in the inventory and not joined to the PC/SC token; FIDO2 attestation not verified (Yubico FIDO root, packed x5c) - a prerequisite of 0084b; no key has been read through it"
     },
     {
       "id": "0071",
