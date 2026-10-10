@@ -296,7 +296,8 @@ rather than discovered in an audit.
 ## Issuance the person can follow, and the four ways it starts
 
 Added on 10 October 2026, from the owner, after the first cards issued from the
-console reached PC-0001. Nothing here is built.
+console reached PC-0001. 0084a is built in the WPF agent (partly done: the
+console's job view does not show the steps yet); the other three are not.
 
 **What was wrong.** A card issued from the console reaches the workstation as a
 job, and the person there sees a small window ask for a PIN, then another ask

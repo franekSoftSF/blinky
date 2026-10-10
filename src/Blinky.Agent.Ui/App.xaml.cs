@@ -25,6 +25,7 @@ public partial class App : Application
     private readonly CancellationTokenSource stopping = new();
 
     private MainWindow? window;
+    private IssuanceWindow? issuance;
     private TokensWindow? tokens;
     private Tray? tray;
 
@@ -38,6 +39,7 @@ public partial class App : Application
         Theme.Apply(ThemeChoice.System);
 
         window = new MainWindow();
+        issuance = new IssuanceWindow();
 
         Trace($"started with {e.Args.Length} args: {string.Join(" ", e.Args)}");
 
@@ -55,7 +57,7 @@ public partial class App : Application
 
         Trace("waiting for the service on the pipe");
 
-        var client = new PromptClient(request => window.ShowPromptAsync(request));
+        var client = new PromptClient(Route);
 
         _ = client.RunAsync(stopping.Token);
 
@@ -77,6 +79,48 @@ public partial class App : Application
         };
 
         Trace("tray icon shown");
+    }
+
+    /// <summary>
+    /// Where each thing the service sends goes (0084a). While a job runs, every
+    /// prompt appears inside its issuance window; outside one - a PIN at sign-in -
+    /// in the small window, as before.
+    /// </summary>
+    private Task<PromptResponse> Route(PromptRequest request)
+    {
+        var told = Task.FromResult(PromptResponse.Cancel());
+
+        switch (request.Type)
+        {
+            case PromptRequest.JobStarted:
+                issuance!.Start(request);
+                return told;
+
+            case PromptRequest.JobStep:
+                issuance!.Step(request.Step ?? string.Empty);
+                return told;
+
+            case PromptRequest.JobEnded:
+                issuance!.End(request);
+                return told;
+
+            case PromptRequest.Dismiss:
+                if (issuance!.Active)
+                {
+                    issuance.Dismiss();
+                }
+                else
+                {
+                    window!.Dismiss();
+                }
+
+                return told;
+
+            default:
+                return issuance!.Active
+                    ? issuance.ShowPromptAsync(request)
+                    : window!.ShowPromptAsync(request);
+        }
     }
 
     /// <summary>

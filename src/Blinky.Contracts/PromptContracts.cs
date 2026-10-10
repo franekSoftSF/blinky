@@ -39,8 +39,26 @@ public sealed record PromptRequest(
     int? AttemptsRemaining = null,
     int? MinLength = null,
     int? MaxLength = null,
-    string? Applet = null)
+    string? Applet = null,
+    JobContext? Job = null,
+    IReadOnlyList<string>? Steps = null,
+    string? Step = null,
+    bool? Succeeded = null)
 {
+    /// <summary>
+    /// A job that needs the person has begun: open the issuance window with
+    /// its context and steps (0084a). Like <see cref="Dismiss"/>, nothing comes
+    /// back. Every prompt until <see cref="JobEnded"/> belongs inside that
+    /// window - no PIN request appears on its own while a job runs.
+    /// </summary>
+    public const string JobStarted = "JobStarted";
+
+    /// <summary>The job reached a step; <see cref="Step"/> names it.</summary>
+    public const string JobStep = "JobStep";
+
+    /// <summary>The job finished; <see cref="Succeeded"/> and the message say how.</summary>
+    public const string JobEnded = "JobEnded";
+
     /// <summary>
     /// Which PIN is asked for. Absent means PIV, as everything before this field
     /// did. FIDO2 changes the window's words, not its behaviour: there is nothing
@@ -103,6 +121,16 @@ public sealed record PromptRequest(
 
     public static PromptRequest ToDismiss() =>
         new(Dismiss, string.Empty, string.Empty);
+
+    public static PromptRequest ForJobStarted(long? serial, JobContext? job, IReadOnlyList<string> steps) =>
+        new(JobStarted, string.Empty, string.Empty, serial, Job: job, Steps: steps);
+
+    public static PromptRequest ForJobStep(string step) =>
+        new(JobStep, string.Empty, string.Empty, Step: step);
+
+    /// <param name="message">On failure, the step and the sentence the agent gave - never a stack.</param>
+    public static PromptRequest ForJobEnded(bool succeeded, string message, string? failedStep = null) =>
+        new(JobEnded, string.Empty, message, Step: failedStep, Succeeded: succeeded);
 }
 
 /// <summary>What the user did.</summary>

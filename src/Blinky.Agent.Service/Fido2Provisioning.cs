@@ -30,6 +30,8 @@ public sealed class Fido2Step(UserPrompts prompts, ILogger<Fido2Step> logger, Fu
     {
         var provisioning = Fido2Provisioning.FromStep(step);
 
+        await prompts.JobStepAsync(Fido2Steps.OpenKey, ct);
+
         using var key = openKey(job.TokenSerial);
         var serial = key.Info().Serial ?? 0;
 
@@ -133,10 +135,15 @@ public sealed class Fido2Step(UserPrompts prompts, ILogger<Fido2Step> logger, Fu
             await report(JobState.Running, "provisional FIDO2 PIN acknowledged");
         }
 
-        public Task TouchAsync(CancellationToken ct) =>
-            prompts.ShowTouchAsync(serial, $"Touch the key to create the passkey for {Holder}.", ct);
+        public async Task TouchAsync(CancellationToken ct)
+        {
+            await prompts.JobStepAsync(Fido2Steps.Touch, ct);
+            await prompts.ShowTouchAsync(serial, $"Touch the key to create the passkey for {Holder}.", ct);
+        }
 
         public Task StatusAsync(string message, CancellationToken ct) => Task.CompletedTask;
+
+        public Task StepAsync(string step, CancellationToken ct) => prompts.JobStepAsync(step, ct);
 
         private string Holder => string.IsNullOrWhiteSpace(holder) ? "the holder" : holder;
     }

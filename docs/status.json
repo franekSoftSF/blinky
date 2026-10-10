@@ -1265,9 +1265,10 @@
       "id": "0084a",
       "phase": 8,
       "title": "The issuance window: steps, progress, instructions",
-      "state": "open",
+      "state": "partly-done",
       "owner": "both",
-      "gap": "Nothing built. Needs no other patch; the fix for prompts appearing alone during a console-issued enrolment and passkey on PC-0001 (2026-10-09). Covers the passkey ceremony too: Fido2Step's StatusAsync is a no-op today"
+      "proof": "Built on 2026-10-10 in the WPF agent. Contracts: JobEnvelope.Context (JobContext: operation, holder, UPN, requesting operator, profile, provider, login), JobSteps.Enrolment and JobSteps.Passkey with Fido2Steps, and prompt types JobStarted, JobStep, JobEnded - all additive. API fills the context for enrolment and passkey jobs. Service: JobExecutor opens and closes the window around Enroll and ProvisionFido2Credential through IJobWindow, CardEnrolment's phases and the FIDO2 ceremony's steps (new IFido2Prompts.StepAsync) reach it; a notification waits five seconds at most and never fails a job. Tray: IssuanceWindow with the context, the step list with done, current and failed marks, a progress bar, the instruction for each step in Polish and English, the PIN, notice and fingerprint prompts inside it, and a summary or the failed step at the end; prompt logic moved into PromptPanel, shared with the small window. Found on the way: PromptClient dropped Dismiss before any window, so a touch prompt stayed up after the touch. IssuanceWindowTests (6); 886 tests pass; every state rendered off-screen in both themes.",
+      "gap": "The console's job view does not list the steps yet (that half of the DoD is open). Never run with a service and a card: no enrolment or passkey from the console has opened this window on PC-0001. The service's own prompt messages are English and appear as such inside the window on a Polish station."
     },
     {
       "id": "0084b",

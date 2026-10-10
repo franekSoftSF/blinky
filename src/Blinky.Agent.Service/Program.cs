@@ -96,7 +96,8 @@ builder.Services.AddSingleton(services => new JobExecutor(
     services.GetService<ICardEnrolment>(),
     services.GetService<ICardSlots>(),
     services.GetRequiredService<ILogger<JobExecutor>>(),
-    services.GetService<IFido2Step>()));
+    services.GetService<IFido2Step>(),
+    services.GetService<IJobWindow>()));
 
 // LocalSystem, session 0. It owns the reader and executes jobs; it cannot draw
 // a PIN prompt and cannot prove who is at the keyboard - that is Agent.Ui,
@@ -110,6 +111,9 @@ builder.Build().Run();
 static void AddWindowsOnlyServices(IServiceCollection services)
 {
     services.AddSingleton<UserPrompts>();
+    // On the pipe the prompts already use, so the window is told about a job
+    // the same way it is asked for a PIN.
+    services.AddSingleton<IJobWindow, PipeJobWindow>();
     services.AddSingleton<ICardEnrolment, CardEnrolment>();
     // Registered by interface only. A forwarding lambda would name the
     // Windows-only type in a body the platform analyser treats as reachable

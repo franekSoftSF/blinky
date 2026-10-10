@@ -249,8 +249,12 @@ the intent.
 ## The tray itself
 
 - Starts per user session at logon, one instance.
-- Shows the window on demand, and raises it when the service prompts — the
-  0018 path stays exactly as it is.
+- Shows the window on demand, and raises it when the service prompts. Outside
+  a job that is the small prompt window of 0018, unchanged; during an
+  enrolment or a passkey ceremony it is the issuance window of 0084a - what is
+  happening, for whom, started by which operator, the steps with the current
+  one marked, and the prompt inside it. A PIN request does not appear on its
+  own while a job runs.
 - The icon reflects reader state and nothing more interesting than that: token
   present, token absent, something expiring soon.
 - No card state cached between openings. Every view is a fresh read, because

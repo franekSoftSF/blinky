@@ -117,6 +117,39 @@ public sealed class UserPrompts(ILogger<UserPrompts> logger, TimeSpan timeout,
         }
     }
 
+    public Task JobStartedAsync(JobEnvelope job, IReadOnlyList<string> steps, CancellationToken ct) =>
+        NotifyAsync(PromptRequest.ForJobStarted(job.TokenSerial, job.Context, steps), ct);
+
+    public Task JobStepAsync(string step, CancellationToken ct) =>
+        NotifyAsync(PromptRequest.ForJobStep(step), ct);
+
+    public Task JobEndedAsync(bool succeeded, string message, string? failedStep, CancellationToken ct) =>
+        NotifyAsync(PromptRequest.ForJobEnded(succeeded, message, failedStep), ct);
+
+    /// <summary>
+    /// Sends something the window only needs to know, with a short wait of its
+    /// own. Waiting for a connection is otherwise open-ended, and a workstation
+    /// where nobody is signed in has no window to connect - an enrolment there
+    /// would hang on telling nobody which step it was on.
+    /// </summary>
+    private async Task NotifyAsync(PromptRequest request, CancellationToken ct)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(NotifyWait);
+
+        try
+        {
+            await using var pipe = await ConnectAsync(deadline.Token);
+            await SendAsync(pipe, request, deadline.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogDebug("The window was not told {Type}: {Message}", request.Type, ex.Message);
+        }
+    }
+
+    private static readonly TimeSpan NotifyWait = TimeSpan.FromSeconds(5);
+
     /// <summary>Takes the prompt off the screen once the card has answered.</summary>
     public async Task DismissAsync(CancellationToken ct)
     {

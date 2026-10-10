@@ -61,16 +61,20 @@ public sealed class PromptClient(Func<PromptRequest, Task<PromptResponse>> show)
         }
 
         var request = JsonSerializer.Deserialize<PromptRequest>(line, Json);
-        if (request is null || request.Type == PromptRequest.Dismiss)
+        if (request is null)
         {
             return;
         }
 
+        // Dismiss used to stop here, before reaching any window, so a touch
+        // prompt stayed on screen after the card had been touched. It goes to
+        // the window now, like the job messages of 0084a.
         var response = await show(request);
 
-        // A touch prompt has nothing to send back; the card is what is being
-        // waited on, not the person.
-        if (request.Type == PromptRequest.Touch)
+        // Nothing to send back: the card is what a touch waits on, and the rest
+        // are things the window is told rather than asked.
+        if (request.Type is PromptRequest.Touch or PromptRequest.Dismiss
+            or PromptRequest.JobStarted or PromptRequest.JobStep or PromptRequest.JobEnded)
         {
             return;
         }

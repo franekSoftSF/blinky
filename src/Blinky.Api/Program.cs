@@ -930,7 +930,13 @@ app.MapPost("/api/jobs/enrol",
         var (job, created) = jobs.Create(JobType.Enroll, key,
             id => JobEnvelope.Enrolment(id, key, DateTimeOffset.UtcNow.AddHours(1),
                 request.TokenSerial, slotId, request.ProfileName, displayName,
-                upn, objectSid, keyAlgorithm, replaceKey),
+                upn, objectSid, keyAlgorithm, replaceKey,
+
+                // For the window at the workstation (0084a): who this is for
+                // and which operator asked, so a PIN prompt there is not a
+                // request from nobody.
+                new JobContext(JobContext.EnrolCard, displayName, upn, ActorFor(context),
+                    request.ProfileName)),
             request.AgentId, cardholderId: cardholderId);
 
         return Results.Ok(new { job.Id, created, state = job.State.ToString() });

@@ -22,9 +22,36 @@ public sealed class JobExecutor(
     ICardEnrolment? enrolment,
     ICardSlots? cards,
     ILogger<JobExecutor> logger,
-    IFido2Step? fido2 = null)
+    IFido2Step? fido2 = null,
+    IJobWindow? window = null)
 {
+    /// <summary>
+    /// Runs the job, with the issuance window open around it when it is a job
+    /// somebody has to take part in (0084a): every prompt it raises then
+    /// appears inside that window, and the window says how it ended.
+    /// </summary>
     public async Task<JobResult> ExecuteAsync(JobEnvelope job, BackendClient backend,
+        int attempt, CancellationToken ct)
+    {
+        var steps = window is null ? null : JobSteps.For(job.Type);
+
+        if (steps is null)
+        {
+            return await ExecuteStepsAsync(job, backend, attempt, ct);
+        }
+
+        await window!.JobStartedAsync(job, steps, ct);
+
+        var result = await ExecuteStepsAsync(job, backend, attempt, ct);
+
+        await window.JobEndedAsync(result.Succeeded,
+            result.Succeeded ? string.Empty : result.Detail ?? "The job failed.",
+            result.Succeeded ? null : result.FailedStep, ct);
+
+        return result;
+    }
+
+    private async Task<JobResult> ExecuteStepsAsync(JobEnvelope job, BackendClient backend,
         int attempt, CancellationToken ct)
     {
         if (!Protocol.IsSupported(job.SchemaVersion))

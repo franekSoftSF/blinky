@@ -174,6 +174,32 @@ The agent refuses any `op` it does not know rather than skipping it, and reports
 `UnsupportedOperation` with its own version so the mismatch is visible in the
 console.
 
+### What the person at the workstation is told (0084a)
+
+An enrolment and a passkey job carry an additive `context`: the operation, the
+cardholder's name and UPN, the operator who created it, the profile, and for a
+passkey the provider and the login. The agent decides nothing on it; it is for
+the issuance window, so that a PIN request at the workstation names who it is
+for and which operator asked.
+
+```json
+"context": {
+  "operation": "EnrolCard",
+  "holder": "Jan Kowalski", "holderUpn": "jkowalski@corp.example",
+  "requestedBy": "helpdesk1", "profile": "smartcard-logon"
+}
+```
+
+The steps a person sees are published per job type in `JobSteps`
+(`Blinky.Contracts`) - the names the agent already reports as
+`JobProgress.Step`, plus `Fido2Steps` for the passkey ceremony. Over the prompt
+pipe the service sends `JobStarted` (context and step list), `JobStep` and
+`JobEnded`; nothing comes back for any of them, each waits at most five seconds
+for a window, and none can fail a job - a workstation with nobody signed in
+still enrols what an operator sent. Between `JobStarted` and `JobEnded`, every
+PIN, touch and fingerprint request is drawn inside the issuance window and
+never on its own.
+
 ## Versions
 
 A message carries the **lowest** protocol version that can read it, not the

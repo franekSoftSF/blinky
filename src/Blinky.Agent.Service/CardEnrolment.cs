@@ -811,10 +811,18 @@ public sealed class CardEnrolment(
                 $"'{requested}' is not a key algorithm this agent knows.");
     }
 
-    private static Task Report(BackendClient backend, JobEnvelope job, int attempt,
+    /// <summary>
+    /// The phase, to the server and to the issuance window (0084a). The window
+    /// first: it is what the person is looking at, and a slow server must not
+    /// leave the screen a step behind the card.
+    /// </summary>
+    private async Task Report(BackendClient backend, JobEnvelope job, int attempt,
         string phase, CancellationToken ct, JobState state = JobState.Running,
-        string? detail = null) =>
-        backend.ReportProgressAsync(new JobProgress(job.JobId, attempt, state, phase, detail), ct);
+        string? detail = null)
+    {
+        await prompts.JobStepAsync(phase, ct);
+        await backend.ReportProgressAsync(new JobProgress(job.JobId, attempt, state, phase, detail), ct);
+    }
 
     private static string PemEncode(string label, byte[] der) =>
         $"-----BEGIN {label}-----\n"

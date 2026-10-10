@@ -70,7 +70,9 @@ public sealed class PasskeyJobs(JobService jobs, Database database, PasskeyProvi
 
         var (job, created) = jobs.Create(JobType.ProvisionFido2Credential, key,
             id => JobEnvelope.ProvisionFido2(id, key, DateTimeOffset.UtcNow.AddHours(1),
-                request.TokenSerial, provisioning),
+                request.TokenSerial, provisioning,
+                new JobContext(JobContext.Passkey, holder ?? user.DisplayName, null, actor,
+                    Provider: request.Directory, Login: user.Login)),
             request.AgentId, cardholderId: request.CardholderId);
 
         var passkey = passkeys.Record(job.Id, request.Directory, user, request.CardholderId,

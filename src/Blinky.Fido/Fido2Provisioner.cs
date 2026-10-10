@@ -28,6 +28,13 @@ public interface IFido2Prompts
     Task TouchAsync(CancellationToken ct);
 
     Task StatusAsync(string message, CancellationToken ct);
+
+    /// <summary>
+    /// The ceremony reached one of <c>Fido2Steps</c>, for the issuance window
+    /// (0084a). A default so that a prompt surface with no window to tell -
+    /// the tests' - need not care.
+    /// </summary>
+    Task StepAsync(string step, CancellationToken ct) => Task.CompletedTask;
 }
 
 /// <summary>The two calls the engine makes to the API.</summary>
@@ -112,12 +119,14 @@ public sealed class Fido2Provisioner(IFido2Prompts prompts, IFido2Backend backen
             }
         }
 
+        await prompts.StepAsync(Fido2Steps.Pin, ct);
         var (pin, pinSet) = await PreparePinAsync(key, info, policy, ct);
 
         info = key.Info();
 
         if (policy.MinPinLength > info.MinPinLength)
         {
+            await prompts.StepAsync(Fido2Steps.MinPinLength, ct);
             await prompts.StatusAsync($"Setting the minimum FIDO2 PIN length to {policy.MinPinLength}…", ct);
             key.SetMinPinLength(policy.MinPinLength);
             info = key.Info();
@@ -127,6 +136,7 @@ public sealed class Fido2Provisioner(IFido2Prompts prompts, IFido2Backend backen
             ? Fido2KeyName.Compose(provisioning.KeyName, info.Serial, null)
             : provisioning.KeyName;
 
+        await prompts.StepAsync(Fido2Steps.Challenge, ct);
         await prompts.StatusAsync("Asking for a challenge…", ct);
 
         var ceremony = await backend.ReadyAsync(new Fido2Ready(
@@ -142,6 +152,7 @@ public sealed class Fido2Provisioner(IFido2Prompts prompts, IFido2Backend backen
         var clientDataJson = ClientDataJson(ceremony.Challenge, ceremony.Origin);
         var made = MakeCredential(key, ceremony, clientDataJson, pin, ct);
 
+        await prompts.StepAsync(Fido2Steps.Register, ct);
         await prompts.StatusAsync("Registering the passkey with the provider…", ct);
 
         var registered = await backend.ResultAsync(new Fido2CeremonyResult(
@@ -163,6 +174,7 @@ public sealed class Fido2Provisioner(IFido2Prompts prompts, IFido2Backend backen
 
         if (policy.ForceChangePin && info.CanForcePinChange)
         {
+            await prompts.StepAsync(Fido2Steps.ForcePinChange, ct);
             await prompts.StatusAsync("Making the holder change the FIDO2 PIN on first use…", ct);
 
             try
