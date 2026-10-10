@@ -1275,7 +1275,7 @@
       "title": "Self-service: the user brings a key, an administrator approves",
       "state": "open",
       "owner": "both",
-      "gap": "Nothing built. Needs 0083 for the user identity; should absorb 0109's request model rather than add a second table, and lift its refusal of keys with no PIV card"
+      "gap": "Nothing built. Needs 0083 for the user identity; should absorb 0109's request model rather than add a second table, and lift its refusal of keys with no PIV card. Accepting such a key on its own attestation needs 0070 to verify FIDO2 attestation first - Blinky verifies none today, and a FIDO2 attestation carries no serial"
     },
     {
       "id": "0085",

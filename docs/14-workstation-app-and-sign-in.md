@@ -534,9 +534,23 @@ its limits are what this patch removes.
   and from the token's cardholder only as a fallback - today 0109 refuses a
   key that carries no issued PIV card ("no-holder"), which is every key bought
   only for passkeys.
-- A key Blinky has never seen is accepted for a passkey request on its FIDO2
-  attestation (AAGUID and the Yubico attestation chain), since there is no
-  PIV token row to hang it on - 0070's inventory is where it then appears.
+- A key Blinky has never seen can be accepted for a passkey request only on a
+  FIDO2 attestation **Blinky itself verifies**, and today it verifies none: the
+  `attestationObject` goes to the provider untouched, and the provider decides
+  (Entra by key restrictions on the AAGUID). So this half of 0084b waits for
+  0070 to verify FIDO2 attestation when a key enters the inventory, which needs
+  two things that do not exist yet:
+  - Yubico's **FIDO** attestation root - a different root from the PIV one in
+    `YubicoRoots` - and verification of the `x5c` chain in a `packed`
+    attestation statement;
+  - a link between the AAGUID and the serial. The serial is not in a FIDO2
+    attestation at all; it is read over HID from the key's configuration,
+    which nothing proves cryptographically. A request can therefore say
+    "a genuine YubiKey of this model" with proof, and "serial N" only as the
+    key's own word - and the console has to show which is which.
+  Until 0070 does this, a key with no PIV card is accepted for a passkey
+  request only with the signed-in user as holder and the attestation left to
+  the provider, as 0109 does for its keys today.
 - Approval in the console chooses the provider and the PIN rules, as 0109 does
   today, and creates the authorisation; the user completes as in 0085b.
 
