@@ -455,6 +455,100 @@ the server trusts. 0085a needs an operator identity at the workstation, which
 is 0083 with an operator role or 0086. The request model of 0084b should absorb
 0109's before a second request table exists.
 
+### The same four, for passkeys
+
+Added the same day, also from the owner: the passkey ceremony of Phase 7 goes
+through the same window and starts in the same four ways. Each patch above
+covers both - a PIV card and a passkey are two kinds of one issuance, not two
+products - and what is particular to FIDO2 is written here. The first Okta
+attempt on PC-0001 (2026-10-09) is the case to keep in mind: a provisional PIN
+shown once in a window nobody expected, a provider refusal, and a second
+attempt asking for a PIN nobody had kept.
+
+**0084a, for passkeys.** The `ProvisionFido2Credential` job opens the same
+window, with the provider and the login in its header.
+
+*Server / API*
+- `JobContext` for a passkey job names the provider instance, the provider
+  login and the PIN mode.
+- The passkey steps published beside the PIV ones: open the key, FIDO2 PIN
+  (current, new or provisional), minimum PIN length, challenge from the
+  provider, touch, registration at the provider, forced PIN change. The
+  console's ceremony view (0078) and the agent's window use that list rather
+  than each keeping its own.
+
+*Client*
+- `Fido2Step.WindowPrompts.StatusAsync` is a no-op today; the provisioner's
+  status lines feed the step list instead of being dropped.
+- The current-PIN, new-PIN and provisional-PIN requests render in the window
+  with FIDO2's own instruction - this is the security key's FIDO2 PIN, not the
+  smart card PIN used for Windows - and the touch step says what the touch
+  makes ("creates the passkey for <login> at <provider>").
+- The provisional PIN, where it is still used, is shown in the window's
+  instruction panel and acknowledged there (6bd4bb9 and b8bcea7 did this for
+  the standalone prompt).
+- A provider refusal ends on a summary that says what is left on the key: a
+  PIN set by Blinky, no passkey, and what the next attempt will ask for.
+
+**0085a, for passkeys - face to face.** The operator signed in at the
+workstation picks the provider and the user, the holder is at the keyboard.
+
+*Server / API*
+- The operator session of 0085a may create passkey jobs through `PasskeyJobs`,
+  with `IssuanceMode.FaceToFace` and this agent as target; the provider lookup
+  of the user happens before the job, as from the console.
+
+*Client*
+- Operator mode offers "passkey" beside "card": provider, user lookup, key in
+  the reader, start.
+- The PIN mode is the holder's: `OperatorSets` ("the person at the
+  workstation types it") with the hand-over step. `ProvisionalRandom` is not
+  offered here - it exists for a holder who is not present, and this one is.
+
+**0085b, for passkeys - prepared, then completed by the user.**
+
+*Server / API*
+- `IssuanceAuthorisation` carries a kind: a PIV profile, or a passkey with its
+  provider instance and PIN rules (minimum length, forced change).
+- Preparing a key for a passkey is a decision, not a job, unless the key's
+  FIDO2 PIN is unknown - then 0072's FIDO reset, confirmed with how many
+  passkeys it destroys, is the preparation.
+- The complete route for a passkey: the signed-in user from 0083 must be the
+  authorisation's cardholder **and** resolve at the provider to the same
+  account - a Kerberos UPN and an Entra UPN or Okta login are compared at
+  the provider, before the job, not assumed equal. It creates the job through
+  `PasskeyJobs` with the user's own PIN choice.
+
+*Client*
+- "Your key is ready for a passkey" beside the PIV activation; the user
+  chooses the FIDO2 PIN themselves and touches the key. No provisional PIN:
+  the holder is the one at the keyboard, which removes the failure PC-0001
+  showed rather than handling it better.
+
+**0084b, for passkeys - self-service.** 0109 is the first half of this, and
+its limits are what this patch removes.
+
+*Server / API*
+- The request model 0084b introduces takes over 0109's `PasskeyRequest`, with
+  a kind. The holder comes from the signed-in user when there is one (0083),
+  and from the token's cardholder only as a fallback - today 0109 refuses a
+  key that carries no issued PIV card ("no-holder"), which is every key bought
+  only for passkeys.
+- A key Blinky has never seen is accepted for a passkey request on its FIDO2
+  attestation (AAGUID and the Yubico attestation chain), since there is no
+  PIV token row to hang it on - 0070's inventory is where it then appears.
+- Approval in the console chooses the provider and the PIN rules, as 0109 does
+  today, and creates the authorisation; the user completes as in 0085b.
+
+*Client*
+- 0109's *Poproś o passkey* stays, and appears for a key with no PIV card too;
+  the request's state, then the activation of 0085b, in the same place.
+
+**What this changes in Phase 7.** `ProvisionalRandom` becomes the mode for one
+case only - an operator issuing to a holder who is not there - and the window
+is where its PIN is shown. Every mode in which the holder is at the keyboard
+lets them choose their own.
+
 ## Every new model gets full CRUD
 
 Adopted, with one exception that has to be part of the rule rather than an

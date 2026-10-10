@@ -1267,7 +1267,7 @@
       "title": "The issuance window: steps, progress, instructions",
       "state": "open",
       "owner": "both",
-      "gap": "Nothing built. Needs no other patch; the fix for prompts appearing alone during a console-issued enrolment on PC-0001 (2026-10-09)"
+      "gap": "Nothing built. Needs no other patch; the fix for prompts appearing alone during a console-issued enrolment and passkey on PC-0001 (2026-10-09). Covers the passkey ceremony too: Fido2Step's StatusAsync is a no-op today"
     },
     {
       "id": "0084b",
@@ -1275,7 +1275,7 @@
       "title": "Self-service: the user brings a key, an administrator approves",
       "state": "open",
       "owner": "both",
-      "gap": "Nothing built. Needs 0083 for the user identity; should absorb 0109's request model rather than add a second table"
+      "gap": "Nothing built. Needs 0083 for the user identity; should absorb 0109's request model rather than add a second table, and lift its refusal of keys with no PIV card"
     },
     {
       "id": "0085",

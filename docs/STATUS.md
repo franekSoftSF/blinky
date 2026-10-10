@@ -585,8 +585,8 @@ certificate path becomes the upgrade rather than the front door.
 | 0082 | Codex | `Blinky.Workstation`: Angular in a Tauri v2 shell | **open** | HTTP in the Rust layer behind a Tauri command, never `fetch` from the WebView — a pinned certificate cannot be checked by the browser engine. The app reaches the backend only through the agent |
 | 0083 | Cloud.AI | Signing in at the workstation: Kerberos, or a password | **open** | Kerberos is already the design in [05](05-agent-protocol.md). The password is new, for a machine with no domain: verified at the backend and never by the agent, per-user salt, rate-limited and lockable |
 | 0084 | both | Enrolment the person started | **open** | No window appears that nobody asked for. 0049 folds in here |
-| 0084a | both | The issuance window: steps, progress, instructions | **open** | Nothing built. Needs no other patch; the fix for prompts appearing alone during a console-issued enrolment on PC-0001 (2026-10-09) |
-| 0084b | both | Self-service: the user brings a key, an administrator approves | **open** | Nothing built. Needs 0083 for the user identity; should absorb 0109's request model rather than add a second table |
+| 0084a | both | The issuance window: steps, progress, instructions | **open** | Nothing built. Needs no other patch; the fix for prompts appearing alone during a console-issued enrolment and passkey on PC-0001 (2026-10-09). Covers the passkey ceremony too |
+| 0084b | both | Self-service: the user brings a key, an administrator approves | **open** | Nothing built. Needs 0083 for the user identity; should absorb 0109's request model rather than add a second table, and lift its refusal of keys with no PIV card |
 | 0085 | both | The same ceremony, driven by an operator | **open** | Needs 0023a underneath it |
 | 0085a | both | Face to face: the operator signs in at the workstation | **open** | Nothing built. Needs an operator identity at the workstation: 0083 with an operator role, or 0086 |
 | 0085b | both | Prepared by an operator, completed by the user | **open** | Nothing built. Needs 0083; the prepare job is a split of CardEnrolment's PersonaliseCard from key generation |

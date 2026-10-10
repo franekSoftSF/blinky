@@ -215,5 +215,12 @@ from Blinky.
 - Cleanup of a provider-side pending registration when the watchdog, rather
   than the agent, ends the job.
 - **0073b** - Okta's preregistration API, where Okta mails the PIN to the user.
-- A passkey request raised from the workstation and approved in the console
-  (in progress in another session; its patch number is being settled).
+- **0109** (done-unverified) - a passkey request raised from the workstation
+  and approved in the console. It refuses a key with no PIV card issued,
+  because the holder comes from the token.
+- The issuance window and the four ways a passkey starts - face to face,
+  prepared then completed by the user, self-service - in
+  [14](14-workstation-app-and-sign-in.md#the-same-four-for-passkeys),
+  patches 0084a, 0084b, 0085a and 0085b. In every mode where the holder is at
+  the keyboard they choose the FIDO2 PIN; `ProvisionalRandom` stays only for a
+  holder who is not there.
