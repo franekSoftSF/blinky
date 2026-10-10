@@ -1138,7 +1138,7 @@
       "state": "done-unverified",
       "owner": "both",
       "proof": "Decided by the owner on 2026-10-09: a request to an operator, not self-service. PasskeyRequest (Pending, Approved, Rejected; history, no delete) in 001-schema.sql; agent route POST/GET /api/tokens/{serial}/passkey-request records one for the token's cardholder, or returns the pending one; operator routes list, approve (through PasskeyJobs with the request id as reason and the asking agent as target) and reject with a reason. Pipe ops RequestPasskey and GetPasskeyRequest; a 'Request a passkey' action in the agent window showing pending, approved or the refusal; a requests section on the console's passkeys page. PasskeyRequestTests (8); 858 .NET tests and 23 console tests pass; ng build passes. Written by cloud-ai on both sides because codex is not writing the console for now.",
-      "gap": "Never run: not deployed (BY-CACMS unreachable on 2026-10-09, and passkey_requests needs a hand-written CREATE on its existing database); no request has crossed from a real agent, been approved or met a key. The window reads the request once per token and on Refresh, so an approval is not seen until then; 'Approved' stays shown after the ceremony finishes"
+      "gap": "Deployed to BY-CACMS on 2026-10-10 (7af02d3; schema validates, routes answer 401 unauthenticated, smoke test 13/13), but never run: no request has crossed from a real agent, been approved or met a key. The window reads the request once per token and on Refresh, so an approval is not seen until then; 'Approved' stays shown after the ceremony finishes"
     },
     {
       "id": "0110",
